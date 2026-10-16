@@ -227,6 +227,16 @@ function mitMicrosoftTokenFields($url, array $fields) {
     return $fields;
 }
 
+/**
+ * Hook for ITFlow's mailbox Connect (admin/post/settings_mail.php): it always asks Microsoft for the
+ * consent screen, which only an admin may accept - so a plain mailbox like service@ gets "Need admin
+ * approval". Our app is already approved for the whole organisation, so just let them pick the account.
+ */
+function mitM365ConnectPrompt($client_id) {
+    $app = mitM365App();
+    return ($app && $client_id !== '' && $client_id === $app['client_id']) ? 'select_account' : 'consent';
+}
+
 /*
  * ---------- one-time setup: admin signs in with a code ----------
  */

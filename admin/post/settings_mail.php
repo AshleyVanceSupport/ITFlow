@@ -72,7 +72,7 @@ if (isset($_POST['oauth_connect_microsoft_mail'])) {
             'response_mode' => 'query',
             'scope' => $scope,
             'state' => $state,
-            'prompt' => 'consent',
+            'prompt' => function_exists('mitM365ConnectPrompt') ? mitM365ConnectPrompt($config_mail_oauth_client_id) : 'consent', // Mountaineer IT
         ], '', '&', PHP_QUERY_RFC3986);
 
     logAudit("Settings", "Edit", "$session_name started Microsoft OAuth connect flow for mail settings");

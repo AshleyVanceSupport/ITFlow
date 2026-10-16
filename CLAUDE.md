@@ -54,7 +54,8 @@ model: see DEPLOYMENT.md.
   certificate instead of a secret, renewed 30 days before expiry via Graph `addKey`. Settings in
   `mit_settings` (M003). The mail OAuth secret holds the marker `mit-m365-certificate`; one-line
   hooks swap it for a signed client assertion: `functions/request.php` (httpFormPost),
-  `admin/post/settings_mail.php` (token test), `admin/oauth_microsoft_mail_callback.php`. UI:
+  `admin/post/settings_mail.php` (token test; Connect `prompt` via `mitM365ConnectPrompt` so a
+  non-admin mailbox is not sent to the consent screen), `admin/oauth_microsoft_mail_callback.php`. UI:
   `admin/includes/mit_m365_card.php` required at the top of `admin/settings_mail.php`;
   handlers in `admin/post/mit_m365.php`. Re-apply the hooks if an upstream merge drops them.
   Mail goes through Microsoft Graph (not SMTP/IMAP) once the app has the Mail permissions
