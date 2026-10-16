@@ -35,8 +35,8 @@ in the server's `config.php`:
 
 | Server     | `origin`                                         | `$repo_branch`              |
 |------------|--------------------------------------------------|-----------------------------|
-| Production | `git@github.com:MountaineerIT/ITFLOW.git`        | `'MountaineerIT'` (default) |
-| Beta       | `git@github.com:MountaineerIT/ITFLOW.git`        | `'develop'`                 |
+| Production | `https://github.com/MountaineerIT/ITFLOW.git`    | `'MountaineerIT'` (default) |
+| Beta       | `https://github.com/MountaineerIT/ITFLOW.git`    | `'develop'`                 |
 
 Admin > Update shows "Not the release branch" on anything other than `MountaineerIT` –
 expected on the beta server.
@@ -45,29 +45,39 @@ Clicking **Update** in Admin > Update does not update immediately: it *queues* t
 the cron dispatcher (`cron/cron.php`) runs it within a minute. So **cron must be installed and
 switched on** (Maintenance > Cron) for updates to happen.
 
-## Giving a server access (deploy key)
+## New install – one line (Debian 12 / 13)
 
-While the repository is private, each server needs its own read-only **deploy key**.
-(If the repository is made public, servers can clone over HTTPS instead –
-`https://github.com/MountaineerIT/ITFLOW.git` – and this section can be skipped.)
+On a fresh Debian server, as root:
 
-`/var/www` is owned by root, so create the `.ssh` folder as root first, then generate the
-key as `www-data`:
+**Beta / testing server** (tracks `develop`, updates itself nightly):
 
 ```bash
-sudo install -d -o www-data -g www-data -m 700 /var/www/.ssh
-sudo -u www-data ssh-keygen -t ed25519 -N "" -C "itflow-$(hostname)" -f /var/www/.ssh/id_ed25519
-sudo -u www-data cat /var/www/.ssh/id_ed25519.pub
-sudo -u www-data ssh -o StrictHostKeyChecking=accept-new -T git@github.com   # accepts GitHub's host key
+curl -fsSL https://raw.githubusercontent.com/MountaineerIT/ITFLOW/develop/scripts/install.sh | bash -s -- --branch develop
 ```
 
-The last command should say "successfully authenticated" once the key has been added.
+(Minimal Debian may not have `curl`: use `wget -qO- <same URL> | bash -s -- --branch develop`.)
 
-On GitHub: **Repository > Settings > Deploy keys > Add deploy key**, paste the public key,
-name it after the server, and leave **Allow write access unchecked**.
-To retire a server, delete its key there.
+It asks for the server name, certificate type (Let's Encrypt for a public name, self-signed
+for an internal one), timezone, company name and the first admin's name, email and password,
+shows a summary and asks to continue. It then:
 
-## New install
+- installs Apache, MariaDB, PHP and git, and sets PHP upload limits to 500 MB
+- creates the `itflow` database (utf8mb4_general_ci) and a database user with a random password
+- clones this repository into `/var/www/itflow` as `www-data`, on the chosen branch
+- sets up the Apache site with HTTP→HTTPS redirect and the certificate
+- runs ITFlow's setup (company, first admin, `config.php` with `$repo_branch` set)
+- installs the cron entry, switches cron on, sets Domain Refresher to every 30 minutes
+- on non-production branches, schedules the nightly self-update (see "Updating")
+- saves the database password to `/root/itflow-install-credentials.txt` (root only)
+
+Every question can also be given as an option for an unattended install – run it with
+`--help` to list them. Known limit: company and admin names can't contain `'` or `\` yet.
+
+It is for fresh servers only: it stops if `/var/www/itflow` or an `itflow` database already
+exists. If it stops part-way, fix the problem it reports and rerun on a fresh server (or drop
+the `itflow` database and user and delete `/var/www/itflow` first).
+
+## New install – manual
 
 1. Create the database with the collation ITFlow's schema uses, so tables added by future
    database updates match:
@@ -81,7 +91,7 @@ To retire a server, delete its key there.
 
    ```bash
    sudo install -d -o www-data -g www-data /var/www/itflow
-   sudo -u www-data git clone -b MountaineerIT git@github.com:MountaineerIT/ITFLOW.git /var/www/itflow
+   sudo -u www-data git clone -b MountaineerIT https://github.com/MountaineerIT/ITFLOW.git /var/www/itflow
    # beta server: use -b develop
    ```
 
@@ -117,11 +127,11 @@ To retire a server, delete its key there.
    release as that branch or older (Admin > Update shows the version). Never move a server
    that has run upstream's unreleased `develop`.
 2. **Take a backup** (Admin > Backup) – see "Updating".
-3. Set up a deploy key as above, then point the clone at this repository:
+3. Point the clone at this repository:
 
    ```bash
    cd /var/www/itflow
-   sudo -u www-data git remote set-url origin git@github.com:MountaineerIT/ITFLOW.git
+   sudo -u www-data git remote set-url origin https://github.com/MountaineerIT/ITFLOW.git
    sudo -u www-data git fetch origin
    ```
 
@@ -181,6 +191,29 @@ overwritten. Don't edit tracked files on a server; make changes in this reposito
 
 **Browser caching:** CSS and JavaScript files are not versioned, so after an update ask users
 to hard-refresh (Ctrl+F5) if a page looks or behaves oddly.
+
+## If the repository is ever made private again (deploy keys)
+
+The repository is public, so servers clone and update over HTTPS with no credentials.
+If it is made private, each server needs its own read-only **deploy key**, and its `origin`
+must be switched to `git@github.com:MountaineerIT/ITFLOW.git`
+(`sudo -u www-data git -C /var/www/itflow remote set-url origin git@github.com:MountaineerIT/ITFLOW.git`).
+
+`/var/www` is owned by root, so create the `.ssh` folder as root first, then generate the
+key as `www-data`:
+
+```bash
+sudo install -d -o www-data -g www-data -m 700 /var/www/.ssh
+sudo -u www-data ssh-keygen -t ed25519 -N "" -C "itflow-$(hostname)" -f /var/www/.ssh/id_ed25519
+sudo -u www-data cat /var/www/.ssh/id_ed25519.pub
+sudo -u www-data ssh -o StrictHostKeyChecking=accept-new -T git@github.com   # accepts GitHub's host key
+```
+
+The last command should say "successfully authenticated" once the key has been added.
+
+On GitHub: **Repository > Settings > Deploy keys > Add deploy key**, paste the public key,
+name it after the server, and leave **Allow write access unchecked**.
+To retire a server, delete its key there.
 
 ## Pulling in ITFlow's updates
 

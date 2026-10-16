@@ -23,7 +23,7 @@ model: see DEPLOYMENT.md.
 - Default/release branch is `MountaineerIT` instead of `master`: `functions/app.php`
   (`getRepoBranch`), `admin/update.php` (release-branch badge), `setup/index.php` and
   `scripts/setup_cli.php` (default `$repo_branch`).
-- `DEPLOYMENT.md`, `CLAUDE.md` (ours).
+- `DEPLOYMENT.md`, `CLAUDE.md`, `scripts/install.sh` (Debian one-line installer) – ours.
 
 ## "Pull in ITFlow's updates"
 1. `git remote add upstream https://github.com/itflow-org/itflow.git` (if missing);
