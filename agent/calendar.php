@@ -73,7 +73,7 @@ foreach ($sources as $key => $source) {
                     <?php } ?>
                 </select>
 
-                <?php if (count($agents) > 1) { ?>
+                <?php if ($agents) { ?>
                     <!--
                         Mountaineer IT: each tech's colour - their booked tickets are drawn in it. Click a
                         name to see their calendar; click your own colour dot (any dot, for an admin) to change it.
