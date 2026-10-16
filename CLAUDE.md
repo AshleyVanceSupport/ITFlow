@@ -12,6 +12,7 @@ model: see DEPLOYMENT.md.
 
 ## Rules
 - Feature branches off `develop`, PR into `develop`.
+- **Ask the user to confirm before every `git push`** (any branch) and before merging any PR.
 - Explain the plan before big changes or anything touching the schema (`db.sql`,
   `admin/database_updates/`). Upstream numbers migrations sequentially – custom ones would
   collide, so don't add any without agreeing a scheme with the user.
