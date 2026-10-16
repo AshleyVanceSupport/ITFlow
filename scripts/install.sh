@@ -16,6 +16,9 @@
 
 set -Eeuo pipefail
 
+# 'su' without '-' keeps the user's PATH, which lacks the sbin folders (runuser, a2enmod...).
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
 REPO_URL="https://github.com/MountaineerIT/ITFLOW.git"
 INSTALL_DIR="/var/www/itflow"
 WEB_USER="www-data"
