@@ -141,6 +141,39 @@ the `itflow` database and user and delete `/var/www/itflow` first).
    or those jobs run twice and outside the schedules set in Maintenance > Cron.
 6. Make sure cron is switched on (Maintenance > Cron), then update from Admin > Update.
 
+## Moving to stock ITFlow (backup portability)
+
+We keep this build so that a backup made here restores into ITFlow's own release and keeps
+working – so going back to itflow-org's `master` is always possible. Tested Oct 2026: a full
+backup of `develop` restored into stock v26.10 and into upstream's newer code; every main page
+loaded and new clients, tickets and replies saved without errors.
+
+**Check it at any time:** `sudo -u www-data php scripts/mit_portability_check.php` – compares the
+live database with ITFlow's schema (`db.sql`), exits 1 and prints `FAIL` lines if a backup would
+break stock ITFlow, and lists what stops working after a move.
+
+**To move:**
+
+1. Take a full backup (Admin > Backup) and note the backup key shown there.
+2. Install stock ITFlow (its own installer) on the target server – **install first, then
+   restore**: stock v26.10's command-line restore fails on an empty database.
+3. Copy the archive over and restore:
+   `sudo -u www-data php scripts/restore_cli.php --file=/path/to/backup.zip --key=THE_KEY`
+4. If the stock code is newer than the backup: `sudo -u www-data php scripts/update_cli.php --update_db`.
+   If the backup is from a database newer than the stock release (e.g. beta while it ran
+   upstream's unreleased work), prefer the stock release that has caught up.
+
+**What stops working on stock ITFlow** (and comes back if you move back to this build):
+
+- **Microsoft 365 email** – ours signs in with a certificate and sends/receives through Microsoft
+  Graph. On stock ITFlow add a client secret to the app in Entra, paste it under Settings > Mail >
+  OAuth, and switch SMTP AUTH / IMAP back on for the mailbox.
+- **Outlook calendars** stop syncing; events ITFlow already put in people's Outlook stay until
+  deleted (they carry the *ITFlow* category).
+- **Booking lengths, tech colours, per-person calendar settings, Outlook busy times, the ticket
+  timers dropdown** – not in stock ITFlow; their data sits unused in `mit_` tables and the
+  `tickets.ticket_schedule_end` column.
+
 ## Updating
 
 **Always take a backup first** (Admin > Backup, and keep a copy off the server). If a
@@ -230,5 +263,12 @@ The beta server picks it up; test there, then ask Claude to open the
 - Don't modify `libs/` (third-party code).
 - Keep edits to upstream files small – every changed line can conflict when ITFlow releases
   are merged in. Prefer the `*/custom/` directories where they fit.
-- **No custom database migrations** in `admin/database_updates/` without a plan: upstream
-  numbers them sequentially, so our own would collide with their next release.
+- **Our database changes** go in `admin/database_updates/mountaineerit/` (M001, M002 …), never in
+  ITFlow's numbered `admin/database_updates/` – those would collide with their next release.
+- **Stay portable to stock ITFlow** (see "Moving to stock ITFlow"): our database changes only
+  *add* – new `mit_` tables, or columns on ITFlow's tables that are NULL-able or have a default.
+  Never rename, drop or change ITFlow's columns, change what ITFlow's data means, or point ITFlow's
+  tables at ours. Run `scripts/mit_portability_check.php` after every change that touches the
+  database and after every ITFlow update; before promoting to production, also restore a backup
+  into stock ITFlow and click through it. When a feature adds something that would stop working
+  after a move, add it to the list in that section.

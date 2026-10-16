@@ -20,6 +20,15 @@ model: see DEPLOYMENT.md.
   never edit `db.sql`. Our updates are tracked by name in `mit_database_updates`, run by
   `admin/database_updates_mountaineerit.php` after ITFlow's (update_cli) and at the end of
   both installers. Each file must be safe to run twice (use `mitColumnExists()` etc.).
+- **Stay portable to stock ITFlow** (the user may want to move back to itflow-org's `master`): DB
+  changes only add – `mit_` tables, or columns on ITFlow tables that are NULL-able/defaulted; never
+  rename/drop/alter ITFlow columns, change ITFlow data's meaning, or FK ITFlow tables into ours.
+  After every feature that touches the DB or settings, and after every upstream merge, run
+  `php scripts/mit_portability_check.php` on the test install and report the result to the user.
+  Before every "Promote to production", also do the full test: backup on the test install ->
+  restore into a stock checkout of the latest release (`git archive vYY.MM`; install schema first,
+  then `scripts/restore_cli.php`) -> click through the main pages and save a client/ticket/reply.
+  Keep DEPLOYMENT.md "Moving to stock ITFlow" (what stops working after a move) up to date.
 - Don't modify `libs/` unless asked.
 - Keep diffs against upstream minimal so release merges stay clean.
 
@@ -102,8 +111,9 @@ model: see DEPLOYMENT.md.
 3. Summarise for the user: version, notable features/fixes, new files in
    `admin/database_updates/` (DB version change), anything touching our deviations above.
 4. On `develop`, `git merge <tag>`, resolve conflicts keeping our deviations, `php -l`
-   changed PHP files, then ask the user before pushing to `develop`.
+   changed PHP files, run `scripts/mit_portability_check.php` on the test install after the
+   database update, then ask the user before pushing to `develop`.
 
 ## "Promote to production"
-Open a PR `develop` → `MountaineerIT` listing what's included and any DB updates. Ask the
-user before merging.
+Open a PR `develop` → `MountaineerIT` listing what's included and any DB updates, plus the
+result of the stock-ITFlow portability test (see Rules). Ask the user before merging.
