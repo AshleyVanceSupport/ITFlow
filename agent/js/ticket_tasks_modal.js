@@ -107,6 +107,15 @@
         return tasks;
     }
 
+    // The handlers below are delegated on document, so they only need adding once per page
+    // load - this file runs again every time a ticket modal opens, and binding them again
+    // made one "Add Task" click add one row per opening. The helpers they call look the
+    // modal's elements up when called, so the first run's handlers serve every opening.
+    if (window.itflowTicketTaskHandlersBound) {
+        return;
+    }
+    window.itflowTicketTaskHandlersBound = true;
+
     document.addEventListener('click', function (e) {
         if (!e.target.closest('#ticketTaskAdd')) {
             return;

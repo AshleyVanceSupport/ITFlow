@@ -34,7 +34,19 @@ if (!file_exists("../config.php")) {
 }
 
 require_once "../config.php";
-require_once "../includes/inc_set_timezone.php";
+
+// A restore is often run against a database that only has config.php so far (the setup
+// wizard's database step, no settings row yet). Only take the timezone from settings when
+// it is there - inc_set_timezone.php assumes it is and would stop the restore.
+try {
+    $restore_timezone_row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT config_timezone FROM settings WHERE company_id = 1"));
+} catch (Throwable $e) {
+    $restore_timezone_row = null;
+}
+if (!empty($restore_timezone_row['config_timezone'])) {
+    require_once "../includes/inc_set_timezone.php";
+}
+
 require_once "../functions.php";
 
 $options = getopt("", ["file:", "key:", "inspect", "yes", "help"]);

@@ -20,13 +20,7 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
 <div class="card">
     <div class="card-header bg-dark py-2">
         <h3 class="card-title mt-2"><i class="fas fa-fw fa-puzzle-piece me-2"></i>Access Modules</h3>
-        <div class="card-tools">
-            <div class="btn-group">
-                <button type="button" class="btn btn-primary ajax-modal" data-modal-url="modals/module/module_add.php">
-                    <i class="fas fa-fw fa-plus me-2"></i>New Module
-                </button>
-            </div>
-        </div>
+        <?php // No "New Module" button: custom modules can't be created yet (there is no add form or handler) ?>
     </div>
     <div class="card-header py-3">
         <form autocomplete="off">

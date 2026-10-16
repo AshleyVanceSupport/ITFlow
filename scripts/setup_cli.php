@@ -270,6 +270,12 @@ foreach ($lines as $line) {
 }
 echo "Database imported successfully.\n";
 
+// Everything below goes into SQL, so escape what was typed in - a name like "O'Brien IT"
+// used to break the query after config.php was already written, leaving setup half done
+foreach (['user_name', 'user_email', 'company_name', 'address', 'city', 'state', 'zip', 'country', 'phone', 'company_email', 'website', 'locale', 'currency_code', 'timezone'] as $setup_field) {
+    $$setup_field = escapeSql($$setup_field);
+}
+
 // Create User
 $password_hash = password_hash(trim($user_password_plain), PASSWORD_DEFAULT);
 $site_encryption_master_key = randomString();
