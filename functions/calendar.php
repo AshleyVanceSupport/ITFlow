@@ -527,6 +527,7 @@ function calendarSources() {
         'invoices' => ['label' => 'Invoices due', 'icon' => 'fa-file-invoice-dollar', 'color' => '#15803d', 'module' => 'module_sales', 'default' => false,
             'title' => 'Unpaid invoices on the day they fall due'],
     ];
+    $sources += function_exists('mitOutlookCalendarSources') ? mitOutlookCalendarSources() : []; // Mountaineer IT: Outlook busy times
     return array_filter($sources, function ($source) {
         return lookupUserPermission($source['module']) >= 1;
     });
@@ -550,6 +551,9 @@ function calendarSourceItems($key, $from, $to, array $opts = []) {
         return [];
     }
     $source = $sources[$key];
+    if ($key === 'outlook_busy') {
+        return mitOutlookBusyItems($from, $to, $opts); // Mountaineer IT
+    }
     $client_id = intval($opts['client_id'] ?? 0);
     $user_id = intval($opts['user_id'] ?? 0);
     $from = escapeSql($from);

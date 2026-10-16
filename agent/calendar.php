@@ -47,6 +47,15 @@ foreach ($sources as $key => $source) {
 
 ?>
 
+<style>
+    /* Mountaineer IT: Outlook busy times (functions/mit_outlook.php) - striped, so they read as "busy", not booked work */
+    #itflowCalendar [data-kind="outlook_busy"] {
+        background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, .2) 0 4px, transparent 4px 10px);
+        opacity: .85;
+        cursor: default;
+    }
+</style>
+
 <div class="row g-3 itflow-calendar-page" id="itflowCalendar"
     data-csrf="<?= $csrf ?>"
     data-client-id="<?= $page_client_id ?>"

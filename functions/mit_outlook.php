@@ -12,7 +12,9 @@
  *    removes its event within a minute (cron/mit_outlook_sync.php);
  *  - ITFlow is the source of truth - an event moved, renamed or deleted in Outlook is put back by
  *    the next check (every 15 minutes, or Sync now);
- *  - only events ITFlow made are touched, never the person's own appointments.
+ *  - only events ITFlow made are touched, never the person's own appointments;
+ *  - those appointments are copied the other way as busy times (mit_outlook_busy, M005) every
+ *    MIT_OUTLOOK_BUSY_MINUTES - shown on the ITFlow calendar and counted when booking work.
  *
  * Tables from database update M004: mit_outlook_links (one per person) and mit_outlook_events
  * (one per booked ticket per person). The refresh token is encrypted with a key made from this
@@ -24,6 +26,10 @@ const MIT_OUTLOOK_PAST_DAYS = 30;
 /** How often Outlook itself is checked for events changed or deleted there. */
 const MIT_OUTLOOK_CHECK_MINUTES = 15;
 const MIT_OUTLOOK_CATEGORY = 'ITFlow';
+/** Outlook busy times (database update M005): how often they are copied, and how far back and ahead. */
+const MIT_OUTLOOK_BUSY_MINUTES = 5;
+const MIT_OUTLOOK_BUSY_PAST_DAYS = 7;
+const MIT_OUTLOOK_BUSY_AHEAD_DAYS = 56;
 const MIT_OUTLOOK_SCOPES = 'offline_access openid profile email https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/User.Read';
 
 /*
@@ -270,8 +276,9 @@ function mitOutlookSync($user_id, $check = false) {
         $want[$ticket_id] = ['event' => $event, 'hash' => sha1(json_encode($event))];
     }
     $signature = sha1(json_encode(array_map(function ($w) { return $w['hash']; }, $want)));
+    $busy_due = $check || empty($link['busy_refreshed_at']) || strtotime($link['busy_refreshed_at']) <= time() - MIT_OUTLOOK_BUSY_MINUTES * 60;
     $check = $check || empty($link['last_check_at']) || strtotime($link['last_check_at']) <= time() - MIT_OUTLOOK_CHECK_MINUTES * 60;
-    if (!$check && $signature === $link['sync_signature'] && empty($link['last_error'])) {
+    if (!$check && !$busy_due && $signature === $link['sync_signature'] && empty($link['last_error'])) {
         return 'Up to date';
     }
 
@@ -321,6 +328,10 @@ function mitOutlookSync($user_id, $check = false) {
                 $counts['removed']++;
             }
         }
+
+        if ($busy_due) {
+            $busy = mitOutlookRefreshBusy($token, $user_id);
+        }
     } catch (Throwable $e) {
         mitOutlookSetError($user_id, $e->getMessage());
         throw $e;
@@ -336,7 +347,145 @@ function mitOutlookSync($user_id, $check = false) {
             $parts[] = "$count $what";
         }
     }
+    if (isset($busy) && $check) {
+        $parts[] = "$busy busy time" . ($busy === 1 ? '' : 's') . " from Outlook";
+    }
     return $parts ? implode(', ', $parts) : 'Up to date';
+}
+
+/*
+ * ---------- Outlook busy times -> ITFlow ----------
+ */
+
+/**
+ * Copy the person's own Outlook appointments (not ITFlow's events, not free or cancelled ones)
+ * into mit_outlook_busy, replacing the last copy. Returns how many.
+ */
+function mitOutlookRefreshBusy($token, $user_id) {
+    global $mysqli;
+    $user_id = intval($user_id);
+
+    // ITFlow's own events in this calendar - they are bookings already, not busy time
+    $ours = [];
+    $result = mysqli_query($mysqli, "SELECT event_id FROM mit_outlook_events WHERE user_id = $user_id");
+    while ($row = mysqli_fetch_assoc($result)) {
+        $ours[$row['event_id']] = true;
+    }
+
+    $from = gmdate('Y-m-d\TH:i:s\Z', strtotime('-' . MIT_OUTLOOK_BUSY_PAST_DAYS . ' days midnight'));
+    $to = gmdate('Y-m-d\TH:i:s\Z', strtotime('+' . MIT_OUTLOOK_BUSY_AHEAD_DAYS . ' days midnight'));
+    $url = MIT_M365_GRAPH . '/me/calendarView?' . http_build_query([
+        'startDateTime' => $from, 'endDateTime' => $to, '$top' => 250,
+        '$select' => 'id,subject,start,end,isAllDay,showAs,sensitivity,isCancelled,categories',
+    ], '', '&', PHP_QUERY_RFC3986);
+
+    $rows = [];
+    for ($page = 0; $url && $page < 20; $page++) {
+        $response = mitHttp('GET', $url, ['Authorization: Bearer ' . $token, 'Accept: application/json', 'Prefer: outlook.timezone="UTC"']);
+        if ($response['status'] !== 200) {
+            throw new RuntimeException(mitM365Error($response, 'Reading your Outlook calendar'));
+        }
+        foreach ($response['json']['value'] ?? [] as $event) {
+            $show_as = strtolower((string) ($event['showAs'] ?? 'busy'));
+            if (isset($ours[$event['id'] ?? '']) || in_array(MIT_OUTLOOK_CATEGORY, $event['categories'] ?? [], true)
+                || !empty($event['isCancelled']) || !in_array($show_as, ['busy', 'tentative', 'oof'], true)) {
+                continue;
+            }
+            if (!empty($event['isAllDay'])) {
+                // All-day events have no time zone - just the days
+                $starts = substr((string) $event['start']['dateTime'], 0, 10) . ' 00:00:00';
+                $ends = substr((string) $event['end']['dateTime'], 0, 10) . ' 00:00:00';
+            } else {
+                $starts = date('Y-m-d H:i:s', strtotime(substr((string) $event['start']['dateTime'], 0, 19) . ' UTC'));
+                $ends = date('Y-m-d H:i:s', strtotime(substr((string) $event['end']['dateTime'], 0, 19) . ' UTC'));
+            }
+            if (strtotime($ends) <= strtotime($starts)) {
+                continue;
+            }
+            $rows[] = "($user_id, '$starts', '$ends', " . (empty($event['isAllDay']) ? 0 : 1) . ", '"
+                . mysqli_real_escape_string($mysqli, mb_substr((string) ($event['subject'] ?? ''), 0, 255)) . "', "
+                . (in_array(strtolower((string) ($event['sensitivity'] ?? 'normal')), ['private', 'confidential'], true) ? 1 : 0) . ", '$show_as')";
+        }
+        $url = $response['json']['@odata.nextLink'] ?? null;
+    }
+
+    mysqli_begin_transaction($mysqli);
+    mysqli_query($mysqli, "DELETE FROM mit_outlook_busy WHERE user_id = $user_id");
+    foreach (array_chunk($rows, 200) as $chunk) {
+        mysqli_query($mysqli, "INSERT INTO mit_outlook_busy (user_id, starts_at, ends_at, is_all_day, subject, is_private, show_as) VALUES " . implode(', ', $chunk));
+    }
+    mysqli_query($mysqli, "UPDATE mit_outlook_links SET busy_refreshed_at = NOW() WHERE user_id = $user_id");
+    mysqli_commit($mysqli);
+    return count($rows);
+}
+
+/** What a busy time says on the calendar: the person sees their own titles, everyone else Busy. */
+function mitOutlookBusyTitle(array $row) {
+    global $session_user_id;
+    $label = ['tentative' => 'Tentative', 'oof' => 'Out of office'][$row['show_as']] ?? 'Busy';
+    if (intval($row['user_id']) === intval($session_user_id) && !intval($row['is_private']) && trim($row['subject']) !== '') {
+        return $row['subject'];
+    }
+    return $label;
+}
+
+/** The calendar source, for functions/calendar.php calendarSources() - only once someone has connected Outlook. */
+function mitOutlookCalendarSources() {
+    global $mysqli;
+    if (!mitOutlookAvailable()) {
+        return [];
+    }
+    $result = mysqli_query($mysqli, "SELECT 1 FROM mit_outlook_links LIMIT 1");
+    if (!$result || !mysqli_num_rows($result)) {
+        return [];
+    }
+    return ['outlook_busy' => ['label' => 'Outlook busy times', 'icon' => 'fa-calendar-alt', 'color' => '#6c757d', 'module' => 'module_support', 'default' => true,
+        'title' => 'Appointments in each tech\'s own Outlook calendar (connected under Account > Outlook calendar)']];
+}
+
+/** Busy times between two datetimes, ready for FullCalendar. Not on a client's calendar. */
+function mitOutlookBusyItems($from, $to, array $opts = []) {
+    global $mysqli;
+    if (intval($opts['client_id'] ?? 0)) {
+        return [];
+    }
+    $from = escapeSql($from);
+    $to = escapeSql($to);
+    $user_id = intval($opts['user_id'] ?? 0);
+    $items = [];
+    $result = mysqli_query($mysqli, "SELECT mit_outlook_busy.*, user_name FROM mit_outlook_busy JOIN users USING (user_id)
+        WHERE starts_at < '$to' AND ends_at > '$from' AND user_archived_at IS NULL" . ($user_id ? " AND user_id = $user_id" : '') . "
+        ORDER BY starts_at");
+    while ($result && $row = mysqli_fetch_assoc($result)) {
+        $all_day = intval($row['is_all_day']) === 1;
+        $items[] = [
+            'id' => 'outlook-' . intval($row['busy_id']),
+            'title' => mitOutlookBusyTitle($row),
+            'start' => $all_day ? substr($row['starts_at'], 0, 10) : $row['starts_at'],
+            'end' => $all_day ? substr($row['ends_at'], 0, 10) : $row['ends_at'],
+            'allDay' => $all_day,
+            'editable' => false,
+            'color' => mitAgentColor($row['user_id']),
+            'extendedProps' => ['kind' => 'outlook_busy', 'icon' => 'fa-calendar-alt', 'detail' => $row['user_name'] . ' · Outlook'],
+        ];
+    }
+    return $items;
+}
+
+/** The agent's Outlook busy times overlapping $start - $end, as plain text lines (functions/mit_calendar.php mitScheduleConflicts). */
+function mitOutlookBusyConflicts($user_id, $start, $end) {
+    global $mysqli;
+    $user_id = intval($user_id);
+    $start = escapeSql($start);
+    $end = escapeSql($end);
+    $lines = [];
+    $result = mysqli_query($mysqli, "SELECT * FROM mit_outlook_busy WHERE user_id = $user_id AND starts_at < '$end' AND ends_at > '$start' ORDER BY starts_at");
+    while ($result && $row = mysqli_fetch_assoc($result)) {
+        $lines[] = 'Outlook: ' . mitOutlookBusyTitle($row) . ' @ ' . (intval($row['is_all_day'])
+            ? 'all day'
+            : date('g:ia', strtotime($row['starts_at'])) . '-' . date('g:ia', strtotime($row['ends_at'])));
+    }
+    return $lines;
 }
 
 /** Events by ticket id as Outlook has them now (null = gone), 20 to a Graph batch. */
@@ -427,6 +576,7 @@ function mitOutlookDisconnect($user_id) {
         }
     }
     mysqli_query($mysqli, "DELETE FROM mit_outlook_events WHERE user_id = $user_id");
+    mysqli_query($mysqli, "DELETE FROM mit_outlook_busy WHERE user_id = $user_id");
     mysqli_query($mysqli, "DELETE FROM mit_outlook_links WHERE user_id = $user_id");
     return $left;
 }

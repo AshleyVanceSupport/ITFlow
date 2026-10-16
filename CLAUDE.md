@@ -71,7 +71,11 @@ model: see DEPLOYMENT.md.
   a key from config.php. Cron job `mit_outlook_sync` (`cron/mit_outlook_sync.php`, one entry
   added to `includes/cron_jobs.php`) pushes changed bookings every minute and checks Outlook
   for edits every 15 min (ITFlow wins). Side-nav entry in `agent/user/includes/user_side_nav.php`.
-- Next planned (Phase 4 step 2): Outlook busy times -> ITFlow calendar and booking conflicts.
+  Step 2: Outlook busy times copied every 5 min into `mit_outlook_busy` (M005; also
+  `mit_outlook_links.busy_refreshed_at`) by the same job. Shown as the `outlook_busy` calendar
+  source - hooks in `functions/calendar.php` (calendarSources `+=`, calendarSourceItems early
+  return), striped via `[data-kind="outlook_busy"]` CSS in `agent/calendar.php`; counted in
+  `mitScheduleConflicts()`. Titles only for the owner; others see Busy/Tentative/Out of office.
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files
   upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
   SSRF, broken tag links, Clients/Tickets/dashboard/search performance.

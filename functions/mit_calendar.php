@@ -119,7 +119,8 @@ function mitScheduleShortText($start, $end = null) {
 
 /**
  * The agent's other open booked work that overlaps $start - $end, as plain text lines.
- * Overlap uses each booking's real end (or the default length when it has none).
+ * Overlap uses each booking's real end (or the default length when it has none). Their
+ * Outlook busy times count too.
  */
 function mitScheduleConflicts($user_id, $start, $end, $ticket_id = 0) {
     global $mysqli;
@@ -143,6 +144,10 @@ function mitScheduleConflicts($user_id, $start, $end, $ticket_id = 0) {
         $row_end = mitTicketScheduleEnd($row['ticket_schedule'], $row['ticket_schedule_end']);
         $conflicts[] = ticketReference($row) . ' - ' . $row['ticket_subject'] . ' @ '
             . date('g:ia', strtotime($row['ticket_schedule'])) . '-' . date('g:ia', strtotime($row_end));
+    }
+    // Their own Outlook appointments too, once they have connected Outlook (functions/mit_outlook.php)
+    if (function_exists('mitOutlookBusyConflicts')) {
+        $conflicts = array_merge($conflicts, mitOutlookBusyConflicts($user_id, $start, $end));
     }
     return $conflicts;
 }
