@@ -271,7 +271,14 @@ ok "database '$DB_NAME' and user '$DB_USER'"
 
 info "Downloading ITFlow ($BRANCH)"
 install -d -o "$WEB_USER" -g "$WEB_USER" -m 755 "$INSTALL_DIR"
-sudo_web() { runuser -u "$WEB_USER" -- "$@"; }
+# Run a command as the web user. runuser is preferred; su is the fallback on systems without it.
+sudo_web() {
+    if command -v runuser >/dev/null 2>&1; then
+        runuser -u "$WEB_USER" -- "$@"
+    else
+        su -s /bin/bash "$WEB_USER" -c "$(printf '%q ' "$@")"
+    fi
+}
 sudo_web git clone --quiet --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
 ok "cloned into $INSTALL_DIR ($(sudo_web git -C "$INSTALL_DIR" rev-parse --short HEAD))"
 
