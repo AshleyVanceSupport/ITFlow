@@ -46,6 +46,9 @@ model: see DEPLOYMENT.md.
   `scripts/setup_cli.php` (run our DB updates). Re-apply them if an upstream merge drops them.
   Calendar settings (view, whose, ticked) are also saved per user in `mit_user_preferences`
   (M002) via `ajax.php?mit_calendar_state` and loaded by `agent/calendar.php` (data-saved-state).
+  Each tech can pick their calendar colour (admins: anyone's) from the Techs legend - saved as
+  the `calendar.color` preference via `ajax.php?mit_agent_color`; `mitAgentColor()` falls back
+  to the automatic colour.
 - Next planned: Microsoft 365 connector with automatic app registration (admin signs in once),
   then per-tech Outlook sync - ITFlow -> Outlook first, Outlook busy -> ITFlow second.
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files

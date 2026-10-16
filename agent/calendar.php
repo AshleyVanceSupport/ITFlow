@@ -74,15 +74,28 @@ foreach ($sources as $key => $source) {
                 </select>
 
                 <?php if (count($agents) > 1) { ?>
-                    <!-- Mountaineer IT: each tech's colour - their booked tickets are drawn in it. Click one to see their calendar. -->
+                    <!--
+                        Mountaineer IT: each tech's colour - their booked tickets are drawn in it. Click a
+                        name to see their calendar; click your own colour dot (any dot, for an admin) to change it.
+                    -->
                     <div class="small text-body-secondary text-uppercase fw-semibold mt-3 mb-1">Techs</div>
                     <div class="mb-3" id="mitTechLegend">
-                        <?php foreach ($agents as $agent) { ?>
-                            <button type="button" class="btn btn-link btn-sm p-0 d-flex align-items-center gap-2 text-body text-decoration-none text-start w-100 mit-tech-pick" data-agent="<?= intval($agent['user_id']) ?>" title="Show <?= escapeHtml($agent['user_name']) ?>'s calendar">
-                                <span class="rounded-circle flex-shrink-0" style="width: .75rem; height: .75rem; background-color: <?= mitAgentColor($agent['user_id']) ?>"></span>
-                                <span class="text-truncate small"><?= escapeHtml($agent['user_name']) ?><?= intval($agent['user_id']) === intval($session_user_id) ? ' (me)' : '' ?></span>
-                            </button>
+                        <?php foreach ($agents as $agent) {
+                            $agent_id = intval($agent['user_id']);
+                            $agent_name = escapeHtml($agent['user_name']);
+                            $agent_color = mitAgentColor($agent_id); ?>
+                            <div class="d-flex align-items-center gap-2">
+                                <?php if (mitCanSetAgentColor($agent_id)) { ?>
+                                    <span class="rounded-circle flex-shrink-0 position-relative mit-tech-swatch" style="width: .85rem; height: .85rem; background-color: <?= $agent_color ?>; box-shadow: 0 0 0 1px var(--bs-border-color); cursor: pointer;" title="Change <?= $agent_name ?>'s calendar colour">
+                                        <input type="color" class="mit-tech-color position-absolute top-0 start-0 w-100 h-100 border-0 p-0" style="opacity: 0; cursor: pointer;" data-agent="<?= $agent_id ?>" value="<?= $agent_color ?>" aria-label="<?= $agent_name ?>'s calendar colour">
+                                    </span>
+                                <?php } else { ?>
+                                    <span class="rounded-circle flex-shrink-0 mit-tech-swatch" style="width: .85rem; height: .85rem; background-color: <?= $agent_color ?>"></span>
+                                <?php } ?>
+                                <button type="button" class="btn btn-link btn-sm p-0 text-body text-decoration-none text-start text-truncate small mit-tech-pick" data-agent="<?= $agent_id ?>" title="Show <?= $agent_name ?>'s calendar"><?= $agent_name ?><?= $agent_id === intval($session_user_id) ? ' (me)' : '' ?></button>
+                            </div>
                         <?php } ?>
+                        <div class="form-text mt-1">Click <?= !empty($session_is_admin) ? 'a' : 'your' ?> colour dot to change it.</div>
                     </div>
                 <?php } ?>
 

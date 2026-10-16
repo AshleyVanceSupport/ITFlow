@@ -16,13 +16,49 @@ const MIT_AGENT_COLORS = [
     '#db2777', '#65a30d', '#7c3aed', '#ea580c', '#0d9488', '#4f46e5',
 ];
 
-/** An agent's calendar colour - the same every time, different for the first twelve agents. */
+/**
+ * An agent's calendar colour: the one they picked (saved as the calendar.color preference),
+ * or one worked out from their user id - the same every time, different for the first twelve.
+ */
 function mitAgentColor($user_id) {
     $user_id = intval($user_id);
     if ($user_id <= 0) {
         return '#6c757d';
     }
-    return MIT_AGENT_COLORS[($user_id - 1) % count(MIT_AGENT_COLORS)];
+    $chosen = mitAgentChosenColors();
+    return $chosen[$user_id] ?? mitAgentDefaultColor($user_id);
+}
+
+/** The colour an agent has until they pick one. */
+function mitAgentDefaultColor($user_id) {
+    return MIT_AGENT_COLORS[(max(1, intval($user_id)) - 1) % count(MIT_AGENT_COLORS)];
+}
+
+/** Every agent's picked colour, user_id => '#rrggbb' - read once per request. Pass true after saving one. */
+function mitAgentChosenColors($reload = false) {
+    global $mysqli;
+    static $colors = null;
+    if ($colors === null || $reload) {
+        $colors = [];
+        $result = mysqli_query($mysqli, "SELECT user_id, value FROM mit_user_preferences WHERE preference = 'calendar.color'");
+        while ($result && $row = mysqli_fetch_assoc($result)) {
+            if (mitIsHexColor($row['value'])) {
+                $colors[intval($row['user_id'])] = strtolower($row['value']);
+            }
+        }
+    }
+    return $colors;
+}
+
+/** A '#rrggbb' colour? */
+function mitIsHexColor($color) {
+    return is_string($color) && preg_match('/^#[0-9a-fA-F]{6}$/', $color) === 1;
+}
+
+/** May the signed-in agent change this agent's calendar colour? Their own, or anyone's for an admin. */
+function mitCanSetAgentColor($user_id) {
+    global $session_user_id, $session_is_admin;
+    return intval($user_id) > 0 && (intval($user_id) === intval($session_user_id) || !empty($session_is_admin));
 }
 
 /** When booked work ends: its stored end, or ITFlow's default length after the start. */
