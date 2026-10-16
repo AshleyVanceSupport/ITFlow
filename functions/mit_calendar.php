@@ -160,10 +160,11 @@ function mitCleanCalendarState(array $state) {
         $clean['hidden'] = array_values(array_slice(array_map('strval', array_map('intval', $state['hidden'])), 0, 200));
     }
     if (isset($state['sources']) && is_array($state['sources'])) {
-        $clean['sources'] = [];
+        // An object, even when empty - the page sets keys on it
+        $clean['sources'] = new stdClass();
         foreach ($state['sources'] as $key => $on) {
             if (preg_match('/^[a-z_]{1,40}$/', (string) $key)) {
-                $clean['sources'][$key] = (bool) $on;
+                $clean['sources']->$key = (bool) $on;
             }
         }
     }

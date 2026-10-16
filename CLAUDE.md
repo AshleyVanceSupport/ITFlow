@@ -44,6 +44,8 @@ model: see DEPLOYMENT.md.
   (Tech + How long), `agent/post/ticket.php` (edit_ticket_schedule), `agent/ticket.php`
   (start - end wording), `functions.php` (require), `scripts/update_cli.php`, `setup/index.php`,
   `scripts/setup_cli.php` (run our DB updates). Re-apply them if an upstream merge drops them.
+  Calendar settings (view, whose, ticked) are also saved per user in `mit_user_preferences`
+  (M002) via `ajax.php?mit_calendar_state` and loaded by `agent/calendar.php` (data-saved-state).
 - Next planned: Microsoft 365 connector with automatic app registration (admin signs in once),
   then per-tech Outlook sync - ITFlow -> Outlook first, Outlook busy -> ITFlow second.
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files

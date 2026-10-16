@@ -69,7 +69,7 @@
     }
 
     state.hidden = Array.isArray(state.hidden) ? state.hidden : [];
-    state.sources = state.sources && typeof state.sources === 'object' ? state.sources : {};
+    state.sources = state.sources && typeof state.sources === 'object' && !Array.isArray(state.sources) ? state.sources : {};
 
     root.querySelectorAll('.itflow-cal-check[data-calendar]').forEach(function (box) {
         box.checked = state.hidden.indexOf(box.dataset.calendar) === -1;
