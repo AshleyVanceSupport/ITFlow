@@ -661,9 +661,15 @@ if (isset($_POST['add_contact'])) {
 
     $contact_name = escapeSql($_POST['contact_name']);
     $contact_email = escapeSql($_POST['contact_email']);
-    $contact_technical = intval($_POST['contact_technical'] ?? 0);
-    $contact_billing = intval($_POST['contact_billing'] ?? 0);
-    $contact_auth_method = escapeSql($_POST['contact_auth_method']);
+    $contact_technical = intval($_POST['contact_technical'] ?? 0) ? 1 : 0;
+    $contact_billing = intval($_POST['contact_billing'] ?? 0) ? 1 : 0;
+    $contact_auth_method = in_array($_POST['contact_auth_method'] ?? '', ['local', 'azure'], true) ? $_POST['contact_auth_method'] : '';
+
+    // Only the primary contact can hand out billing access - a technical contact must not be
+    // able to create a billing contact for an address they control
+    if ($session_contact_primary != 1) {
+        $contact_billing = 0;
+    }
 
     // Check the email isn't already in use
     $sql = mysqli_query($mysqli, "SELECT user_id FROM users WHERE user_email = '$contact_email'");
@@ -714,14 +720,26 @@ if (isset($_POST['edit_contact'])) {
     }
     $contact_name = escapeSql($_POST['contact_name']);
     $contact_email = escapeSql($_POST['contact_email']);
-    $contact_technical = intval($_POST['contact_technical'] ?? 0);
-    $contact_billing = intval($_POST['contact_billing'] ?? 0);
-    $contact_auth_method = escapeSql($_POST['contact_auth_method']);
+    $contact_technical = intval($_POST['contact_technical'] ?? 0) ? 1 : 0;
+    $contact_billing = intval($_POST['contact_billing'] ?? 0) ? 1 : 0;
+    $contact_auth_method = in_array($_POST['contact_auth_method'] ?? '', ['local', 'azure'], true) ? $_POST['contact_auth_method'] : '';
 
-    // Get the existing contact_user_id - we look it up ourselves so the user can't just overwrite random users
-    $sql = mysqli_query($mysqli,"SELECT contact_user_id FROM contacts WHERE contact_id = $contact_id AND contact_client_id = $session_client_id");
+    // Get the existing contact_user_id - we look it up ourselves so the user can't just overwrite random users.
+    // Only contacts this portal user may edit are matched: never the primary contact (changing its login
+    // email would let the editor reset its password and take the account over), never an archived one,
+    // and never their own record.
+    $sql = mysqli_query($mysqli,"SELECT contact_user_id, contact_billing FROM contacts WHERE contact_id = $contact_id AND contact_client_id = $session_client_id AND contact_primary = 0 AND contact_archived_at IS NULL AND contact_id != $session_contact_id");
     $row = mysqli_fetch_assoc($sql);
+    if (!$row) {
+        flashAlert("You cannot edit that contact", 'danger');
+        redirect('contacts.php');
+    }
     $contact_user_id = intval($row['contact_user_id']);
+
+    // Only the primary contact can grant or remove billing access
+    if ($session_contact_primary != 1) {
+        $contact_billing = intval($row['contact_billing']);
+    }
 
     // Check the email isn't already in use
     $sql = mysqli_query($mysqli, "SELECT user_id FROM users WHERE user_email = '$contact_email' AND user_id != $contact_user_id");
@@ -758,6 +776,8 @@ if (isset($_POST['edit_contact'])) {
 if (isset($_GET['add_payment_by_provider'])) {
 
     validateCSRFToken();
+
+    enforceContactCan('accounting');
 
     $invoice_id = intval($_GET['invoice_id']);
     $saved_payment_id = intval($_GET['add_payment_by_provider']);
