@@ -18,7 +18,7 @@ if (isset($_GET['client_id'])) {
 $sql = mysqli_query(
     $mysqli,
     "SELECT SQL_CALC_FOUND_ROWS client_id, client_name, round_trip, trip_archived_at, trip_created_at, trip_date,
-        trip_destination, trip_id, trip_miles, trip_purpose, trip_source, trip_user_id, user_name FROM trips
+        trip_destination, trip_id, trip_miles, trip_purpose, trip_source, trip_user_id, user_name, user_avatar FROM trips
     LEFT JOIN clients ON trip_client_id = client_id
     LEFT JOIN users ON trip_user_id = user_id
     WHERE (trip_purpose LIKE '%$q%' OR trip_source LIKE '%$q%' OR trip_destination LIKE '%$q%' OR trip_miles LIKE '%$q%' OR client_name LIKE '%$q%' OR user_name LIKE '%$q%')
@@ -61,8 +61,8 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
                     <div class="col-sm-4">
                         <div class="input-group">
                             <input type="search" class="form-control" name="q" value="<?php if (isset($q)) { echo stripslashes(escapeHtml($q)); } ?>" placeholder="Search Trips">
-                                <button class="btn btn-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilter"><i class="fas fa-filter"></i></button>
-                                <button class="btn btn-primary"><i class="fa fa-search"></i></button>
+                                <button class="btn btn-secondary" title="More filters" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilter"><i class="fas fa-filter"></i></button>
+                                <button class="btn btn-primary" title="Search"><i class="fa fa-search"></i></button>
                         </div>
                     </div>
                     <div class="col-sm-8">
@@ -155,12 +155,7 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
                     } else {
                         $round_trip_display = "";
                     }
-                    $user_name = escapeHtml($row['user_name']);
-                    if (empty($user_name)) {
-                        $user_name_display = "-";
-                    } else {
-                        $user_name_display = $user_name;
-                    }
+                    $user_name_display = formatAssignee($trip_user_id, $row['user_name'], $row['user_avatar'], false, 'No driver');
 
                     ?>
                     <tr>
@@ -180,7 +175,7 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
                         <?php } ?>
                         <td>
                             <div class="dropdown dropstart text-center">
-                                <button class="btn btn-secondary btn-sm" type="button" data-bs-toggle="dropdown">
+                                <button class="btn btn-secondary btn-sm" title="More actions" type="button" data-bs-toggle="dropdown">
                                     <i class="fas fa-ellipsis-h"></i>
                                 </button>
                                 <div class="dropdown-menu">

@@ -2,7 +2,19 @@
 
 require_once '../../../includes/modal_header.php';
 
+/*
+ * New Recurring Ticket - what the tickets it raises will say, how often and
+ * from when, what they are about and their tasks. Opened from a client,
+ * contact or asset, it starts with that filled in; picking an asset fills
+ * in the person it is assigned to.
+ */
+
+enforceUserPermission('module_support', 2);
+
 $client_id = intval($_GET['client_id'] ?? 0);
+if ($client_id) {
+    enforceClientAccess();
+}
 $contact_id = intval($_GET['contact_id'] ?? 0);
 $asset_id = intval($_GET['asset_id'] ?? 0);
 
@@ -27,13 +39,13 @@ ob_start();
                 <a class="nav-link active" data-bs-toggle="pill" href="#pills-add-details"><i class="fa fa-fw fa-life-ring me-2"></i>Details</a>
             </li>
             <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="pill" href="#pills-add-schedule"><i class="fa fa-fw fa-calendar-alt me-2"></i>Schedule</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="pill" href="#pills-add-assets"><i class="fa fa-fw fa-link me-2"></i>Related</a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link" data-bs-toggle="pill" href="#pills-add-tasks"><i class="fa fa-fw fa-tasks me-2"></i>Tasks</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" data-bs-toggle="pill" href="#pills-add-schedule"><i class="fa fa-fw fa-building me-2"></i>Schedule</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" data-bs-toggle="pill" href="#pills-add-assets"><i class="fa fa-fw fa-desktop me-2"></i>Assets</a>
             </li>
         </ul>
 
@@ -54,12 +66,12 @@ ob_start();
                                     <option value="">- Select a Client -</option>
                                     <?php
 
-                                    $sql = mysqli_query($mysqli, "SELECT client_id, client_name FROM clients WHERE client_archived_at IS NULL " . clientScopeSql('clients.client_id') . " ORDER BY client_name ASC");
+                                    $sql = mysqli_query($mysqli, "SELECT client_id, client_name, client_abbreviation FROM clients WHERE client_archived_at IS NULL " . clientScopeSql('clients.client_id') . " ORDER BY client_name ASC");
                                     while ($row = mysqli_fetch_assoc($sql)) {
                                         $client_id_select = intval($row['client_id']);
                                         $client_name = escapeHtml($row['client_name']); ?>
 
-                                        <option value="<?= $client_id_select ?>" <?php if ($client_id == $client_id_select) {echo "selected"; } ?>><?= $client_name ?></option>
+                                        <option value="<?= $client_id_select ?>" <?php if ($client_id == $client_id_select) {echo "selected"; } ?><?= selectOptionClient($row['client_id'], $row['client_name'], $row['client_abbreviation'] ?? '') ?>><?= $client_name ?></option>
 
                                     <?php } ?>
                                 </select>
@@ -102,10 +114,10 @@ ob_start();
                             <div class="input-group">
                                     <span class="input-group-text"><i class="fa fa-fw fa-thermometer-half"></i></span>
                                 <select class="form-select select2" name="priority" required>
-                                    <option>Low</option>
-                                    <option selected>Medium</option>
-                                    <option>High</option>
-                                    <option>Urgent</option>
+                                    <option data-color="var(--bs-info)">Low</option>
+                                    <option selected data-color="var(--bs-warning)">Medium</option>
+                                    <option data-color="var(--bs-danger)">High</option>
+                                    <option data-color="var(--bs-emphasis-color)">Urgent</option>
                                 </select>
                             </div>
                         </div>
@@ -119,17 +131,17 @@ ob_start();
                                 <select class="form-select select2" name="category_id">
                                     <option value="0">- Not Categorized -</option>
                                     <?php
-                                    $sql_categories = mysqli_query($mysqli, "SELECT category_id, category_name FROM categories WHERE category_type = 'Ticket' AND category_archived_at IS NULL ORDER BY category_name ASC");
+                                    $sql_categories = mysqli_query($mysqli, "SELECT category_id, category_name, category_color, category_icon FROM categories WHERE category_type = 'Ticket' AND category_archived_at IS NULL ORDER BY category_name ASC");
                                     while ($row = mysqli_fetch_assoc($sql_categories)) {
                                         $category_id = intval($row['category_id']);
                                         $category_name = escapeHtml($row['category_name']);
 
                                         ?>
-                                        <option value="<?= $category_id ?>"><?= $category_name ?></option>
+                                        <option value="<?= $category_id ?>"<?= selectOptionColor($row['category_color'] ?? '', $row['category_icon'] ?? '') ?>><?= $category_name ?></option>
                                     <?php } ?>
 
                                 </select>
-                                    <button class="btn btn-secondary ajax-modal" type="button"
+                                    <button class="btn btn-secondary ajax-modal" title="New category" type="button"
                                         data-modal-url="../admin/modals/category/category_add.php?category=Ticket">
                                         <i class="fas fa-fw fa-plus"></i>
                                     </button>
@@ -144,28 +156,28 @@ ob_start();
                     <div class="input-group">
                             <span class="input-group-text"><i class="fa fa-fw fa-user-check"></i></span>
                         <select class="form-select select2" name="assigned_to">
-                            <option value="0">- Not Assigned -</option>
+                            <option value="0">- Unassigned -</option>
                             <?php
 
                             $sql = mysqli_query(
                                 $mysqli,
-                                "SELECT user_id, user_name FROM users
+                                "SELECT user_id, user_name, user_avatar FROM users
                                 WHERE user_type = 1 AND user_status = 1 AND user_archived_at IS NULL ORDER BY user_name ASC"
                             );
                             while ($row = mysqli_fetch_assoc($sql)) {
                                 $user_id = intval($row['user_id']);
                                 $user_name = escapeHtml($row['user_name']); ?>
-                                <option value="<?= $user_id ?>"><?= $user_name ?></option>
+                                <option value="<?= $user_id ?>"<?= selectOptionUser($row['user_id'], $row['user_name'], $row['user_avatar'] ?? '') ?>><?= $user_name ?></option>
                             <?php } ?>
                         </select>
                     </div>
                 </div>
 
-                <?php if ($config_module_enable_accounting) { ?>
+                <?php if ($config_module_enable_accounting && lookupUserPermission('module_sales') >= 2) { ?>
                 <div class="mb-3">
                     <div class="form-check form-switch">
                         <input type="checkbox" class="form-check-input" name="billable" <?php if ($config_ticket_default_billable == 1) { echo "checked"; } ?> value="1" id="billable">
-                        <label class="form-check-label" for="billable">Mark Billable</label>
+                        <label class="form-check-label" for="billable">The tickets it raises are billable</label>
                     </div>
                 </div>
                 <?php } ?>
@@ -202,11 +214,12 @@ ob_start();
                 </div>
 
                 <div class="mb-3">
-                    <label>Starting date <strong class="text-danger">*</strong></label>
+                    <label>First run <strong class="text-danger">*</strong></label>
                     <div class="input-group">
                             <span class="input-group-text"><i class="fa fa-fw fa-calendar-day"></i></span>
-                        <input class="form-control" type="date" name="start_date" min="<?= date("Y-m-d") ?>" max="2999-12-31" required>
+                        <input class="form-control" type="date" name="start_date" min="<?= date("Y-m-d") ?>" max="2999-12-31" value="<?= date("Y-m-d", strtotime('+1 day')) ?>" required>
                     </div>
+                    <div class="form-text">The nightly cron raises a ticket on this day, then again each time it comes round. Monthly ones keep to this day of the month - the last day, in a shorter month.</div>
                 </div>
 
             </div>
@@ -223,10 +236,10 @@ ob_start();
                 </div>
 
                 <div class="mb-3">
-                    <label>Additional Assets</label>
+                    <label>Other assets</label>
                     <div class="input-group">
                             <span class="input-group-text"><i class="fa fa-fw fa-desktop"></i></span>
-                        <select class="form-select select2" name="additional_assets[]" id="additionalAssetsSelect" data-placeholder="- Select Additional Assets -" multiple>
+                        <select class="form-select select2" name="additional_assets[]" id="additionalAssetsSelect" data-placeholder="- Any other assets involved -" multiple>
                         </select>
                     </div>
                 </div>

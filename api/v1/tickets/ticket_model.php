@@ -1,21 +1,26 @@
 <?php
 
 // Variable assignment from POST (or: blank/from DB is updating)
+//
+// What a ticket links to - its contact, asset and vendor - has to be its own
+// client's (ticketClientOwnedId() in functions/ticket.php, the check the app
+// itself uses); anything else is dropped, not saved. The agent has to be an
+// active one.
 
 if (isset($_POST['ticket_contact_id'])) {
-    $contact = intval($_POST['ticket_contact_id']);
+    $contact = ticketClientOwnedId('contact', $_POST['ticket_contact_id'], $client_id);
 } elseif ($ticket_row) {
-    $contact = $ticket_row['ticket_contact_id'];
+    $contact = intval($ticket_row['ticket_contact_id']);
 } else {
-    $contact = '0';
+    $contact = 0;
 }
 
 if (isset($_POST['ticket_asset_id'])) {
-    $asset = intval($_POST['ticket_asset_id']);
+    $asset = ticketClientOwnedId('asset', $_POST['ticket_asset_id'], $client_id);
 } elseif ($ticket_row) {
-    $asset = $ticket_row['ticket_asset_id'];
+    $asset = intval($ticket_row['ticket_asset_id']);
 } else {
-    $asset = '0';
+    $asset = 0;
 }
 
 if (isset($_POST['ticket_subject'])) {
@@ -53,11 +58,11 @@ if (isset($_POST['ticket_details'])) {
 }
 
 if (isset($_POST['ticket_vendor_id'])) {
-    $vendor_id = intval($_POST['ticket_vendor_id']);
+    $vendor_id = ticketClientOwnedId('vendor', $_POST['ticket_vendor_id'], $client_id);
 } elseif ($ticket_row) {
-    $vendor_id = $ticket_row['ticket_vendor_id'];
+    $vendor_id = intval($ticket_row['ticket_vendor_id']);
 } else {
-    $vendor_id = '0';
+    $vendor_id = 0;
 }
 
 // The vendor's own reference for it - a string (case numbers have letters in
@@ -72,17 +77,17 @@ if ($vendor_ticket_input !== null) {
 }
 
 if (isset($_POST['ticket_assigned_to'])) {
-    $assigned_to = intval($_POST['ticket_assigned_to']);
+    $assigned_to = ticketAgentId($_POST['ticket_assigned_to']);
 } elseif ($ticket_row) {
-    $assigned_to = $ticket_row['ticket_assigned_to'];
+    $assigned_to = intval($ticket_row['ticket_assigned_to']);
 } else {
-    $assigned_to = '0';
+    $assigned_to = 0;
 }
 
 if (isset($_POST['ticket_billable'])) {
-    $billable = intval($_POST['ticket_billable']);
+    $billable = intval($_POST['ticket_billable']) ? 1 : 0;
 } elseif ($ticket_row) {
-    $billable = $ticket_row['ticket_billable'];
+    $billable = intval($ticket_row['ticket_billable']);
 } else {
-    $billable = '0';
+    $billable = 0;
 }

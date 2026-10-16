@@ -2,7 +2,15 @@
 
 require_once '../../../includes/modal_header.php';
 
-$ticket_id = intval($_GET['ticket_id']);
+enforceUserPermission('module_sales', 2);
+
+// The ticket, after the module and client checks - or the modal's error
+$ticket = ticketForModal($_GET['ticket_id'] ?? 0, 2);
+$ticket_id = intval($ticket['ticket_id']);
+if (!intval($ticket['ticket_client_id'])) {
+    echo json_encode(['error' => 'Move the ticket to a client before quoting it.']);
+    exit;
+}
 
 $ticket_sql = mysqli_query(
     $mysqli,
@@ -73,7 +81,7 @@ ob_start();
 ?>
 
     <div class="modal-header bg-dark">
-        <h5 class="modal-title"><i class="fa fa-fw fa-comment-dollar me-2"></i>Quote ticket</h5>
+        <h5 class="modal-title"><i class="fa fa-fw fa-comment-dollar me-2"></i>Create quote from ticket</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
     </div>
 
@@ -104,16 +112,16 @@ ob_start();
                             <select class="form-select select2" name="category">
                                 <option value="">- Select a Category -</option>
                                 <?php
-                                $sql = mysqli_query($mysqli, "SELECT category_id, category_name FROM categories WHERE category_type = 'Income' AND category_archived_at IS NULL ORDER BY category_name ASC");
+                                $sql = mysqli_query($mysqli, "SELECT category_id, category_name, category_color, category_icon FROM categories WHERE category_type = 'Income' AND category_archived_at IS NULL ORDER BY category_name ASC");
                                 while ($row = mysqli_fetch_assoc($sql)) {
                                     $category_id = intval($row['category_id']);
                                     $category_name = escapeHtml($row['category_name']);
                                     ?>
-                                    <option value="<?= $category_id ?>"><?= $category_name ?></option>
+                                    <option value="<?= $category_id ?>"<?= selectOptionColor($row['category_color'] ?? '', $row['category_icon'] ?? '') ?>><?= $category_name ?></option>
                                 <?php } ?>
                             </select>
 
-                                <button type="button" class="btn btn-secondary ajax-modal" data-modal-url="/admin/modals/category/category_add.php?category=Expense">
+                                <button type="button" class="btn btn-secondary ajax-modal" title="New category" data-modal-url="/admin/modals/category/category_add.php?category=Expense">
                                     <i class="fas fa-fw fa-plus"></i>
                                 </button>
                         </div>
@@ -182,7 +190,7 @@ ob_start();
                             <input type="text" class="form-control" inputmode="decimal" pattern="-?[0-9]*\.?[0-9]{0,2}" name="price" value="<?= number_format($client_rate, 2, '.', '') ?>" required>
                         </div>
                         <small class="form-text text-muted">
-                            Hourly Client rate is <strong><?= numfmt_format_currency($currency_format, $client_rate, $session_company_currency); ?></strong>
+                            The client's hourly rate is <strong><?= numfmt_format_currency($currency_format, $client_rate, $session_company_currency); ?></strong>
                         </small>
                     </div>
                 </div>

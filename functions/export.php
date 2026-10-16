@@ -80,25 +80,43 @@ function getExportColumns($export_type) {
             'location_name'      => ['label' => 'Location'],
         ],
 
+        // location_primary_text, contact_name and the counts are built by the handler's query
         'locations' => [
             'location_name'        => ['label' => 'Name', 'weight' => 2],
+            'location_primary_text' => ['label' => 'Primary'],
             'location_description' => ['label' => 'Description', 'weight' => 3],
             'location_address'     => ['label' => 'Address', 'weight' => 2],
             'location_city'        => ['label' => 'City'],
             'location_state'       => ['label' => 'State'],
             'location_zip'         => ['label' => 'Postal Code'],
+            'location_country'     => ['label' => 'Country', 'default' => false],
             'location_phone'       => ['label' => 'Phone', 'format' => 'phone'],
             'location_hours'       => ['label' => 'Hours'],
+            'contact_name'         => ['label' => 'On-site Contact'],
+            'contact_count'        => ['label' => 'People', 'format' => 'number', 'default' => false],
+            'asset_count'          => ['label' => 'Assets', 'format' => 'number', 'default' => false],
+            'location_notes'       => ['label' => 'Access Notes', 'weight' => 3, 'default' => false],
+            'client_name'          => ['label' => 'Client', 'default' => false],
         ],
 
         'vendors' => [
             'vendor_name'           => ['label' => 'Name', 'weight' => 2],
             'vendor_description'    => ['label' => 'Description', 'weight' => 3],
-            'vendor_contact_name'   => ['label' => 'Contact Name'],
-            'vendor_phone'          => ['label' => 'Phone', 'format' => 'phone'],
+            'vendor_tags'           => ['label' => 'Tags', 'default' => false],
+            'vendor_phone'          => ['label' => 'Support Phone', 'format' => 'phone'],
+            'vendor_extension'      => ['label' => 'Extension', 'default' => false],
+            'vendor_email'          => ['label' => 'Support Email', 'weight' => 2],
             'vendor_website'        => ['label' => 'Website', 'weight' => 2],
+            'vendor_hours'          => ['label' => 'Hours'],
+            'vendor_sla'            => ['label' => 'SLA', 'default' => false],
             'vendor_account_number' => ['label' => 'Account Number'],
+            'vendor_code'           => ['label' => 'PIN / Code', 'default' => false],
+            'vendor_contact_name'   => ['label' => 'Account Manager'],
+            'vendor_contact_phone'  => ['label' => 'Account Manager Phone', 'format' => 'phone', 'default' => false],
+            'vendor_contact_email'  => ['label' => 'Account Manager Email', 'default' => false],
+            'open_case_count'       => ['label' => 'Open Cases', 'format' => 'number', 'default' => false],
             'vendor_notes'          => ['label' => 'Notes', 'weight' => 3],
+            'client_name'           => ['label' => 'Client', 'default' => false],
         ],
 
         'assets' => [
@@ -123,6 +141,7 @@ function getExportColumns($export_type) {
         ],
 
         'asset_interfaces' => [
+            // The first eight are the import's columns, in its order - VLANs ninth and optional
             'interface_name'        => ['label' => 'Name'],
             'interface_description' => ['label' => 'Description', 'weight' => 3],
             'interface_type'        => ['label' => 'Type'],
@@ -131,9 +150,14 @@ function getExportColumns($export_type) {
             'interface_nat_ip'      => ['label' => 'NAT IP'],
             'interface_ipv6'        => ['label' => 'IPv6', 'weight' => 2],
             'network_name'          => ['label' => 'Network'],
+            'interface_vlans'       => ['label' => 'VLANs'],
+            'network'               => ['label' => 'Subnet', 'default' => false],
+            'connected_to'          => ['label' => 'Connected To', 'weight' => 2, 'default' => false],
+            'interface_notes'       => ['label' => 'Notes', 'weight' => 3, 'default' => false],
         ],
 
         'networks' => [
+            // The first nine are the import's columns, in its order
             'network_name'          => ['label' => 'Name', 'weight' => 2],
             'network_description'   => ['label' => 'Description', 'weight' => 3],
             'network_vlan'          => ['label' => 'VLAN'],
@@ -142,12 +166,20 @@ function getExportColumns($export_type) {
             'network_dhcp_range'    => ['label' => 'IP Range'],
             'network_primary_dns'   => ['label' => 'Primary DNS'],
             'network_secondary_dns' => ['label' => 'Secondary DNS'],
+            'network_type'          => ['label' => 'Type'],
+            'location_name'         => ['label' => 'Site', 'default' => false],
+            'vendor_name'           => ['label' => 'Provider', 'default' => false],
+            'network_notes'         => ['label' => 'Notes', 'weight' => 3, 'default' => false],
+            'client_name'           => ['label' => 'Client', 'weight' => 2, 'default' => false],
         ],
 
         'network_ips' => [
+            // The import's columns, in its order - Type and MAC after the original three
             'ip_address'     => ['label' => 'IP Address'],
             'ip_hostname'    => ['label' => 'Hostname', 'weight' => 2],
             'ip_description' => ['label' => 'Description', 'weight' => 3],
+            'ip_type'        => ['label' => 'Type'],
+            'ip_mac'         => ['label' => 'MAC'],
             // Available from the handler's join but not exported by default -
             // the export is always scoped to one network of one client
             'network_name'   => ['label' => 'Network', 'default' => false],
@@ -157,9 +189,18 @@ function getExportColumns($export_type) {
         'certificates' => [
             'certificate_name'        => ['label' => 'Name', 'weight' => 2],
             'certificate_description' => ['label' => 'Description', 'weight' => 3],
-            'certificate_domain'      => ['label' => 'Domain', 'weight' => 2],
+            'certificate_domain'      => ['label' => 'Host', 'weight' => 2],
             'certificate_issued_by'   => ['label' => 'Issuer', 'weight' => 2],
             'certificate_expire'      => ['label' => 'Expiration Date'],
+            // The status column holds a key; the handler aliases its label
+            'certificate_check_status' => ['label' => 'Last Check', 'field' => 'certificate_check_label'],
+            'certificate_issued_at'   => ['label' => 'Issued', 'default' => false],
+            'certificate_names'       => ['label' => 'Names Covered', 'field' => 'certificate_names_list', 'weight' => 3, 'default' => false],
+            'certificate_fingerprint' => ['label' => 'SHA-256 Fingerprint', 'weight' => 3, 'default' => false],
+            'certificate_checked_at'  => ['label' => 'Checked At', 'default' => false],
+            'domain_name'             => ['label' => 'Domain', 'default' => false],
+            'certificate_notes'       => ['label' => 'Notes', 'weight' => 3, 'default' => false],
+            'client_name'             => ['label' => 'Client', 'weight' => 2, 'default' => false],
         ],
 
         'domains' => [
@@ -169,6 +210,15 @@ function getExportColumns($export_type) {
             'domain_registrar'   => ['label' => 'Registrar', 'field' => 'domain_registrar_name'],
             'domain_webhost'     => ['label' => 'Web Host', 'field' => 'domain_webhost_name'],
             'domain_expire'      => ['label' => 'Expiration Date'],
+            'domain_dnshost'     => ['label' => 'DNS Host', 'field' => 'domain_dnshost_name', 'default' => false],
+            'domain_mailhost'    => ['label' => 'Mail Host', 'field' => 'domain_mailhost_name', 'default' => false],
+            'domain_auto_renew'  => ['label' => 'Auto-renew', 'field' => 'domain_auto_renew_label', 'default' => false],
+            'domain_name_servers' => ['label' => 'Name Servers', 'weight' => 2, 'default' => false],
+            'domain_mail_servers' => ['label' => 'MX Records', 'weight' => 2, 'default' => false],
+            'domain_dmarc'       => ['label' => 'DMARC', 'weight' => 2, 'default' => false],
+            'domain_tags'        => ['label' => 'Tags', 'weight' => 2, 'default' => false],
+            'domain_notes'       => ['label' => 'Notes', 'weight' => 3, 'default' => false],
+            'client_name'        => ['label' => 'Client', 'weight' => 2, 'default' => false],
         ],
 
         // Defaults match what this export has always emitted, secrets included.
@@ -180,9 +230,16 @@ function getExportColumns($export_type) {
             'credential_password'    => ['label' => 'Password'],
             'credential_otp_secret'  => ['label' => 'TOTP'],
             'credential_uri'         => ['label' => 'URI', 'weight' => 2],
+            'credential_uri_2'       => ['label' => 'URI 2', 'default' => false],
+            'credential_tags'        => ['label' => 'Tags', 'default' => false],
+            'asset_name'             => ['label' => 'Asset', 'default' => false],
+            'contact_name'           => ['label' => 'Contact', 'default' => false],
+            'credential_password_changed' => ['label' => 'Password Changed', 'default' => false],
+            'credential_note'        => ['label' => 'Notes', 'weight' => 3, 'default' => false],
+            'client_name'            => ['label' => 'Client', 'default' => false],
         ],
 
-        // assigned_to_assets / assigned_to_contacts are built by the handler
+        // seats_used, assigned_to_assets / assigned_to_contacts and software_keys_list are built by the handler's query
         'software' => [
             'software_name'         => ['label' => 'Name', 'weight' => 2],
             'software_version'      => ['label' => 'Version'],
@@ -190,11 +247,16 @@ function getExportColumns($export_type) {
             'software_type'         => ['label' => 'Type'],
             'software_license_type' => ['label' => 'License Type'],
             'software_seats'        => ['label' => 'Seats', 'format' => 'number'],
+            'seats_used'            => ['label' => 'Seats Used', 'format' => 'number'],
             'software_key'          => ['label' => 'Key', 'weight' => 2],
+            'software_keys_list'    => ['label' => 'Individual Keys', 'weight' => 3, 'default' => false],
             'assigned_to_assets'    => ['label' => 'Assets', 'weight' => 2],
             'assigned_to_contacts'  => ['label' => 'Contacts', 'weight' => 2],
+            'vendor_name'           => ['label' => 'Vendor', 'default' => false],
+            'software_purchase_reference' => ['label' => 'Order Ref', 'default' => false],
             'software_purchase'     => ['label' => 'Purchased'],
             'software_expire'       => ['label' => 'Expires'],
+            'client_name'           => ['label' => 'Client', 'default' => false],
             'software_notes'        => ['label' => 'Notes', 'weight' => 3],
         ],
 
@@ -212,6 +274,47 @@ function getExportColumns($export_type) {
             'ticket_assigned_to'    => ['label' => 'Assigned To', 'default' => false],
             'ticket_category_name'  => ['label' => 'Category', 'default' => false],
             'ticket_billable'       => ['label' => 'Billable', 'default' => false],
+        ],
+
+        // Projects - the handler adds the state, progress and hours (projectStats())
+        'projects' => [
+            'project_reference'   => ['label' => 'Number'],
+            'project_name'        => ['label' => 'Project', 'weight' => 3],
+            'client_name'         => ['label' => 'Client', 'weight' => 2],
+            'project_state'       => ['label' => 'State'],
+            'user_name'           => ['label' => 'Manager'],
+            'contact_name'        => ['label' => 'Client Contact', 'default' => false],
+            'project_start'       => ['label' => 'Start', 'default' => false],
+            'project_due'         => ['label' => 'Due'],
+            'project_completed'   => ['label' => 'Completed'],
+            'tickets_done'        => ['label' => 'Tickets Done', 'format' => 'number'],
+            'tickets_total'       => ['label' => 'Tickets', 'format' => 'number'],
+            'tasks_done'          => ['label' => 'Tasks Done', 'format' => 'number', 'default' => false],
+            'tasks_total'         => ['label' => 'Tasks', 'format' => 'number', 'default' => false],
+            'hours_logged'        => ['label' => 'Hours Logged', 'format' => 'number'],
+            'project_budget_hours' => ['label' => 'Budget Hours', 'format' => 'number'],
+            'hours_unbilled'      => ['label' => 'Hours Not Invoiced', 'format' => 'number', 'default' => false],
+            'project_description' => ['label' => 'Scope', 'weight' => 3, 'default' => false],
+        ],
+
+        // Services - the counts, attention and review columns are built by the handler
+        'services' => [
+            'service_name'        => ['label' => 'Service', 'weight' => 2],
+            'client_name'         => ['label' => 'Client', 'weight' => 2],
+            'service_category'    => ['label' => 'Category'],
+            'service_importance'  => ['label' => 'Importance'],
+            'service_description' => ['label' => 'Description', 'weight' => 3],
+            'service_assets'      => ['label' => 'Runs On', 'weight' => 3],
+            'service_vendors'     => ['label' => 'Vendors', 'weight' => 2],
+            'service_contacts'    => ['label' => 'People', 'weight' => 2, 'default' => false],
+            'service_domains'     => ['label' => 'Domains', 'weight' => 2, 'default' => false],
+            'service_backup'      => ['label' => 'Backup and Recovery', 'weight' => 3],
+            'service_attention'   => ['label' => 'Needs Attention', 'weight' => 3],
+            'service_review'      => ['label' => 'Next Review'],
+            'service_reviewed'    => ['label' => 'Last Reviewed', 'default' => false],
+            'service_review_every' => ['label' => 'Review Every', 'default' => false],
+            'open_tickets'        => ['label' => 'Open Tickets', 'format' => 'number', 'default' => false],
+            'service_state'       => ['label' => 'State', 'default' => false],
         ],
 
         // invoice_number_display is prefix . number, built by the handler
@@ -306,6 +409,9 @@ function getExportColumns($export_type) {
             'user_email'         => ['label' => 'Email', 'weight' => 2],
             'role_name'          => ['label' => 'Role'],
             'user_status_display' => ['label' => 'Status'],
+            'user_mfa_display'   => ['label' => 'MFA'],
+            'user_last_login'    => ['label' => 'Last Sign In'],
+            'user_client_access' => ['label' => 'Client Access', 'weight' => 2, 'default' => false],
             'user_created_at'    => ['label' => 'Creation Date'],
         ],
 
@@ -845,6 +951,7 @@ function getClientPackSections() {
         'contacts'     => ['label' => 'Contacts',            'icon' => 'fa-users',          'module' => 'module_client',     'default' => true],
         'locations'    => ['label' => 'Locations',           'icon' => 'fa-map-marker-alt', 'module' => 'module_client',     'default' => true],
         'vendors'      => ['label' => 'Vendors',             'icon' => 'fa-building',       'module' => 'module_client',     'default' => true],
+        'services'     => ['label' => 'Services',            'icon' => 'fa-stream',         'module' => 'module_support',    'default' => true],
         'credentials'  => ['label' => 'Credentials',         'icon' => 'fa-key',            'module' => 'module_credential', 'default' => false],
         'assets'       => ['label' => 'Assets',              'icon' => 'fa-desktop',        'module' => 'module_support',    'default' => true],
         'software'     => ['label' => 'Software / Licenses', 'icon' => 'fa-cube',           'module' => 'module_support',    'default' => true],

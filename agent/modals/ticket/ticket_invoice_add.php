@@ -2,7 +2,15 @@
 
 require_once '../../../includes/modal_header.php';
 
-$ticket_id = intval($_GET['ticket_id']);
+enforceUserPermission('module_sales', 2);
+
+// The ticket, after the module and client checks - or the modal's error
+$ticket = ticketForModal($_GET['ticket_id'] ?? 0, 2);
+$ticket_id = intval($ticket['ticket_id']);
+if (!intval($ticket['ticket_client_id'])) {
+    echo json_encode(['error' => 'Move the ticket to a client before invoicing it.']);
+    exit;
+}
 
 $ticket_sql = mysqli_query(
     $mysqli,
@@ -39,6 +47,7 @@ $ticket_onsite = intval($row['ticket_onsite']);
 $ticket_created_at = escapeHtml($row['ticket_created_at']);
 $ticket_created_by = intval($row['ticket_created_by']);
 $ticket_date = date('Y-m-d g:i A', strtotime($ticket_created_at));
+$ticket_date_description = date('m/d/Y', strtotime($ticket_created_at));
 $ticket_first_response_at = escapeHtml($row['ticket_first_response_at']);
 if ($ticket_first_response_at) {
     $ticket_first_response_date_time = date('Y-m-d g:i A', strtotime($ticket_first_response_at));
@@ -94,7 +103,7 @@ ob_start();
 ?>
 
 <div class="modal-header bg-dark">
-    <h5 class="modal-title"><i class="fa fa-fw fa-file-invoice-dollar me-2"></i>Invoice ticket</h5>
+    <h5 class="modal-title"><i class="fa fa-fw fa-file-invoice-dollar me-2"></i>Invoice this ticket</h5>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
 </div>
 <form action="post.php" method="post" autocomplete="off">
@@ -181,18 +190,18 @@ ob_start();
                                     <option value="">- Select a Category -</option>
                                     <?php
 
-                                    $sql = mysqli_query($mysqli, "SELECT category_id, category_name FROM categories WHERE category_type = 'Income' AND category_archived_at IS NULL ORDER BY category_name ASC");
+                                    $sql = mysqli_query($mysqli, "SELECT category_id, category_name, category_color, category_icon FROM categories WHERE category_type = 'Income' AND category_archived_at IS NULL ORDER BY category_name ASC");
                                     while ($row = mysqli_fetch_assoc($sql)) {
                                         $category_id = intval($row['category_id']);
                                         $category_name = escapeHtml($row['category_name']);
                                         ?>
-                                        <option value="<?= $category_id ?>"><?= $category_name ?></option>
+                                        <option value="<?= $category_id ?>"<?= selectOptionColor($row['category_color'] ?? '', $row['category_icon'] ?? '') ?>><?= $category_name ?></option>
 
                                         <?php
                                     }
                                     ?>
                                 </select>
-                                    <button type="button" class="btn btn-secondary ajax-modal" data-modal-url="/admin/modals/category/category_add.php?category=Expense"><i class="fas fa-fw fa-plus"></i></button>
+                                    <button type="button" class="btn btn-secondary ajax-modal" title="New category" data-modal-url="/admin/modals/category/category_add.php?category=Expense"><i class="fas fa-fw fa-plus"></i></button>
                             </div>
                         </div>
                     </div>
@@ -227,33 +236,7 @@ ob_start();
             <div class="input-group">
                 <textarea class="form-control" rows="10" name="item_description"><?php
                     // Build description text cleanly in PHP, not mixed with HTML
-                    $description = "Ticket: {$ticket_prefix}{$ticket_number} - $ticket_subject\n";
-                    $description .= "Work Performed: Support (see ticket notes)\n";
-                    $description .= "\n";
-                    $description .= "Opened: {$ticket_date}\n";
-                    if ($ticket_first_response_date_time) {
-                        $description .= "Initial Response: {$ticket_first_response_date_time}\n";
-                    }
-                    if ($ticket_resolved_date) {
-                        $description .= "Resolved: {$ticket_resolved_date}\n";
-                    }
-                    $description .= "\n";
-                    if ($ticket_assigned_agent) {
-                        $description .= "Agent: {$ticket_assigned_agent}\n";
-                    }
-                    if ($location_id) {
-                        $description .= "Location: {$location_name}\n";
-                    }
-                    if ($contact_id) {
-                        $description .= "Contact: {$contact_name}\n";
-                    }
-                    if ($asset_id) {
-                        $description .= "Asset: {$asset_name}\n";
-                    }
-                    if ($ticket_total_reply_time) {
-                        $description .= "Time Spent: {$ticket_total_reply_time_display}";
-                    }
-
+                    $description = "Ticket {$ticket_prefix}{$ticket_number} - $ticket_subject - $ticket_date_description";
                     echo trim($description); // Trim any leading/trailing spaces/newlines
                 ?></textarea>
             </div>
@@ -269,7 +252,7 @@ ob_start();
                         <input type="text" class="form-control" inputmode="decimal" pattern="-?[0-9]*\.?[0-9]{0,2}" name="qty" value="<?= roundToNearest15Min($ticket_total_reply_time) ?>" required>
                     </div>
                     <small class="form-text text-muted">
-                        Based off Ticket time spent <strong><?= $ticket_total_reply_time ?></strong> in 15 Min Increments rounded up.
+                        From the <strong><?= $ticket_total_reply_time ?></strong> worked on the ticket, rounded to the nearest 15 minutes.
                     </small>
                 </div>
 
@@ -284,7 +267,7 @@ ob_start();
                         <input type="text" class="form-control" inputmode="decimal" pattern="-?[0-9]*\.?[0-9]{0,2}" name="price" value="<?= number_format($client_rate, 2, '.', '') ?>" required>
                     </div>
                     <small class="form-text text-muted">
-                        Based off Hourly Client rate of <strong><?= numfmt_format_currency($currency_format, $client_rate, $session_company_currency); ?></strong>
+                        The client's hourly rate is <strong><?= numfmt_format_currency($currency_format, $client_rate, $session_company_currency); ?></strong>
                     </small>
                 </div>
 

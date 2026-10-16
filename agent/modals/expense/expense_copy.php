@@ -104,12 +104,12 @@ ob_start();
                     <select class="form-select select2" name="vendor" required>
                         <?php
 
-                        $sql_vendors = mysqli_query($mysqli, "SELECT vendor_id, vendor_name FROM vendors WHERE vendor_client_id = 0 ORDER BY vendor_name ASC");
+                        $sql_vendors = mysqli_query($mysqli, "SELECT vendor_id, vendor_name, vendor_description FROM vendors WHERE vendor_client_id = 0 AND (vendor_archived_at IS NULL OR vendor_id = $expense_vendor_id) ORDER BY vendor_favorite DESC, vendor_name ASC");
                         while ($row = mysqli_fetch_assoc($sql_vendors)) {
                             $vendor_id_select = intval($row['vendor_id']);
                             $vendor_name_select = escapeHtml($row['vendor_name']);
                             ?>
-                            <option <?php if ($expense_vendor_id == $vendor_id_select) { ?> selected <?php } ?> value="<?= $vendor_id_select ?>"><?= $vendor_name_select ?></option>
+                            <option <?php if ($expense_vendor_id == $vendor_id_select) { ?> selected <?php } ?> value="<?= $vendor_id_select ?>"<?= selectOptionVendor($row['vendor_name'], $row['vendor_description']) ?>><?= $vendor_name_select ?></option>
                             <?php
                         }
 
@@ -142,12 +142,12 @@ ob_start();
                     <select class="form-select select2" name="category" required>
                         <?php
 
-                        $sql_categories = mysqli_query($mysqli, "SELECT category_id, category_name FROM categories WHERE category_type = 'Expense' ORDER BY category_name ASC");
+                        $sql_categories = mysqli_query($mysqli, "SELECT category_id, category_name, category_color, category_icon FROM categories WHERE category_type = 'Expense' ORDER BY category_name ASC");
                         while ($row = mysqli_fetch_assoc($sql_categories)) {
                             $category_id_select = intval($row['category_id']);
                             $category_name_select = escapeHtml($row['category_name']);
                             ?>
-                            <option <?php if ($expense_category_id == $category_id_select) { ?> selected <?php } ?> value="<?= $category_id_select ?>"><?= $category_name_select ?></option>
+                            <option <?php if ($expense_category_id == $category_id_select) { ?> selected <?php } ?> value="<?= $category_id_select ?>"<?= selectOptionColor($row['category_color'] ?? '', $row['category_icon'] ?? '') ?>><?= $category_name_select ?></option>
                             <?php
                         }
 
@@ -168,12 +168,12 @@ ob_start();
                             <option value="">- Select Client -</option>
                             <?php
 
-                            $sql_clients = mysqli_query($mysqli, "SELECT client_id, client_name FROM clients WHERE client_archived_at IS NULL " . clientScopeSql('clients.client_id') . " ORDER BY client_name ASC");
+                            $sql_clients = mysqli_query($mysqli, "SELECT client_id, client_name, client_abbreviation FROM clients WHERE client_archived_at IS NULL " . clientScopeSql('clients.client_id') . " ORDER BY client_name ASC");
                             while ($row = mysqli_fetch_assoc($sql_clients)) {
                                 $client_id_select = intval($row['client_id']);
                                 $client_name_select = escapeHtml($row['client_name']);
                                 ?>
-                                <option <?php if ($client_id == $client_id_select) { echo "selected"; } ?> value="<?= $client_id_select ?>"><?= $client_name_select ?></option>
+                                <option <?php if ($client_id == $client_id_select) { echo "selected"; } ?> value="<?= $client_id_select ?>"<?= selectOptionClient($row['client_id'], $row['client_name'], $row['client_abbreviation'] ?? '') ?>><?= $client_name_select ?></option>
 
                                 <?php
                             }

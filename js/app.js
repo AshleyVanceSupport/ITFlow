@@ -159,18 +159,11 @@ function itflowInit() {
         }, 5000);
     })();
 
-    // Enhance any select that is not enhanced yet. On a normal page load
-    // js/tom_select.js has already done the work and every element here is
-    // guarded, so this is a no-op; it earns its place on ajax modals, whose
-    // markup does not exist until includes/modal_footer.php re-executes this
-    // file. Scoped to `select.select2` deliberately - a bare '.select2' also
-    // matches the .ts-wrapper divs left by earlier enhancement, because Tom
-    // Select copies the source element's classes onto them. See
-    // js/tom_select.js.
-    itflowStep('tom-select', function () {
-        document.querySelectorAll('select.select2').forEach(function (el) {
-            initTomSelect(el);
-        });
+    // Any select2 field not picked up yet. js/itflow_select.js has normally
+    // done them all already and enhances new ones as they arrive, so this is
+    // a belt-and-braces pass that finds nothing to do.
+    itflowStep('select', function () {
+        itflowSelectAll(document);
     });
 
     // Initialize TinyMCE
@@ -205,14 +198,6 @@ function itflowInit() {
         plugins: 'link image lists table code codesample fullscreen autoresize',
         setup: function (editor) {
             editor.on('init', function() {
-                window.onbeforeunload = function() {
-                    // If editor is dirty AND not inside a visible modal → warn
-                    const inVisibleModal = editor.getContainer()?.closest('.modal.show');
-                    if (!inVisibleModal && editor.isDirty()) {
-                        return "You have unsaved changes. Are you sure you want to leave?";
-                    }
-                };
-
                 // When the modal closes, mark editor clean
                 const modal = editor.getContainer()?.closest('.modal');
                 if (modal) {
@@ -260,14 +245,6 @@ function itflowInit() {
         license_key: 'gpl',
         setup: function(editor) {
             editor.on('init', function() {
-                window.onbeforeunload = function() {
-                    // If editor is dirty AND not inside a visible modal → warn
-                    const inVisibleModal = editor.getContainer()?.closest('.modal.show');
-                    if (!inVisibleModal && editor.isDirty()) {
-                        return "You have unsaved changes. Are you sure you want to leave?";
-                    }
-                };
-
                 // When the modal closes, mark editor clean
                 const modal = editor.getContainer()?.closest('.modal');
                 if (modal) {
@@ -389,14 +366,6 @@ function itflowInit() {
         license_key: 'gpl',
         setup: function(editor) {
             editor.on('init', function() {
-                window.onbeforeunload = function() {
-                    // If editor is dirty AND not inside a visible modal → warn
-                    const inVisibleModal = editor.getContainer()?.closest('.modal.show');
-                    if (!inVisibleModal && editor.isDirty()) {
-                        return "You have unsaved changes. Are you sure you want to leave?";
-                    }
-                };
-
                 // When the modal closes, mark editor clean
                 const modal = editor.getContainer()?.closest('.modal');
                 if (modal) {
@@ -507,14 +476,6 @@ function itflowInit() {
         setup: function(editor) {
 
             editor.on('init', function() {
-                window.onbeforeunload = function() {
-                    // If editor is dirty AND not inside a visible modal → warn
-                    const inVisibleModal = editor.getContainer()?.closest('.modal.show');
-                    if (!inVisibleModal && editor.isDirty()) {
-                        return "You have unsaved changes. Are you sure you want to leave?";
-                    }
-                };
-
                 // When the modal closes, mark editor clean
                 const modal = editor.getContainer()?.closest('.modal');
                 if (modal) {
@@ -645,31 +606,52 @@ function itflowInit() {
         });
     });
 
-    // Bootstrap 4 needed _enforceFocus patched out so ClipboardJS could reach
-    // its textarea inside a modal - TinyMCE's popups needed it too, see
-    // itflowTinyMceFocus. Bootstrap 5 registers no jQuery plugin, so
-    // the old $.fn.modal line threw and killed everything below it. If copying
-    // from inside a modal ever misbehaves, ClipboardJS's `container` option is
-    // the lever, not a Bootstrap patch.
-
-    // Clipboard
+    // Copy buttons: any element with class="clipboardjs" and its text in
+    // data-clipboard-text, or the field to copy from in data-clipboard-target.
+    // That is ClipboardJS's markup contract, kept so none of the call sites
+    // change - the library itself is no longer used here. Beside a value they
+    // are the small .itflow-copy icon that shows when its row is pointed at
+    // (css/itflow_custom.css); beside an input, an input-group button.
+    //
+    // ClipboardJS copies by selecting a hidden textarea. Under Bootstrap 5 that
+    // textarea has to be inside the open modal or the focus trap pulls focus
+    // back out before the copy runs, so e5d1fe2 pinned ClipboardJS's `container`
+    // to the last .modal on the page. A container is fixed for the life of the
+    // instance, though, and the last .modal was usually the wrong one: a HIDDEN
+    // modal on any page that includes one up front (invoice, credentials, asset,
+    // contact), and a DETACHED one everywhere else once any ajax modal had been
+    // opened and closed - the notifications bell included. A hidden or detached
+    // textarea holds no selection, so nothing was copied, and since ClipboardJS
+    // reports success from the text rather than from the copy itself, all of
+    // those clicks still flashed "Copied!".
+    //
+    // So this resolves everything at click time. Bound once on document, as this
+    // file re-runs on every ajax modal open.
     itflowStep('clipboard', function () {
-        if (window.itflowClipboard) {
-            window.itflowClipboard.destroy();
-        }
+        itflowBindOnce('itflowCopy', 'click', '.clipboardjs', function (e) {
+            // Copy Guest URL (invoice, quote) is an <a href="#"> - without this
+            // every copy also jumped the page back to the top.
+            e.preventDefault();
 
-        var modals = document.querySelectorAll('.modal');
-        var clipboard = new ClipboardJS('.clipboardjs', {
-            container: modals.length ? modals[modals.length - 1] : document.body
-        });
-        window.itflowClipboard = clipboard;
+            const trigger = this;
+            const target = itflowCopyFeedbackTarget(trigger);
+            // data-clipboard-target="input[name=uri]" copies what is in that
+            // field now - in its own input group first - rather than the value
+            // the page was drawn with, so an edited field copies the edit
+            const source = trigger.getAttribute('data-clipboard-target');
+            const field = source ? ((trigger.closest('.input-group') || document).querySelector(source) || document.querySelector(source)) : null;
+            const text = field ? (field.value || '') : (trigger.getAttribute('data-clipboard-text') || '');
 
-        clipboard.on('success', function(e) {
-            flashTooltip(e.trigger, 'Copied!');
-        });
+            // An empty field would otherwise wipe whatever is on the clipboard
+            if (text === '') {
+                flashTooltip(target, 'Nothing to copy');
+                return;
+            }
 
-        clipboard.on('error', function(e) {
-            flashTooltip(e.trigger, 'Failed!');
+            itflowCopyText(text, trigger).then(
+                function () { flashTooltip(target, 'Copied!'); },
+                function () { flashTooltip(target, 'Failed!'); }
+            );
         });
     });
 
@@ -740,6 +722,40 @@ itflowBindOnce('itflowModalFocus', 'shown.bs.modal', '.modal', function () {
 });
 
 /**
+ * Warn before leaving the page with unsaved editor content.
+ *
+ * Each TinyMCE config used to assign window.onbeforeunload for its own editor.
+ * That is a single slot, so whichever editor initialised last owned it. Opening
+ * any ajax modal with an editor (Edit Ticket, Edit Reply) handed the slot to the
+ * modal's editor, and once that modal closed nothing guarded the page's own
+ * editor - a half-written ticket reply was lost on the next link click with no
+ * prompt. One listener now checks every live editor.
+ *
+ * Editors inside an open modal are skipped, as before: the modal is where that
+ * work gets submitted or discarded. Editors from a closed ajax modal are removed
+ * by js/ajax_modal.js, so tinymce.get() no longer returns them.
+ *
+ * Flagged on window because modal_footer.php re-loads this file on every ajax
+ * modal open.
+ */
+if (!window.itflowEditorUnloadGuard) {
+    window.itflowEditorUnloadGuard = true;
+    window.addEventListener('beforeunload', function (e) {
+        if (typeof tinymce === 'undefined') {
+            return;
+        }
+        const unsaved = tinymce.get().some(function (editor) {
+            const inVisibleModal = editor.getContainer()?.closest('.modal.show');
+            return !inVisibleModal && editor.isDirty();
+        });
+        if (unsaved) {
+            e.preventDefault();
+            e.returnValue = '';
+        }
+    });
+}
+
+/**
  * Let TinyMCE's popups take focus inside a modal.
  *
  * TinyMCE renders its "..." overflow drawer, menus, colour picker and dialogs
@@ -758,24 +774,21 @@ itflowBindOnce('itflowTinyMceFocus', 'focusin', '.tox-tinymce-aux', function (e)
     e.stopImmediatePropagation();
 });
 
-itflowBindOnce('itflowAllDay', 'change', '.event-all-day-toggle', function () {
-
-    const allDay = this.checked;
-    const timeFields = document.getElementById(this.id.replace(/_all_day$/, '_time_fields'));
-
-    if (!timeFields) {
+// A PIN or code shown as dots (.itflow-secret) - the eye beside it shows it, and again hides it
+itflowBindOnce('itflowSecret', 'click', '.itflow-secret-toggle', function (e) {
+    e.preventDefault();
+    const secret = this.closest('.itflow-secret');
+    if (!secret) {
         return;
     }
-
-    timeFields.classList.toggle('d-none', allDay);
-
-    timeFields.querySelectorAll('input').forEach(function (field) {
-        if (allDay) {
-            field.removeAttribute('required');
-        } else {
-            field.setAttribute('required', 'required');
-        }
-    });
+    const shown = secret.classList.toggle('is-shown');
+    const icon = this.querySelector('i');
+    if (icon) {
+        icon.classList.toggle('fa-eye', !shown);
+        icon.classList.toggle('fa-eye-slash', shown);
+    }
+    this.setAttribute('title', shown ? 'Hide' : 'Show');
+    this.setAttribute('aria-pressed', shown ? 'true' : 'false');
 });
 
 /*
@@ -863,12 +876,70 @@ function flashTooltip(button, message) {
     }, 1000);
 }
 
-/*
- * The Tom Select layer (initTomSelect / refreshTomSelect / clearTomSelect /
- * setTomSelectValue) lives in js/tom_select.js, which footer.php loads right
- * after the library so the enhancement happens before the page's heavy libs
- * are parsed. Those functions are global; this file only calls them.
+/**
+ * Copy text to the clipboard. Resolves once it is really there and rejects
+ * when it could not be written, so callers can flash "Copied!" or "Failed!"
+ * honestly.
+ *
+ * The async Clipboard API involves no selection and no focus, so no modal's
+ * focus trap can get in its way. Browsers only offer it in a secure context
+ * (HTTPS or localhost), so a plain-HTTP install falls back to a textarea and
+ * execCommand('copy') - placed inside the trigger's own modal, worked out now
+ * rather than in advance.
  */
+function itflowCopyText(text, trigger) {
+    if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text);
+    }
+    return itflowCopyTextLegacy(text, trigger)
+        ? Promise.resolve()
+        : Promise.reject(new Error('Copy failed'));
+}
+
+function itflowCopyTextLegacy(text, trigger) {
+    // The textarea has to be rendered and focusable to hold a selection - a
+    // hidden or detached one is exactly what broke - and inside the open modal,
+    // or Bootstrap's focus trap takes focus back before the copy runs.
+    const host = (trigger && trigger.closest('.modal')) || document.body;
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', ''); // no on-screen keyboard on touch devices
+    area.style.position = 'fixed';
+    area.style.top = '0';
+    area.style.left = '-9999px';
+    host.appendChild(area);
+    area.focus({ preventScroll: true });
+    area.select();
+    area.setSelectionRange(0, text.length); // iOS ignores select() alone
+
+    let copied = false;
+    try {
+        copied = document.execCommand('copy');
+    } catch (err) {
+        copied = false;
+    }
+    area.remove();
+
+    // Removing the focused textarea leaves focus on <body> - hand it back.
+    if (trigger && trigger.isConnected) {
+        trigger.focus({ preventScroll: true });
+    }
+    return copied;
+}
+
+/**
+ * Where to flash a copy button's "Copied!". Bootstrap closes a dropdown on the
+ * same click, so a dropdown item like Copy Guest URL is hidden by the time the
+ * tooltip is positioned - and a tooltip on a hidden element is drawn in the
+ * top-left corner of the window. Use the dropdown's wrapper instead, which on
+ * invoice and quote is shrink-wrapped around the toggle. Not the toggle itself:
+ * it already holds the Dropdown instance, and Bootstrap refuses a second
+ * instance on one element.
+ */
+function itflowCopyFeedbackTarget(trigger) {
+    const menu = trigger.closest('.dropdown-menu');
+    return (menu && menu.parentElement) || trigger;
+}
 
 /**
  * Show a Bootstrap toast from JavaScript.

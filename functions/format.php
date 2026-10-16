@@ -232,14 +232,14 @@ function formatAddress($address, $city, $state, $zip, $country = '', $separator 
  * doesn't. Takes the RAW user columns and escapes them itself.
  * Bootstrap 5.3 utilities and Font Awesome only - no custom CSS.
  */
-function formatAssignee($user_id, $user_name, $user_avatar, $highlight_unassigned = true) {
+function formatAssignee($user_id, $user_name, $user_avatar, $highlight_unassigned = true, $none_label = 'Unassigned') {
     $pill = "badge rounded-pill d-inline-flex align-items-center align-middle gap-1 p-1 pe-2";
     $user_id = intval($user_id);
 
     if (!$user_id) {
         $tone = $highlight_unassigned ? 'danger' : 'secondary';
         $colors = $highlight_unassigned ? 'text-danger-emphasis bg-danger-subtle' : 'text-body-secondary bg-body-secondary';
-        return "<span class='$pill $colors'><span class='position-relative d-inline-flex' aria-hidden='true'><i class='fas fa-circle fs-5 text-$tone'></i><i class='fas fa-user-slash position-absolute top-50 start-50 translate-middle small text-white'></i></span>Unassigned</span>";
+        return "<span class='$pill $colors'><span class='position-relative d-inline-flex' aria-hidden='true'><i class='fas fa-circle fs-5 text-$tone'></i><i class='fas fa-user-slash position-absolute top-50 start-50 translate-middle small text-white'></i></span>" . escapeHtml($none_label) . "</span>";
     }
 
     $user_avatar = escapeHtml($user_avatar);
@@ -330,6 +330,105 @@ function shortenClientName($client) {
     return strtoupper(substr($shortened, 0, 3));
 }
 
+/**
+ * Up to three letters for a client's initials tile - their abbreviation when
+ * they have one, otherwise one made from the name. Raw: escape at output.
+ */
+function clientInitials($abbreviation, $name) {
+    $source = trim((string) $abbreviation) ?: shortenClientName((string) $name);
+    return mb_strtoupper(mb_substr($source, 0, 3));
+}
+
+/** The colour of a client's initials tile, picked by id so it is the same on every page. */
+function clientInitialsTone($client_id) {
+    $tones = ['primary', 'success', 'info', 'warning', 'secondary'];
+    return $tones[intval($client_id) % count($tones)];
+}
+
+
+/*
+ * Option extras for the select picker (js/itflow_select.js): data-*
+ * attributes that put a picture, initials, a colour or an icon in front of
+ * an <option>, and an optional second line under it.
+ *
+ *     <option value="<?= $id ?>"<?= selectOptionClient($id, $name, $abbr) ?>><?= $name ?></option>
+ *
+ * Takes values raw or already escaped - they are decoded and escaped again
+ * here, so either way the attribute comes out right.
+ */
+function selectOptionData(array $data) {
+    $html = '';
+    foreach ($data as $name => $value) {
+        $value = html_entity_decode((string) $value, ENT_QUOTES, 'UTF-8');
+        if ($value !== '') {
+            $html .= ' data-' . $name . '="' . escapeHtml($value) . '"';
+        }
+    }
+    return $html;
+}
+
+/** Up to two initials for a person's name - "Marla Whitfield" is MW. */
+function personInitials($name) {
+    $words = preg_split('/\s+/u', trim(html_entity_decode((string) $name, ENT_QUOTES, 'UTF-8')), -1, PREG_SPLIT_NO_EMPTY);
+    $initials = '';
+    foreach (array_slice($words, 0, 2) as $word) {
+        $initials .= mb_strtoupper(mb_substr($word, 0, 1));
+    }
+    return $initials;
+}
+
+/** A client - its coloured initials tile, the same as the client list and side nav. */
+function selectOptionClient($client_id, $client_name, $client_abbreviation = '') {
+    return selectOptionData([
+        'initials' => clientInitials(html_entity_decode((string) $client_abbreviation, ENT_QUOTES, 'UTF-8'), html_entity_decode((string) $client_name, ENT_QUOTES, 'UTF-8')),
+        'tone' => clientInitialsTone($client_id)
+    ]);
+}
+
+/** An agent - their avatar, or their initials in a circle. */
+function selectOptionUser($user_id, $user_name, $user_avatar = '') {
+    $user_avatar = html_entity_decode((string) $user_avatar, ENT_QUOTES, 'UTF-8');
+    if ($user_avatar !== '') {
+        return selectOptionData(['image' => '/uploads/users/' . intval($user_id) . '/' . rawurlencode($user_avatar)]);
+    }
+    return selectOptionData(['initials' => personInitials($user_name), 'shape' => 'circle', 'tone' => 'secondary']);
+}
+
+/**
+ * A contact - their photo, or their initials on the same soft colour as their
+ * avatar everywhere else (contactAvatar() in functions/contact.php), with
+ * their title underneath. Without $contact_id the initials are grey.
+ */
+function selectOptionContact($client_id, $contact_name, $contact_photo = '', $contact_title = '', $contact_id = 0) {
+    $contact_photo = html_entity_decode((string) $contact_photo, ENT_QUOTES, 'UTF-8');
+    $data = $contact_photo !== ''
+        ? ['image' => '/uploads/clients/' . intval($client_id) . '/' . rawurlencode($contact_photo)]
+        : ['initials' => personInitials($contact_name), 'shape' => 'circle', 'tone' => intval($contact_id) ? contactAvatarTone($contact_id) : 'secondary', 'soft' => '1'];
+    $data['description'] = $contact_title;
+    return selectOptionData($data);
+}
+
+/** A tag, category or status - its colour, and its icon if it has one. */
+function selectOptionColor($color, $icon = '') {
+    // A hex value, or a CSS colour name - categories store names like "lightblue"
+    $color = preg_match('/^(#[0-9a-f]{3,8}|[a-z]{3,24})$/i', trim((string) $color)) ? trim($color) : '';
+    $icon = trim(preg_replace('/[^a-z0-9 -]/', '', strtolower((string) $icon)));
+    if ($icon !== '' && strpos($icon, 'fa-') === false) {
+        $icon = "fas fa-$icon";
+    }
+    return selectOptionData(['color' => $color, 'icon' => $icon]);
+}
+
+/** A ticket priority - the colour its badge has in the ticket lists. */
+function selectOptionPriority($priority) {
+    $colors = ['Urgent' => 'var(--bs-emphasis-color)', 'High' => 'var(--bs-danger)', 'Medium' => 'var(--bs-warning)', 'Low' => 'var(--bs-info)'];
+    return selectOptionData(['color' => $colors[html_entity_decode((string) $priority)] ?? '']);
+}
+
+/** An asset - the icon for its type, with make and model underneath. */
+function selectOptionAsset($asset_type, $description = '') {
+    return selectOptionData(['icon' => 'fas fa-' . getAssetIcon(html_entity_decode((string) $asset_type, ENT_QUOTES, 'UTF-8')), 'description' => $description]);
+}
 
 function roundUpToNearestMultiple($n, $increment = 1000) {
     return (int) ($increment * ceil($n / $increment));
@@ -361,8 +460,8 @@ function roundToNearest15Min($time) {
 
 
 function formatDuration($time) {
-    // expects "HH:MM:SS"
-    [$h, $m, $s] = array_map('intval', explode(':', $time));
+    // expects "HH:MM:SS" - nothing logged (NULL, '') is 0s
+    [$h, $m, $s] = array_map('intval', array_pad(explode(':', (string) $time), 3, 0));
 
     $parts = [];
 

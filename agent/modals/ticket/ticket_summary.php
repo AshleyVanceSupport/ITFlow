@@ -2,14 +2,15 @@
 
 require_once '../../../includes/modal_header.php';
 
-$ticket_id = intval($_GET['ticket_id']);
+$ticket = ticketForModal($_GET['ticket_id'] ?? 0, 1);
+$ticket_id = intval($ticket['ticket_id']);
 
 ob_start();
 
 ?>
 
 <div class="modal-header bg-dark">
-    <h5 class="modal-title" id="summaryModalTitle">Ticket Summary</h5>
+    <h5 class="modal-title" id="summaryModalTitle"><i class="fas fa-fw fa-magic me-2"></i>AI summary</h5>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
 </div>
 <div class="modal-body">

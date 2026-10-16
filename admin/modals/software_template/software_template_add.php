@@ -2,15 +2,8 @@
 
 require_once '../../includes/modal_header.php';
 
-$license_types_array = array (
-    'Device',
-    'User',
-    'Site',
-    'Concurrent',
-    'Trial',
-    'Perpetual',
-    'Usage-based'
-);
+// The license types the license form offers (functions/software.php)
+$license_types_array = array_keys(SOFTWARE_LICENSE_TYPES);
 
 ob_start();
 
@@ -57,7 +50,7 @@ ob_start();
                     <option value="">- Select Type -</option>
                     <<?php
                     $sql_software_types_select = mysqli_query($mysqli, "
-                        SELECT category_name FROM categories
+                        SELECT category_name, category_color, category_icon FROM categories
                         WHERE category_type = 'software_type'
                         AND category_archived_at IS NULL
                         ORDER BY category_order ASC, category_name ASC
@@ -65,7 +58,7 @@ ob_start();
                     while ($row = mysqli_fetch_assoc($sql_software_types_select)) {
                         $software_type_select = escapeHtml($row['category_name']);
                         ?>
-                        <option><?= $software_type_select ?></option>
+                        <option<?= selectOptionColor($row['category_color'] ?? '', $row['category_icon'] ?? '') ?>><?= $software_type_select ?></option>
                     <?php } ?>
                 </select>
             </div>
@@ -78,7 +71,7 @@ ob_start();
                 <select class="form-select select2" name="license_type">
                     <option value="">- Select a License Type -</option>
                     <?php foreach($license_types_array as $license_type) { ?>
-                        <option><?= $license_type ?></option>
+                        <option<?= selectOptionData(['icon' => 'fas ' . softwareLicenseTypeIcon($license_type)]) ?>><?= escapeHtml($license_type) ?></option>
                     <?php } ?>
                 </select>
             </div>

@@ -80,34 +80,17 @@ if (isset($_POST['add_client'])) {
         }
     }
 
-    // Create domain and SSL certificate
-    if (!empty($website) && filter_var($website, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) {
-        $expire = getDomainExpirationDate($website);
-        $records = getDnsRecords($website);
-        $a = escapeSql($records['a']);
-        $ns = escapeSql($records['ns']);
-        $mx = escapeSql($records['mx']);
-        $whois = escapeSql($records['whois']);
-
-        try {
-            mysqli_query($mysqli, "INSERT INTO domains SET domain_name = '$website', domain_registrar = 0, domain_webhost = 0, domain_expire = '$expire', domain_ip = '$a', domain_name_servers = '$ns', domain_mail_servers = '$mx', domain_raw_whois = '$whois', domain_client_id = $client_id");
-            $extended_log_description .= ", domain $website added";
-        } catch (Exception $e) {
-            $extended_log_description .= ", domain not added";
-            logApp("Client", "warning", "Failed to add domain $website during client creation");
-        }
-
+    // Create domain and SSL certificate - the website's domain, tidied, looked up
+    // like any other; one whose lookup finds nothing is still added, without records
+    $website_domain = domainNormalizeName($website);
+    if ($website_domain !== '') {
+        $website_domain_sql = escapeSql($website_domain);
+        mysqli_query($mysqli, "INSERT INTO domains SET domain_name = '$website_domain_sql', domain_description = 'Website', domain_client_id = $client_id");
         $domain_id = mysqli_insert_id($mysqli);
-        $certificate = getSslCertificate($website);
+        $extended_log_description .= ", domain $website_domain_sql added";
 
-        if ($certificate['success'] == "TRUE") {
-            $expire = escapeSql($certificate['expire']);
-            $issued_by = escapeSql($certificate['issued_by']);
-            $public_key = escapeSql($certificate['public_key']);
-
-            mysqli_query($mysqli, "INSERT INTO certificates SET certificate_name = '$website', certificate_domain = '$website', certificate_issued_by = '$issued_by', certificate_expire = '$expire', certificate_public_key = '$public_key', certificate_domain_id = $domain_id, certificate_client_id = $client_id");
-
-            $extended_log_description .= ", SSL certificate $website added";
+        if (domainApplyLookup($domain_id, domainLookup($website_domain)) && domainAddCertificate($domain_id, $website_domain, $client_id)) {
+            $extended_log_description .= ", SSL certificate $website_domain_sql added";
         }
     }
 
@@ -124,7 +107,7 @@ if (isset($_POST['add_client'])) {
 
     logAudit("Client", "Create", "$session_name created client $name$extended_log_description", $client_id, $client_id);
 
-    flashAlert("Client <strong>$name</strong> created");
+    flashAlert("Client <strong>" . stripslashes($name) . "</strong> created");
 
     redirect();
 
@@ -200,7 +183,7 @@ if (isset($_POST['edit_client'])) {
 
     logAudit("Client", "Edit", "$session_name edited client $name", $client_id, $client_id);
 
-    flashAlert("Client <strong>$name</strong> updated");
+    flashAlert("Client <strong>" . stripslashes($name) . "</strong> updated");
 
     redirect();
 
@@ -232,7 +215,7 @@ if (isset($_GET['archive_client'])) {
 
     logAudit("Client", "Archive", "$session_name archived client $client_name", $client_id, $client_id);
 
-    flashAlert("Client <strong>$client_name</strong> archived", 'error');
+    flashAlert("Client <strong>" . stripslashes($client_name) . "</strong> archived", 'error');
 
     redirect();
 
@@ -255,7 +238,7 @@ if (isset($_GET['restore_client'])) {
 
     logAudit("Client", "Restored", "$session_name restored client $client_name", $client_id);
 
-    flashAlert("Client <strong>$client_name</strong> restored");
+    flashAlert("Client <strong>" . stripslashes($client_name) . "</strong> restored");
 
     redirect();
 
@@ -285,9 +268,16 @@ if (isset($_GET['delete_client'])) {
     // Delete Assets
     mysqli_query($mysqli, "DELETE FROM assets WHERE asset_client_id = $client_id");
 
+    // Delete Racks (their items go with them)
+    mysqli_query($mysqli, "DELETE FROM racks WHERE rack_client_id = $client_id");
+
+    // Delete Projects - their tickets are the client's, and go below
+    mysqli_query($mysqli, "DELETE FROM projects WHERE project_client_id = $client_id");
+
     // Delete Domains and associated records
     mysqli_query($mysqli, "DELETE FROM domains WHERE domain_client_id = $client_id");
 
+    mysqli_query($mysqli, "DELETE calendar_event_attendees FROM calendar_event_attendees JOIN calendar_events ON event_id = attendee_event_id WHERE event_client_id = $client_id");
     mysqli_query($mysqli, "DELETE FROM calendar_events WHERE event_client_id = $client_id");
     mysqli_query($mysqli, "DELETE FROM files WHERE file_client_id = $client_id");
     mysqli_query($mysqli, "DELETE FROM folders WHERE folder_client_id = $client_id");
@@ -361,7 +351,7 @@ if (isset($_GET['delete_client'])) {
 
     logAudit("Client", "Deleted", "$session_name deleted Client $client_name and all associated data");
 
-    flashAlert("Client <strong>$client_name</strong> deleted along with all associated data", 'error');
+    flashAlert("Client <strong>" . stripslashes($client_name) . "</strong> deleted, with everything that was theirs", 'error');
 
     redirect('clients.php');
 
@@ -805,7 +795,10 @@ if (isset($_POST['bulk_add_client_ticket'])) {
             //Generate a unique URL key for clients to access
             $url_key = randomString(32);
 
-            mysqli_query($mysqli, "INSERT INTO tickets SET ticket_prefix = '$config_ticket_prefix', ticket_number = $ticket_number, ticket_category = $category_id, ticket_subject = '$subject', ticket_details = '$details', ticket_priority = '$priority', ticket_billable = $billable, ticket_status = $ticket_status, ticket_created_by = $session_user_id, ticket_assigned_to = $assigned_to, ticket_url_key = '$url_key', ticket_client_id = $client_id, ticket_project_id = $project_id");
+            // Only a project of this client's, or an internal one
+            $ticket_project_id = ticketClientOwnedId('project', $project_id, $client_id);
+
+            mysqli_query($mysqli, "INSERT INTO tickets SET ticket_prefix = '$config_ticket_prefix', ticket_number = $ticket_number, ticket_category = $category_id, ticket_subject = '$subject', ticket_details = '$details', ticket_priority = '$priority', ticket_billable = $billable, ticket_status = $ticket_status, ticket_created_by = $session_user_id, ticket_assigned_to = $assigned_to, ticket_url_key = '$url_key', ticket_client_id = $client_id, ticket_project_id = $ticket_project_id");
 
             $ticket_id = mysqli_insert_id($mysqli);
             applyTicketSla($ticket_id);
@@ -877,9 +870,9 @@ if (isset($_POST['bulk_edit_client_industry'])) {
 
         }
 
-        logAudit("Client", "Bulk Edit", "$session_name set the department $industry for $count client(s)", $client_id);
+        logAudit("Client", "Bulk Edit", "$session_name set the industry $industry for $count client(s)", $client_id);
 
-        flashAlert("Set the Industry to <strong>$industry</strong> for <strong>$count</strong> clients");
+        flashAlert("Industry set to <strong>" . stripslashes($industry) . "</strong> on <strong>$count</strong> client" . ($count === 1 ? '' : 's'));
     }
 
     redirect();
@@ -918,7 +911,7 @@ if (isset($_POST['bulk_edit_client_referral'])) {
 
         logAudit("Client", "Bulk Edit", "$session_name set the referral $referral for $count client(s)", $client_id);
 
-        flashAlert("Set the Referral to <strong>$referral</strong> for <strong>$count</strong> clients");
+        flashAlert("Referral set to <strong>" . stripslashes($referral) . "</strong> on <strong>$count</strong> client" . ($count === 1 ? '' : 's'));
     }
 
     redirect();
@@ -997,56 +990,6 @@ if (isset($_POST['bulk_edit_client_net_terms'])) {
         logAudit("Client", "Bulk Edit", "$session_name set the net terms to $net_terms days for $count client(s)", $client_id);
 
         flashAlert("Set Net Term to <strong>$net_terms days</strong> for <strong>$count</strong> client(s)");
-    }
-
-    redirect();
-
-}
-
-if (isset($_POST['bulk_assign_client_tags'])) {
-
-    validateCSRFToken();
-
-    enforceUserPermission('module_client', 2);
-
-    if (isset($_POST['client_ids'])) {
-
-        // Check every selected client before changing any of them
-        foreach ($_POST['client_ids'] as $client_id) {
-            enforceClientAccess(intval($client_id));
-        }
-
-        $count = count($_POST['client_ids']);
-
-        foreach($_POST['client_ids'] as $client_id) {
-            $client_id = intval($client_id);
-
-            $sql = mysqli_query($mysqli,"SELECT client_name FROM clients WHERE client_id = $client_id");
-            $row = mysqli_fetch_assoc($sql);
-            $client_name = escapeSql($row['client_name']);
-
-            if ($_POST['bulk_remove_tags']) {
-                mysqli_query($mysqli, "DELETE FROM client_tags WHERE client_id = $client_id");
-            }
-
-            if (isset($_POST['bulk_tags'])) {
-                foreach($_POST['bulk_tags'] as $tag) {
-                    $tag = intval($tag);
-
-                    $sql = mysqli_query($mysqli,"SELECT 1 FROM client_tags WHERE client_id = $client_id AND tag_id = $tag");
-                    if (mysqli_num_rows($sql) == 0) {
-                        mysqli_query($mysqli, "INSERT INTO client_tags SET client_id = $client_id, tag_id = $tag");
-                    }
-                }
-            }
-
-            logAudit("Client", "Edit", "$session_name added tags to $client_name", $client_id, $client_id);
-
-        }
-
-        logAudit("Client", "Bulk Edit", "$session_name added tags for $count clients", $client_id);
-
-        flashAlert("Assigned tags for <strong>$count</strong> clients");
     }
 
     redirect();
@@ -1280,6 +1223,17 @@ if (isset($_POST["export_client_pdf"])) {
     $sql_contacts = $pack['contacts'] ? mysqli_query($mysqli, "SELECT * FROM contacts WHERE contact_client_id = $client_id AND contact_archived_at IS NULL ORDER BY contact_name ASC") : false;
     $sql_locations = $pack['locations'] ? mysqli_query($mysqli, "SELECT * FROM locations WHERE location_client_id = $client_id AND location_archived_at IS NULL ORDER BY location_name ASC") : false;
     $sql_vendors = $pack['vendors'] ? mysqli_query($mysqli, "SELECT * FROM vendors WHERE vendor_client_id = $client_id AND vendor_archived_at IS NULL ORDER BY vendor_name ASC") : false;
+    // Services, most important first, with what each runs on and who supports it
+    $pack_services = [];
+    if ($pack['services']) {
+        $sql = mysqli_query($mysqli, "SELECT * FROM services WHERE service_client_id = $client_id AND service_archived_at IS NULL
+            ORDER BY FIELD(service_importance, 'High', 'Medium', 'Low'), service_name ASC");
+        while ($row = mysqli_fetch_assoc($sql)) {
+            $row['runs_on'] = implode(', ', array_column(array_filter(serviceLinked($row['service_id'], 'asset'), function ($a) { return !$a['archived_at']; }), 'name'));
+            $row['supported_by'] = implode(', ', array_column(array_filter(serviceLinked($row['service_id'], 'vendor'), function ($v) { return !$v['archived_at']; }), 'name'));
+            $pack_services[] = $row;
+        }
+    }
     $sql_credentials = $pack['credentials'] ? mysqli_query($mysqli, "SELECT * FROM credentials WHERE credential_client_id = $client_id ORDER BY credential_name ASC") : false;
     $sql_assets = $pack['assets'] ? mysqli_query($mysqli, "SELECT 1 FROM assets
         LEFT JOIN contacts ON asset_contact_id = contact_id
@@ -1571,6 +1525,46 @@ if (isset($_POST["export_client_pdf"])) {
               <td>$vendor_phone</td>
               <td>$vendor_website</td>
               <td>$vendor_account_number</td>
+            </tr>";
+        }
+        $html .= "
+          </tbody>
+        </table>";
+    }
+
+    // Services Section
+    if ($pack['services'] == 1 && $pack_services) {
+        $pdf->Bookmark("Services", 0, 0, "", "B", array(0,0,0));
+        $html .= "
+        <h2 class='section-title'>Services</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Service</th>
+              <th>Importance</th>
+              <th>Runs On</th>
+              <th>Vendors</th>
+              <th>Backup and Recovery</th>
+              <th>Next Review</th>
+            </tr>
+          </thead>
+          <tbody>";
+        foreach ($pack_services as $row) {
+            $service_name = escapeHtml($row['service_name']);
+            $service_detail = escapeHtml(implode(' - ', array_filter([$row['service_category'], $row['service_description']])));
+            $service_importance = escapeHtml($row['service_importance']);
+            $service_runs_on = escapeHtml($row['runs_on']);
+            $service_vendors = escapeHtml($row['supported_by']);
+            $service_backup = nl2br(escapeHtml($row['service_backup']));
+            $service_review = escapeHtml((string) $row['service_review_due']);
+            $html .= "
+            <tr style='page-break-inside: avoid;'>
+              <td><strong>$service_name</strong><br>$service_detail</td>
+              <td>$service_importance</td>
+              <td>$service_runs_on</td>
+              <td>$service_vendors</td>
+              <td>$service_backup</td>
+              <td>$service_review</td>
             </tr>";
         }
         $html .= "
@@ -2024,9 +2018,10 @@ if (isset($_POST["export_client_pdf"])) {
           <thead>
             <tr>
               <th>Certificate Name</th>
-              <th>Domain Name</th>
+              <th>Host</th>
               <th>Issuer</th>
               <th>Expiration Date</th>
+              <th>Last Check</th>
             </tr>
           </thead>
           <tbody>";
@@ -2035,12 +2030,14 @@ if (isset($_POST["export_client_pdf"])) {
             $certificate_domain = escapeHtml($row["certificate_domain"]);
             $certificate_issued_by = escapeHtml($row["certificate_issued_by"]);
             $certificate_expire = escapeHtml($row["certificate_expire"]);
+            $certificate_check = escapeHtml(CERTIFICATE_CHECK_STATES[$row["certificate_check_status"] ?? '']['label'] ?? '');
             $html .= "
             <tr style='page-break-inside: avoid;'>
               <td>$certificate_name</td>
               <td>$certificate_domain</td>
               <td>$certificate_issued_by</td>
               <td>$certificate_expire</td>
+              <td>$certificate_check</td>
             </tr>";
         }
         $html .= "

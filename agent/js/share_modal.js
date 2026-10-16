@@ -12,12 +12,6 @@ function populateShareModal(client_id, item_type, item_ref_id) {
     // Show form and generate button
     document.getElementById("div_share_link_form").hidden = false;
     document.getElementById("div_share_link_generate").hidden = false;
-
-    initTomSelect(document.getElementById('share_email'), {
-        create: true,
-        placeholder: 'Select or type a value',
-        allowEmptyOption: true
-    });
 }
 
 function generateShareLink() {
@@ -49,8 +43,14 @@ function generateShareLink() {
                 document.getElementById("div_share_link_output").hidden = false;
                 document.getElementById("share_link").value = response;
 
-                // Copy link to clipboard
-                navigator.clipboard.writeText(response);
+                // Copy it straight away - itflowCopyText (js/app.js) also works
+                // on a plain-HTTP install, where navigator.clipboard is missing
+                // and this used to throw
+                const copyButton = document.getElementById("share_link_copy");
+                itflowCopyText(response, copyButton).then(
+                    function () { flashTooltip(copyButton, 'Copied!'); },
+                    function () {}
+                );
             }
         );
     }

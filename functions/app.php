@@ -744,59 +744,55 @@ function getTicketCalendarUid($ticket_id) {
     return "ticket-$ticket_id@$host";
 }
 
+/*
+ * The calendar file sent with a ticket's "scheduled" email - the visit, an hour
+ * long, in the instance timezone - for the recipient to add to their calendar.
+ * Published rather than sent as a meeting request: the support mailbox is not
+ * an organiser people should be accepting invitations from, and an "Accepted:"
+ * reply would arrive there as a new ticket. Rescheduling sends it again with the
+ * same UID and a higher SEQUENCE, which moves the one already added.
+ */
 function createiCalStr($datetime, $title, $description, $location, $uid = null) {
-    require_once "../libs/zapcal/zapcallib.php";
-
-    // Create the iCal object
-    $cal_event = new ZCiCal();
-    $event = new ZCiCalNode("VEVENT", $cal_event->curnode);
-
-
-    // Set the method to REQUEST to indicate an invite
-    $event->addNode(new ZCiCalDataNode("METHOD:REQUEST"));
-    $event->addNode(new ZCiCalDataNode("SUMMARY:" . $title));
-    $event->addNode(new ZCiCalDataNode("DTSTART:" . ZCiCal::fromSqlDateTime($datetime)));
-    // Assuming the end time is the same as start time.
-    // Todo: adjust this for actual duration
-    $event->addNode(new ZCiCalDataNode("DTEND:" . ZCiCal::fromSqlDateTime($datetime)));
-    $event->addNode(new ZCiCalDataNode("DTSTAMP:" . ZCiCal::fromSqlDateTime()));
+    global $config_timezone;
     if (empty($uid)) {
         $uid = date('Y-m-d-H-i-s') . "@" . ($_SERVER['SERVER_NAME'] ?? 'itflow');
     }
-    $event->addNode(new ZCiCalDataNode("UID:" . $uid));
-    $event->addNode(new ZCiCalDataNode("SEQUENCE:0"));
-    $event->addNode(new ZCiCalDataNode("LOCATION:" . $location));
-    $event->addNode(new ZCiCalDataNode("DESCRIPTION:" . $description));
-    // Todo: add organizer details
-    // $event->addNode(new ZCiCalDataNode("ORGANIZER;CN=Organizer Name:MAILTO:organizer@example.com"));
-
-    // Return the iCal string
-    return $cal_event->export();
+    return icsCalendar(['method' => 'PUBLISH', 'invite' => true], [[
+        'uid' => $uid,
+        'start' => $datetime,
+        'end' => date('Y-m-d H:i:s', strtotime($datetime) + CALENDAR_TICKET_MINUTES * 60),
+        'summary' => $title,
+        'description' => $description,
+        'location' => $location,
+        'stamp' => date('Y-m-d H:i:s'),
+        'sequence' => icsSequenceNow(),
+        'status' => 'CONFIRMED',
+    ]], $config_timezone);
 }
 
+/*
+ * Its cancellation. There is no stored copy of the original to reopen - the
+ * match is made by UID - and the SEQUENCE must outrank the one it was sent with.
+ */
 function createiCalStrCancel($datetime, $title, $uid) {
-    require_once "../libs/zapcal/zapcallib.php";
+    global $config_timezone;
+    return icsCalendar(['method' => 'CANCEL', 'invite' => true], [[
+        'uid' => $uid,
+        'start' => $datetime ?: date('Y-m-d H:i:s'),
+        'end' => date('Y-m-d H:i:s', strtotime($datetime ?: 'now') + CALENDAR_TICKET_MINUTES * 60),
+        'summary' => $title,
+        'stamp' => date('Y-m-d H:i:s'),
+        'sequence' => icsSequenceNow(),
+        'status' => 'CANCELLED',
+    ]], $config_timezone);
+}
 
-    // Build the cancellation fresh. There is no stored copy of the original
-    // invite to reopen - the match is made by UID, not by the body.
-    $cal_event = new ZCiCal();
-
-    // METHOD belongs on the VCALENDAR, not on the VEVENT
-    $cal_event->tree->data['METHOD'] = new ZCiCalDataNode("METHOD:CANCEL");
-
-    $event = new ZCiCalNode("VEVENT", $cal_event->curnode);
-    $event->addNode(new ZCiCalDataNode("UID:" . $uid));
-    $event->addNode(new ZCiCalDataNode("SUMMARY:" . $title));
-    if (!empty($datetime)) {
-        $event->addNode(new ZCiCalDataNode("DTSTART:" . ZCiCal::fromSqlDateTime($datetime)));
-        $event->addNode(new ZCiCalDataNode("DTEND:" . ZCiCal::fromSqlDateTime($datetime)));
-    }
-    $event->addNode(new ZCiCalDataNode("DTSTAMP:" . ZCiCal::fromSqlDateTime()));
-    // Must outrank the invite's SEQUENCE:0 or clients ignore the cancellation
-    $event->addNode(new ZCiCalDataNode("SEQUENCE:1"));
-    $event->addNode(new ZCiCalDataNode("STATUS:CANCELLED"));
-
-    return $cal_event->export();
+/*
+ * A SEQUENCE that only goes up: minutes since 2020. For what has nowhere to
+ * keep a counter - a ticket's schedule - each resend outranks the last.
+ */
+function icsSequenceNow() {
+    return intdiv(time() - 1577836800, 60);
 }
 
 /*
@@ -913,4 +909,47 @@ function getProductsForAutocomplete($mysqli): string
     }
 
     return json_encode($products) ?: '[]';
+}
+
+/*
+ * Agent user limit
+ *
+ * Optional cap on the number of active agent users, set in config.php:
+ *     $config_agent_user_limit = 5;
+ * Unset or 0 means unlimited, which is the default for every self-hosted install.
+ * It lives in config.php rather than the settings table on purpose: on a hosted
+ * instance the provider controls config.php and the customer's admins do not, so
+ * nobody inside the app can raise their own limit.
+ *
+ * An active agent is user_type 1, enabled and not archived. Disabled and archived
+ * users do not use a seat.
+ */
+function getAgentUserLimit(): int
+{
+    global $config_agent_user_limit;
+
+    return max(0, intval($config_agent_user_limit ?? 0));
+}
+
+function getActiveAgentUserCount(): int
+{
+    global $mysqli;
+
+    $row = mysqli_fetch_row(mysqli_query($mysqli, "SELECT COUNT(user_id) FROM users WHERE user_type = 1 AND user_status = 1 AND user_archived_at IS NULL"));
+
+    return intval($row[0]);
+}
+
+function agentUserLimitReached(): bool
+{
+    $limit = getAgentUserLimit();
+
+    return $limit > 0 && getActiveAgentUserCount() >= $limit;
+}
+
+function agentUserLimitMessage(): string
+{
+    $limit = getAgentUserLimit();
+
+    return "Agent user limit reached - this installation allows <strong>$limit</strong> active agent " . ($limit == 1 ? "user" : "users") . ". Archive or disable a user first, or contact your provider to add more.";
 }

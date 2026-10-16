@@ -14,17 +14,20 @@ if (isset($_POST['add_contact'])) {
 
     require_once 'contact_model.php';
 
-    $client_id = intval($_POST['client_id']);
+    $client_id = intval($_POST['client_id'] ?? 0);
 
     enforceClientAccess($client_id);
+
+    // Only one of the client's own locations
+    $location_id = assetClientOwnedId('location', $location_id, $client_id);
 
     // Create User Account
     $user_id = 0;
     if ($name && $email && $auth_method) {
 
         // Set password
-        if (!empty($_POST['contact_password'])) {
-            $password_hash = password_hash(trim($_POST['contact_password']), PASSWORD_DEFAULT);
+        if ($contact_password !== '') {
+            $password_hash = password_hash($contact_password, PASSWORD_DEFAULT);
         } else {
             // Set a random password
             $password_hash = password_hash(randomString(), PASSWORD_DEFAULT);
@@ -54,14 +57,14 @@ if (isset($_POST['add_contact'])) {
     }
 
     // Check for and process image/photo
-    if (isset($_FILES['file']['tmp_name'])) {
+    if (!empty($_FILES['file']['tmp_name'])) {
         if ($new_file_name = checkFileUpload($_FILES['file'], array('jpg', 'jpeg', 'gif', 'png', 'webp'))) {
 
             $file_tmp_path = $_FILES['file']['tmp_name'];
 
             // directory in which the uploaded file will be moved
             if (!file_exists("../uploads/clients/$client_id")) {
-                mkdir("../uploads/clients/$client_id");
+                mkdir("../uploads/clients/$client_id", 0755, true);
             }
             $upload_file_dir = "../uploads/clients/$client_id/";
             $dest_path = $upload_file_dir . $new_file_name;
@@ -76,7 +79,7 @@ if (isset($_POST['add_contact'])) {
 
     triggerCustomAction('contact_create', $contact_id);
 
-    flashAlert("Contact <strong>$name</strong> created");
+    flashAlert("Contact <strong>" . stripslashes($name) . "</strong> created");
 
     redirect();
 
@@ -96,31 +99,41 @@ if (isset($_POST['edit_contact'])) {
     // Get Contact Info
     $sql = mysqli_query($mysqli,"SELECT contact_photo, contact_user_id, contact_client_id FROM contacts WHERE contact_id = $contact_id");
     $row = mysqli_fetch_assoc($sql);
-    $existing_file_name = escapeSql($row['contact_photo']);
+    if (!$row) {
+        flashAlert("That contact no longer exists", 'error');
+        redirect();
+    }
+    $existing_file_name = basename((string) $row['contact_photo']);
     $contact_user_id = intval($row['contact_user_id']);
     $client_id = intval($row['contact_client_id']);
 
     enforceClientAccess();
 
+    // Only one of the client's own locations
+    $location_id = assetClientOwnedId('location', $location_id, $client_id);
+
     if (!file_exists("../uploads/clients/$client_id")) {
-        mkdir("../uploads/clients/$client_id");
+        mkdir("../uploads/clients/$client_id", 0755, true);
     }
 
-    // Update Existing User
+    // Update Existing User - their portal access only when the form had it
     if ($contact_user_id > 0) {
-        mysqli_query($mysqli, "UPDATE users SET user_name = '$name', user_email = '$email', user_auth_method = '$auth_method' WHERE user_id = $contact_user_id");
+        mysqli_query($mysqli, "UPDATE users SET user_name = '$name', user_email = '$email' WHERE user_id = $contact_user_id");
+        if ($auth_method_posted) {
+            mysqli_query($mysqli, "UPDATE users SET user_auth_method = '$auth_method' WHERE user_id = $contact_user_id");
+        }
 
         // Set password
-        if ($_POST['contact_password']) {
-            $password_hash = password_hash(trim($_POST['contact_password']), PASSWORD_DEFAULT);
+        if ($contact_password !== '') {
+            $password_hash = password_hash($contact_password, PASSWORD_DEFAULT);
             mysqli_query($mysqli, "UPDATE users SET user_password = '$password_hash' WHERE user_id = $contact_user_id");
         }
     // Create New User
     } elseif ($contact_user_id == 0 && $name && $email && $auth_method) {
 
         // Set password
-        if ($_POST['contact_password']) {
-            $password_hash = password_hash(trim($_POST['contact_password']), PASSWORD_DEFAULT);
+        if ($contact_password !== '') {
+            $password_hash = password_hash($contact_password, PASSWORD_DEFAULT);
         } else {
             // Set a random password
             $password_hash = password_hash(randomString(), PASSWORD_DEFAULT);
@@ -134,8 +147,9 @@ if (isset($_POST['edit_contact'])) {
 
     mysqli_query($mysqli,"UPDATE contacts SET contact_name = '$name', contact_title = '$title', contact_phone_country_code = '$phone_country_code', contact_phone = '$phone', contact_extension = '$extension', contact_mobile_country_code = '$mobile_country_code', contact_mobile = '$mobile', contact_email = '$email', contact_pin = '$pin', contact_notes = '$notes', contact_important = $contact_important, contact_billing = $contact_billing, contact_technical = $contact_technical, contact_department = '$department', contact_location_id = $location_id, contact_user_id = $contact_user_id WHERE contact_id = $contact_id");
 
-    // Upload Photo
-    if (isset($_FILES['file']['tmp_name'])) {
+    // Upload Photo - replacing the old one, if there was one
+    $old_photo_path = $existing_file_name !== '' ? "../uploads/clients/$client_id/$existing_file_name" : '';
+    if (!empty($_FILES['file']['tmp_name'])) {
         if ($new_file_name = checkFileUpload($_FILES['file'], array('jpg', 'jpeg', 'gif', 'png', 'webp'))) {
 
             // Set directory in which the uploaded file will be moved
@@ -145,12 +159,19 @@ if (isset($_POST['edit_contact'])) {
 
             move_uploaded_file($file_tmp_path, $dest_path);
 
-            //Delete old file
-            unlink("../uploads/clients/$client_id/$existing_file_name");
+            // Delete old file
+            if ($old_photo_path && is_file($old_photo_path)) {
+                unlink($old_photo_path);
+            }
 
             mysqli_query($mysqli,"UPDATE contacts SET contact_photo = '$new_file_name' WHERE contact_id = $contact_id");
 
         }
+    } elseif (!empty($_POST['remove_photo'])) {
+        if ($old_photo_path && is_file($old_photo_path)) {
+            unlink($old_photo_path);
+        }
+        mysqli_query($mysqli,"UPDATE contacts SET contact_photo = NULL WHERE contact_id = $contact_id");
     }
 
     // Tags
@@ -191,10 +212,10 @@ if (isset($_POST['edit_contact'])) {
 
         if ($auth_method == 'azure') {
             $password_info = "Login with your Microsoft (Azure AD) account.";
-        } elseif (empty($_POST['contact_password'])) {
+        } elseif ($contact_password === '') {
             $password_info = "Request a password reset at https://$config_base_url/client/login_reset.php";
         } else {
-            $password_info = mysqli_real_escape_string($mysqli, $_POST['contact_password'] . " -- Please change on first login");
+            $password_info = mysqli_real_escape_string($mysqli, $contact_password . " -- Please change on first login");
         }
 
         $subject = "Your new $company_name portal account";
@@ -221,7 +242,7 @@ if (isset($_POST['edit_contact'])) {
 
     triggerCustomAction('contact_update', $contact_id);
 
-    flashAlert("Contact <strong>$name</strong> updated");
+    flashAlert("Contact <strong>" . stripslashes($name) . "</strong> updated");
 
     redirect();
 
@@ -336,7 +357,7 @@ if (isset($_GET['delete_contact_note'])) {
 
     logAudit("Contact", "Edit", "$session_name deleted $contact_note_type note for $contact_name", $client_id, $contact_id);
 
-    flashAlert("Note <strong>$contact_note_type</strong> deleted.", 'error');
+    flashAlert("Note <strong>$contact_note_type</strong> deleted", 'error');
 
     redirect();
 
@@ -353,24 +374,28 @@ if (isset($_POST['bulk_assign_contact_location'])) {
     // Get Location name for logging and Notification
     $sql = mysqli_query($mysqli,"SELECT location_name, location_client_id FROM locations WHERE location_id = $location_id");
     $row = mysqli_fetch_assoc($sql);
-    $location_name = escapeSql($row['location_name']);
-    $client_id = intval($row['location_client_id']);
+    $location_name = escapeSql($row['location_name'] ?? '');
+    $client_id = intval($row['location_client_id'] ?? 0);
 
     enforceClientAccess();
 
     // Assign Location to Selected Contacts
     if (isset($_POST['contact_ids'])) {
 
-        // Get Selected Contacts Count
-        $contact_count = count($_POST['contact_ids']);
+        // Only the contacts of the location's client are moved
+        $contact_count = 0;
 
         foreach($_POST['contact_ids'] as $contact_id) {
             $contact_id = intval($contact_id);
 
             // Get Contact Details for Logging
-            $sql = mysqli_query($mysqli,"SELECT contact_name FROM contacts WHERE contact_id = $contact_id");
+            $sql = mysqli_query($mysqli,"SELECT contact_name, contact_client_id FROM contacts WHERE contact_id = $contact_id");
             $row = mysqli_fetch_assoc($sql);
+            if (!$row || intval($row['contact_client_id']) !== $client_id) {
+                continue;
+            }
             $contact_name = escapeSql($row['contact_name']);
+            $contact_count++;
 
             mysqli_query($mysqli,"UPDATE contacts SET contact_location_id = $location_id WHERE contact_id = $contact_id");
 
@@ -380,7 +405,7 @@ if (isset($_POST['bulk_assign_contact_location'])) {
 
         logAudit("Contact", "Bulk Edit", "$session_name assigned $contact_count contacts to location $location_name", $client_id);
 
-        flashAlert("<b>$contact_count</b> contacts assigned to location <b>$location_name</b>");
+        flashAlert("<strong>$contact_count</strong> contact" . ($contact_count === 1 ? '' : 's') . " assigned to location <strong>" . stripslashes($location_name) . "</strong>");
     }
 
     redirect();
@@ -420,7 +445,7 @@ if (isset($_POST['bulk_edit_contact_phone'])) {
 
         logAudit("Contact", "Bulk Edit", "$session_name set the Phone Number $phone for $contact_count contacts", $client_id);
 
-        flashAlert("Phone Number set to <b>" . formatPhoneNumber($phone) . "</b> on $contact_count</b> contacts");
+        flashAlert("Phone number set to <strong>" . formatPhoneNumber($phone) . "</strong> on <strong>$contact_count</strong> contact" . ($contact_count === 1 ? '' : 's'));
     }
 
     redirect();
@@ -460,7 +485,7 @@ if (isset($_POST['bulk_edit_contact_department'])) {
 
         logAudit("Contact", "Bulk Edit", "$session_name set the department $department for $contact_count contacts", $client_id);
 
-        flashAlert("You set the Department to <strong>$department</strong> for <strong>$contact_count</strong> contacts");
+        flashAlert("Department set to <strong>" . stripslashes($department) . "</strong> on <strong>$contact_count</strong> contact" . ($contact_count === 1 ? '' : 's'));
     }
 
     redirect();
@@ -504,60 +529,7 @@ if (isset($_POST['bulk_edit_contact_role'])) {
 
         logAudit("Contact", "Bulk Edit", "$session_name edited the contact role for $contact_count contacts", $client_id);
 
-        flashAlert("You updated contact roles for <b>$contact_count</b> contacts");
-    }
-
-    redirect();
-
-}
-
-if (isset($_POST['bulk_assign_contact_tags'])) {
-
-    validateCSRFToken();
-
-    enforceUserPermission('module_client', 2);
-
-    // Assign Location to Selected Contacts
-    if (isset($_POST['contact_ids'])) {
-
-        // Get Selected Contacts Count
-        $count = count($_POST['contact_ids']);
-
-        foreach($_POST['contact_ids'] as $contact_id) {
-            $contact_id = intval($contact_id);
-
-            // Get Contact Details for Logging
-            $sql = mysqli_query($mysqli,"SELECT contact_name, contact_client_id FROM contacts WHERE contact_id = $contact_id");
-            $row = mysqli_fetch_assoc($sql);
-            $contact_name = escapeSql($row['contact_name']);
-            $client_id = intval($row['contact_client_id']);
-
-            enforceClientAccess();
-
-            if($_POST['bulk_remove_tags']) {
-                // Delete tags if chosed to do so
-                mysqli_query($mysqli, "DELETE FROM contact_tags WHERE contact_id = $contact_id");
-            }
-
-            // Add new tags
-            if (isset($_POST['bulk_tags'])) {
-                foreach($_POST['bulk_tags'] as $tag) {
-                    $tag = intval($tag);
-
-                    $sql = mysqli_query($mysqli,"SELECT 1 FROM contact_tags WHERE contact_id = $contact_id AND tag_id = $tag");
-                    if (mysqli_num_rows($sql) == 0) {
-                        mysqli_query($mysqli, "INSERT INTO contact_tags SET contact_id = $contact_id, tag_id = $tag");
-                    }
-                }
-            }
-
-            logAudit("Contact", "Edit", "$session_name added tags to $contact_name", $client_id, $contact_id);
-
-        } // End Assign Location Loop
-
-        logAudit("Contact", "Bulk Edit", "$session_name added tags for $contact_count contacts", $client_id);
-
-        flashAlert("You assigned tags for <strong>$count</strong> contacts");
+        flashAlert("Roles updated on <strong>$contact_count</strong> contact" . ($contact_count === 1 ? '' : 's'));
     }
 
     redirect();
@@ -644,7 +616,6 @@ if (isset($_POST['bulk_archive_contacts'])) {
             if ($contact_user_id > 0) {
                 mysqli_query($mysqli,"UPDATE users SET user_archived_at = NOW() WHERE user_id = $contact_user_id");
             }
-
 
             if($contact_primary == 0) {
                 mysqli_query($mysqli,"UPDATE contacts SET contact_important = 0, contact_billing = 0, contact_technical = 0, contact_archived_at = NOW() WHERE contact_id = $contact_id");
@@ -742,6 +713,7 @@ if (isset($_POST['bulk_delete_contacts'])) {
             }
 
             mysqli_query($mysqli, "DELETE FROM contacts WHERE contact_id = $contact_id AND contact_client_id = $client_id");
+            credentialsForget('contact', $contact_id);
 
             logAudit("Contact", "Delete", "$session_name deleted $contact_name", $client_id);
 
@@ -749,7 +721,7 @@ if (isset($_POST['bulk_delete_contacts'])) {
 
         logAudit("Contact", "Bulk Delete", "$session_name deleted $count contacts", $client_id);
 
-        flashAlert("You deleted <strong>$count</strong> contact(s)");
+        flashAlert("Deleted <strong>$count</strong> contact(s)", 'error');
 
     }
 
@@ -806,7 +778,6 @@ if (isset($_GET['anonymize_contact'])) {
         mysqli_query($mysqli,"UPDATE users SET user_name = 'Archived - $unix_timestamp', user_email = 'Archived - $unix_timestamp', user_archived_at = NOW() WHERE user_id = $contact_user_id");
     }
 
-
     // Redact audit logs
     $log_sql = mysqli_query($mysqli, "SELECT log_description, log_id FROM logs WHERE log_client_id =  $client_id");
     while ($log = mysqli_fetch_assoc($log_sql)) {
@@ -817,7 +788,6 @@ if (isset($_GET['anonymize_contact'])) {
 
         mysqli_query($mysqli,"UPDATE logs SET log_description = '$description' WHERE log_id = $log_id AND log_client_id = $client_id");
     }
-
 
     // Get all tickets this contact raised
     $contact_tickets_sql = mysqli_query($mysqli, "SELECT ticket_details, ticket_id, ticket_subject FROM tickets WHERE ticket_client_id = $client_id AND ticket_contact_id =  $contact_id");
@@ -859,7 +829,7 @@ if (isset($_GET['anonymize_contact'])) {
 
     logAudit("Contact", "Archive", "$session_name archived and anonymized contact", $client_id, $contact_id);
 
-    flashAlert("Contact $contact_name anonymized & archived", 'error');
+    flashAlert("Contact <strong>" . stripslashes($contact_name) . "</strong> anonymized and archived", 'error');
 
     redirect();
 
@@ -891,7 +861,7 @@ if (isset($_GET['archive_contact'])) {
 
     logAudit("Contact", "Archive", "$session_name archived contact $contact_name", $client_id, $contact_id);
 
-    flashAlert("Contact <strong>$contact_name</strong> has been archived", 'error');
+    flashAlert("Contact <strong>" . stripslashes($contact_name) . "</strong> archived", 'error');
 
     redirect();
 
@@ -923,7 +893,7 @@ if (isset($_GET['restore_contact'])) {
 
     logAudit("Contact", "Restore", "$session_name restored contact $contact_name", $client_id, $contact_id);
 
-    flashAlert("Contact <strong>$contact_name</strong> Restored");
+    flashAlert("Contact <strong>" . stripslashes($contact_name) . "</strong> restored");
 
     redirect();
 
@@ -953,9 +923,12 @@ if (isset($_GET['delete_contact'])) {
 
     mysqli_query($mysqli,"DELETE FROM contacts WHERE contact_id = $contact_id");
 
+    // Their logins stay with the client, no longer pointing at a contact that is gone
+    credentialsForget('contact', $contact_id);
+
     logAudit("Contact", "Delete", "$session_name deleted contact $contact_name", $client_id);
 
-    flashAlert("Contact <strong>$contact_name</strong> has been deleted.", 'error');
+    flashAlert("Contact <strong>" . stripslashes($contact_name) . "</strong> deleted", 'error');
 
     redirect();
 
@@ -985,7 +958,7 @@ if (isset($_POST['link_contact_to_asset'])) {
 
     logAudit("Asset", "Link", "$session_name linked asset $asset_name to contact $contact_name", $client_id, $asset_id);
 
-    flashAlert("Contact <strong>$contact_name</strong> linked with asset <strong>$asset_name</strong>");
+    flashAlert("Contact <strong>" . stripslashes($contact_name) . "</strong> linked with asset <strong>" . stripslashes($asset_name) . "</strong>");
 
     redirect();
 
@@ -1015,77 +988,21 @@ if (isset($_GET['unlink_asset_from_contact'])) {
 
     logAudit("Asset", "Unlink", "$session_name unlinked contact $contact_name from asset $asset_name", $client_id, $asset_id);
 
-    flashAlert("Asset <strong>$asset_name</strong> unlinked from Contact <strong>$contact_name</strong>", 'error');
+    flashAlert("Asset <strong>" . stripslashes($asset_name) . "</strong> unlinked from contact <strong>" . stripslashes($contact_name) . "</strong>", 'error');
 
     redirect();
 
 }
 
-if (isset($_POST['link_software_to_contact'])) {
-
-    validateCSRFToken();
-
-    enforceUserPermission('module_client', 2);
-
-    $software_id = intval($_POST['software_id']);
-    $contact_id = intval($_POST['contact_id']);
-
-    // Get software Name and Client ID for logging
-    $sql_software = mysqli_query($mysqli,"SELECT software_name, software_client_id FROM software WHERE software_id = $software_id");
-    $row = mysqli_fetch_assoc($sql_software);
-    $software_name = escapeSql($row['software_name']);
-    $client_id = intval($row['software_client_id']);
-
-    enforceClientAccess();
-
-    // Get Contact Name for logging
-    $contact_name = escapeSql(getFieldById('contacts', $contact_id, 'contact_name'));
-
-    mysqli_query($mysqli,"INSERT INTO software_contacts SET contact_id = $contact_id, software_id = $software_id");
-
-    logAudit("Software", "Link", "$session_name added software license $software_name to contact $contact_name", $client_id, $software_id);
-
-    flashAlert("Software <strong>$software_name</strong> licensed for contact <strong>$contact_name</strong>");
-
-    redirect();
-
-}
-
-if (isset($_GET['unlink_software_from_contact'])) {
-
-    validateCSRFToken();
-
-    enforceUserPermission('module_client', 2);
-
-    $contact_id = intval($_GET['contact_id']);
-    $software_id = intval($_GET['software_id']);
-
-    // Get software Name and Client ID for logging
-    $sql_software = mysqli_query($mysqli,"SELECT software_name, software_client_id FROM software WHERE software_id = $software_id");
-    $row = mysqli_fetch_assoc($sql_software);
-    $software_name = escapeSql($row['software_name']);
-    $client_id = intval($row['software_client_id']);
-
-    enforceClientAccess();
-
-    // Get Contact Name for logging
-    $contact_name = escapeSql(getFieldById('contacts', $contact_id, 'contact_name'));
-
-    mysqli_query($mysqli,"DELETE FROM software_contacts WHERE contact_id = $contact_id AND software_id = $software_id");
-
-    logAudit("software", "Unlink", "$session_name removed software license $software_name from contact $contact_name", $client_id, $software_id);
-
-    flashAlert("Removed Software License <strong>$software_name</strong> for Contact <strong>$contact_name</strong>", 'error');
-
-    redirect();
-
-}
+// Licenses are linked in post/link.php (link_software_to_contact)
 
 if (isset($_POST['link_contact_to_credential'])) {
 
     validateCSRFToken();
 
     enforceUserPermission('module_client', 2);
+    // It changes the credential, so it takes credential edit rights too
+    enforceUserPermission('module_credential', 2);
 
     $credential_id = intval($_POST['credential_id']);
     $contact_id = intval($_POST['contact_id']);
@@ -1093,19 +1010,29 @@ if (isset($_POST['link_contact_to_credential'])) {
     // Get credential Name and Client ID for logging
     $sql_credential = mysqli_query($mysqli,"SELECT credential_name, credential_client_id FROM credentials WHERE credential_id = $credential_id");
     $row = mysqli_fetch_assoc($sql_credential);
+    if (!$row) {
+        flashAlert("That credential no longer exists", 'error');
+        redirect();
+    }
     $credential_name = escapeSql($row['credential_name']);
     $client_id = intval($row['credential_client_id']);
 
     enforceClientAccess();
+
+    // Only to one of the same client's people
+    if (!assetClientOwnedId('contact', $contact_id, $client_id)) {
+        flashAlert("That contact isn't one of this client's", 'error');
+        redirect();
+    }
 
     // Get Contact Name for logging
     $contact_name = escapeSql(getFieldById('contacts', $contact_id, 'contact_name'));
 
     mysqli_query($mysqli,"UPDATE credentials SET credential_contact_id = $contact_id WHERE credential_id = $credential_id");
 
-    logAudit("Asset", "Link", "$session_name linked credential $credential_name to contact $contact_name", $client_id, $credential_id);
+    logAudit("Credential", "Link", "$session_name linked credential $credential_name to contact $contact_name", $client_id, $credential_id);
 
-    flashAlert("Contact <strong>$contact_name</strong> linked with credential <strong>$credential_name</strong>");
+    flashAlert("Contact <strong>" . stripslashes($contact_name) . "</strong> linked with credential <strong>" . stripslashes($credential_name) . "</strong>");
 
     redirect();
 
@@ -1116,6 +1043,7 @@ if (isset($_GET['unlink_credential_from_contact'])) {
     validateCSRFToken();
 
     enforceUserPermission('module_client', 2);
+    enforceUserPermission('module_credential', 2);
 
     $contact_id = intval($_GET['contact_id']);
     $credential_id = intval($_GET['credential_id']);
@@ -1131,132 +1059,12 @@ if (isset($_GET['unlink_credential_from_contact'])) {
     // Get Contact Name for logging
     $contact_name = escapeSql(getFieldById('contacts', $contact_id, 'contact_name'));
 
-    mysqli_query($mysqli,"UPDATE credentials SET credential_contact_id = 0 WHERE credential_id = $credential_id");
+    // Only if it is this contact's - an old link can't unpick a newer one
+    mysqli_query($mysqli,"UPDATE credentials SET credential_contact_id = 0 WHERE credential_id = $credential_id AND credential_contact_id = $contact_id");
 
     logAudit("Credential", "Unlink", "$session_name unlinked contact $contact_name from credential $credential_name", $client_id, $credential_id);
 
-    flashAlert("Credential <strong>$credential_name</strong> unlinked from Contact <strong>$contact_name</strong>", 'error');
-
-    redirect();
-
-}
-
-if (isset($_POST['link_service_to_contact'])) {
-
-    validateCSRFToken();
-
-    enforceUserPermission('module_client', 2);
-
-    $service_id = intval($_POST['service_id']);
-    $contact_id = intval($_POST['contact_id']);
-
-    // Get service Name and Client ID for logging
-    $sql_service = mysqli_query($mysqli,"SELECT service_name, service_client_id FROM services WHERE service_id = $service_id");
-    $row = mysqli_fetch_assoc($sql_service);
-    $service_name = escapeSql($row['service_name']);
-    $client_id = intval($row['service_client_id']);
-
-    enforceClientAccess();
-
-    // Get Contact Name for logging
-    $contact_name = escapeSql(getFieldById('contacts', $contact_id, 'contact_name'));
-
-    mysqli_query($mysqli,"INSERT INTO service_contacts SET contact_id = $contact_id, service_id = $service_id");
-
-    logAudit("Service", "Link", "$session_name linked contact $contact_name to service $service_name", $client_id, $service_id);
-
-    flashAlert("service <strong>$service_name</strong> linked with contact <strong>$contact_name</strong>");
-
-    redirect();
-
-}
-
-if (isset($_GET['unlink_service_from_contact'])) {
-
-    validateCSRFToken();
-
-    enforceUserPermission('module_client', 2);
-
-    $contact_id = intval($_GET['contact_id']);
-    $service_id = intval($_GET['service_id']);
-
-    // Get service Name and Client ID for logging
-    $sql_service = mysqli_query($mysqli,"SELECT service_name, service_client_id FROM services WHERE service_id = $service_id");
-    $row = mysqli_fetch_assoc($sql_service);
-    $service_name = escapeSql($row['service_name']);
-    $client_id = intval($row['service_client_id']);
-
-    enforceClientAccess();
-
-    // Get Contact Name for logging
-    $contact_name = escapeSql(getFieldById('contacts', $contact_id, 'contact_name'));
-
-    mysqli_query($mysqli,"DELETE FROM service_contacts WHERE contact_id = $contact_id AND service_id = $service_id");
-
-    logAudit("service", "Unlink", "$session_name unlinked contact $contact_name from service $service_name", $client_id, $service_id);
-
-    flashAlert("Contact <strong>$contact_name</strong> unlinked from service <strong>$service_name</strong>", 'error');
-
-    redirect();
-
-}
-
-if (isset($_POST['link_contact_to_file'])) {
-
-    validateCSRFToken();
-
-    enforceUserPermission('module_client', 2);
-
-    $file_id = intval($_POST['file_id']);
-    $contact_id = intval($_POST['contact_id']);
-
-    // Get file Name and Client ID for logging
-    $sql_file = mysqli_query($mysqli,"SELECT file_name, file_client_id FROM files WHERE file_id = $file_id");
-    $row = mysqli_fetch_assoc($sql_file);
-    $file_name = escapeSql($row['file_name']);
-    $client_id = intval($row['file_client_id']);
-
-    enforceClientAccess();
-
-    // Get Contact Name for logging
-    $contact_name = escapeSql(getFieldById('contacts', $contact_id, 'contact_name'));
-
-    // Contact add query
-    mysqli_query($mysqli,"INSERT INTO contact_files SET contact_id = $contact_id, file_id = $file_id");
-
-    logAudit("File", "Link", "$session_name linked contact $contact_name to file $file_name", $client_id, $file_id);
-
-    flashAlert("Contact <strong>$contact_name</strong> linked with File <strong>$file_name</strong>");
-
-    redirect();
-
-}
-
-if (isset($_GET['unlink_contact_from_file'])) {
-
-    validateCSRFToken();
-
-    enforceUserPermission('module_client', 2);
-
-    $contact_id = intval($_GET['contact_id']);
-    $file_id = intval($_GET['file_id']);
-
-    // Get file Name and Client ID for logging
-    $sql_file = mysqli_query($mysqli,"SELECT file_name, file_client_id FROM files WHERE file_id = $file_id");
-    $row = mysqli_fetch_assoc($sql_file);
-    $file_name = escapeSql($row['file_name']);
-    $client_id = intval($row['file_client_id']);
-
-    enforceClientAccess();
-
-    // Get Contact Name for logging
-    $contact_name = escapeSql(getFieldById('contacts', $contact_id, 'contact_name'));
-
-    mysqli_query($mysqli,"DELETE FROM contact_files WHERE contact_id = $contact_id AND file_id = $file_id");
-
-    logAudit("File", "Unlink", "$session_name unlinked contact $contact_name from file $file_name", $client_id, $file_id);
-
-    flashAlert("Contact <strong>$contact_name</strong> unlinked from file <strong>$file_name</strong>", 'error');
+    flashAlert("Credential <strong>" . stripslashes($credential_name) . "</strong> unlinked from contact <strong>" . stripslashes($contact_name) . "</strong>", 'error');
 
     redirect();
 
@@ -1457,7 +1265,6 @@ if (isset($_POST["import_contacts_csv"])) {
                 $location_id = intval($row['location_id']);
             }
             // Potentially import the rest in the future?
-
 
             // Check if duplicate was detected
             if ($duplicate_detect == 0) {

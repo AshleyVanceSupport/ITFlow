@@ -25,13 +25,13 @@ if (isset($_POST['add_vendor_template'])) {
     $code = escapeSql($_POST['code']);
     $notes = escapeSql($_POST['notes']);
 
-    mysqli_query($mysqli,"INSERT INTO vendor_templates SET vendor_template_name = '$name', vendor_template_description = '$description', vendor_template_contact_name = '$contact_name', vendor_template_phone = '$phone', vendor_template_extension = '$extension', vendor_template_email = '$email', vendor_template_website = '$website', vendor_template_hours = '$hours', vendor_template_sla = '$sla', vendor_template_code = '$code', vendor_template_account_number = '$account_number', vendor_template_notes = '$notes'");
+    mysqli_query($mysqli,"INSERT INTO vendor_templates SET vendor_template_name = '$name', vendor_template_description = '$description', vendor_template_contact_name = '$contact_name', vendor_template_phone_country_code = '$phone_country_code', vendor_template_phone = '$phone', vendor_template_extension = '$extension', vendor_template_email = '$email', vendor_template_website = '$website', vendor_template_hours = '$hours', vendor_template_sla = '$sla', vendor_template_code = '$code', vendor_template_account_number = '$account_number', vendor_template_notes = '$notes'");
 
     $vendor_template_id = mysqli_insert_id($mysqli);
 
     logAudit("Vendor Template", "Create", "$session_name created vendor template $name", 0, $vendor_template_id);
 
-    flashAlert("Vendor template <strong>$name</strong> created");
+    flashAlert("Vendor template <strong>" . stripslashes($name) . "</strong> created");
 
     redirect();
 
@@ -132,12 +132,15 @@ if (isset($_POST['edit_vendor_template'])) {
         // Remove the first comma to prevent MySQL error
         $sql = preg_replace('/,/', '', $sql, 1);
 
-        mysqli_query($mysqli,"UPDATE vendors SET $sql WHERE vendor_template_id = $vendor_template_id");
+        // Nothing ticked to push - nothing to update, rather than an empty SET
+        if (trim($sql) !== '') {
+            mysqli_query($mysqli,"UPDATE vendors SET $sql WHERE vendor_template_id = $vendor_template_id");
+        }
     }
 
     logAudit("Vendor Template", "Edit", "$session_name edited vendor template $name", 0, $vendor_template_id);
 
-    flashAlert("Vendor template <strong>$name</strong> edited");
+    flashAlert("Vendor template <strong>" . stripslashes($name) . "</strong> saved");
 
     redirect();
 
@@ -158,7 +161,7 @@ if (isset($_GET['delete_vendor_template'])) {
 
     logAudit("Vendor Template", "Delete", "$session_name deleted vendor template $vendor_template_name");
 
-    flashAlert("Vendor Template <strong>$vendor_template_name</strong> deleted", 'error');
+    flashAlert("Vendor template <strong>" . stripslashes($vendor_template_name) . "</strong> deleted", 'error');
 
     redirect();
 

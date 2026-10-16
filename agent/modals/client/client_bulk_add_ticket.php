@@ -12,7 +12,7 @@ ob_start();
 ?>
 
 <div class="modal-header bg-dark">
-    <h5 class="modal-title"><i class="fas fa-fw fa-life-ring me-2"></i>New Tickets for <strong><?= $count ?></strong> Client(s)</h5>
+    <h5 class="modal-title"><i class="fas fa-fw fa-life-ring me-2"></i>New Tickets for <strong><?= $count ?></strong> client<?= $count === 1 ? '' : 's' ?></h5>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
 </div>
 
@@ -24,7 +24,10 @@ ob_start();
 
         <div class="mb-3">
             <label>Subject <strong class="text-danger">*</strong></label>
-            <input type="text" class="form-control" name="bulk_subject" placeholder="Enter a subject" maxlength="200" required>
+            <div class="input-group">
+                <span class="input-group-text"><i class="fas fa-fw fa-tag"></i></span>
+                <input type="text" class="form-control" name="bulk_subject" placeholder="Enter a subject" maxlength="200" required>
+            </div>
         </div>
 
         <div class="mb-3">
@@ -39,10 +42,10 @@ ob_start();
                     <div class="input-group">
                             <span class="input-group-text"><i class="fa fa-fw fa-thermometer-half"></i></span>
                         <select class="form-select select2" name="bulk_priority" required>
-                            <option>Low</option>
-                            <option selected>Medium</option>
-                            <option>High</option>
-                            <option>Urgent</option>
+                            <option data-color="var(--bs-info)">Low</option>
+                            <option selected data-color="var(--bs-warning)">Medium</option>
+                            <option data-color="var(--bs-danger)">High</option>
+                            <option data-color="var(--bs-emphasis-color)">Urgent</option>
                         </select>
                     </div>
                 </div>
@@ -56,13 +59,13 @@ ob_start();
                         <select class="form-select select2" name="bulk_category">
                             <option value="0">- Not Categorized -</option>
                             <?php
-                            $sql_categories = mysqli_query($mysqli, "SELECT category_id, category_name FROM categories WHERE category_type = 'Ticket' AND category_archived_at IS NULL");
+                            $sql_categories = mysqli_query($mysqli, "SELECT category_id, category_name, category_color, category_icon FROM categories WHERE category_type = 'Ticket' AND category_archived_at IS NULL");
                             while ($row = mysqli_fetch_assoc($sql_categories)) {
                                 $category_id = intval($row['category_id']);
                                 $category_name = escapeHtml($row['category_name']);
 
                                 ?>
-                                <option value="<?= $category_id ?>"><?= $category_name ?></option>
+                                <option value="<?= $category_id ?>"<?= selectOptionColor($row['category_color'] ?? '', $row['category_icon'] ?? '') ?>><?= $category_name ?></option>
                             <?php } ?>
 
                         </select>
@@ -85,13 +88,13 @@ ob_start();
 
                             $sql = mysqli_query(
                                 $mysqli,
-                                "SELECT user_id, user_name FROM users
+                                "SELECT user_id, user_name, user_avatar FROM users
                                 WHERE user_type = 1 AND user_status = 1 AND user_archived_at IS NULL ORDER BY user_name ASC"
                             );
                             while ($row = mysqli_fetch_assoc($sql)) {
                                 $user_id = intval($row['user_id']);
                                 $user_name = escapeHtml($row['user_name']); ?>
-                                <option <?php if ($session_user_id == $user_id) { echo "selected"; } ?> value="<?= $user_id ?>"><?= $user_name ?></option>
+                                <option <?php if ($session_user_id == $user_id) { echo "selected"; } ?> value="<?= $user_id ?>"<?= selectOptionUser($row['user_id'], $row['user_name'], $row['user_avatar'] ?? '') ?>><?= $user_name ?></option>
                             <?php } ?>
                         </select>
                     </div>
@@ -108,11 +111,13 @@ ob_start();
                             <option value="0">- None -</option>
                             <?php
 
-                            $sql_projects = mysqli_query($mysqli, "SELECT project_id, project_name FROM projects WHERE project_completed_at IS NULL AND project_archived_at IS NULL ORDER BY project_name ASC");
+                            // Tickets for several clients can only share an internal project
+                            $sql_projects = mysqli_query($mysqli, "SELECT project_id, project_prefix, project_number, project_name FROM projects
+                                WHERE project_completed_at IS NULL AND project_archived_at IS NULL AND project_client_id = 0 ORDER BY project_name ASC");
                             while ($row = mysqli_fetch_assoc($sql_projects)) {
                                 $project_id_select = intval($row['project_id']);
                                 $project_name_select = escapeHtml($row['project_name']); ?>
-                                <option value="<?= $project_id_select ?>"><?= $project_name_select ?></option>
+                                <option value="<?= $project_id_select ?>" data-icon="fas fa-project-diagram" data-description="<?= escapeHtml(projectReference($row)) ?> - internal"><?= $project_name_select ?></option>
 
                             <?php } ?>
                         </select>

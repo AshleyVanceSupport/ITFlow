@@ -33,7 +33,7 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
         <form autocomplete="off">
             <div class="input-group">
                 <input type="search" class="form-control" name="q" value="<?php if (isset($q)) { echo stripslashes(escapeHtml($q)); } ?>" placeholder="Search templates">
-                    <button class="btn btn-secondary"><i class="fa fa-search"></i></button>
+                    <button class="btn btn-secondary" title="Search"><i class="fa fa-search"></i></button>
             </div>
         </form>
     </div>
@@ -133,7 +133,7 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
                     <td><?= $updated ?></td>
                     <td>
                         <div class="dropdown dropstart text-center">
-                            <button class="btn btn-secondary btn-sm" type="button" data-bs-toggle="dropdown">
+                            <button class="btn btn-secondary btn-sm" title="More actions" type="button" data-bs-toggle="dropdown">
                                 <i class="fas fa-ellipsis-h"></i>
                             </button>
                             <div class="dropdown-menu">
@@ -143,7 +143,7 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
                                     <i class="fas fa-fw fa-edit me-2"></i>Edit
                                 </a>
                                 <div class="dropdown-divider"></div>
-                                <a class="dropdown-item text-danger text-bold" href="post.php?delete_contract_template=<?= $id ?>&csrf_token=<?= $_SESSION['csrf_token'] ?>">
+                                <a class="dropdown-item text-danger text-bold confirm-link" href="post.php?delete_contract_template=<?= $id ?>&csrf_token=<?= $_SESSION['csrf_token'] ?>">
                                     <i class="fas fa-fw fa-trash me-2"></i>Delete
                                 </a>
                             </div>

@@ -43,7 +43,7 @@ $company_initials = escapeHtml(initials($company_name));
                         <div class="col-md-3 text-center">
                             <?php if ($company_logo) { ?>
                                 <img class="img-thumbnail" src="<?= "../uploads/settings/$company_logo" ?>">
-                                <a href="post.php?remove_company_logo&csrf_token=<?= $_SESSION['csrf_token'] ?>" class="btn btn-outline-danger w-100">Remove Logo</a>
+                                <a href="post.php?remove_company_logo&csrf_token=<?= $_SESSION['csrf_token'] ?>" class="btn btn-outline-danger w-100 confirm-link">Remove Logo</a>
                                 <hr>
                             <?php } ?>
                             <div class="mb-3">
@@ -152,12 +152,12 @@ $company_initials = escapeHtml(initials($company_name));
                                     <select class="form-select select2" name="internal_client_id">
                                         <option value="0">None</option>
                                         <?php
-                                        $sql_internal_clients = mysqli_query($mysqli, "SELECT client_id, client_name FROM clients WHERE client_archived_at IS NULL ORDER BY client_name ASC");
+                                        $sql_internal_clients = mysqli_query($mysqli, "SELECT client_id, client_name, client_abbreviation FROM clients WHERE client_archived_at IS NULL ORDER BY client_name ASC");
                                         while ($row_internal_client = mysqli_fetch_assoc($sql_internal_clients)) {
                                             $internal_client_id_select = intval($row_internal_client['client_id']);
                                             $internal_client_name_select = escapeHtml($row_internal_client['client_name']);
                                             ?>
-                                            <option <?php if ($config_internal_client_id == $internal_client_id_select) { echo "selected"; } ?> value="<?= $internal_client_id_select ?>"><?= $internal_client_name_select ?></option>
+                                            <option <?php if ($config_internal_client_id == $internal_client_id_select) { echo "selected"; } ?> value="<?= $internal_client_id_select ?>"<?= selectOptionClient($row_internal_client['client_id'], $row_internal_client['client_name'], $row_internal_client['client_abbreviation'] ?? '') ?>><?= $internal_client_name_select ?></option>
                                         <?php } ?>
                                     </select>
                                 </div>

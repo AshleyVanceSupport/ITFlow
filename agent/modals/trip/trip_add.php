@@ -3,6 +3,8 @@
 require_once '../../../includes/modal_header.php';
 
 $client_id = intval($_GET['client_id'] ?? 0);
+// Opened from a location's page - that's where the trip is to
+$trip_location_id = intval($_GET['location_id'] ?? 0);
 
 ob_start();
 
@@ -28,12 +30,12 @@ ob_start();
                         <option value="0">- Client (Optional) -</option>
                         <?php
 
-                        $sql = mysqli_query($mysqli, "SELECT client_id, client_name FROM clients WHERE client_archived_at is NULL " . clientScopeSql('clients.client_id') . " ORDER BY client_name ASC");
+                        $sql = mysqli_query($mysqli, "SELECT client_id, client_name, client_abbreviation FROM clients WHERE client_archived_at is NULL " . clientScopeSql('clients.client_id') . " ORDER BY client_name ASC");
                         while ($row = mysqli_fetch_assoc($sql)) {
                             $client_id_select = intval($row['client_id']);
                             $client_name = escapeHtml($row['client_name']);
                             ?>
-                            <option value="<?= $client_id_select ?>"><?= $client_name ?></option>
+                            <option value="<?= $client_id_select ?>"<?= selectOptionClient($row['client_id'], $row['client_name'], $row['client_abbreviation'] ?? '') ?>><?= $client_name ?></option>
 
                             <?php
                         }
@@ -80,7 +82,7 @@ ob_start();
                     <option value=""></option>
                     <?php
                     if ($client_id) {
-                        $sql_locations = mysqli_query($mysqli, "SELECT location_address, location_city, location_name, location_state, location_zip FROM locations WHERE location_archived_at IS NULL AND location_client_id = $client_id ORDER BY location_name ASC");
+                        $sql_locations = mysqli_query($mysqli, "SELECT location_id, location_address, location_city, location_name, location_state, location_zip FROM locations WHERE location_archived_at IS NULL AND location_client_id = $client_id ORDER BY location_name ASC");
                     while ($row = mysqli_fetch_assoc($sql_locations)) {
                         $location_name = escapeHtml($row['location_name']);
                         $location_address = escapeHtml($row['location_address']);
@@ -88,7 +90,7 @@ ob_start();
                         $location_state = escapeHtml($row['location_state']);
                         $location_zip = escapeHtml($row['location_zip']);
                         ?>
-                        <option><?= formatAddress($location_address, $location_city, $location_state, $location_zip, '', ' ') ?></option>
+                        <option <?= intval($row['location_id']) === $trip_location_id ? 'selected' : '' ?>><?= formatAddress($location_address, $location_city, $location_state, $location_zip, '', ' ') ?></option>
                         <?php
                     }
                 } ?>
@@ -109,14 +111,14 @@ ob_start();
                     <option value="">- Driver -</option>
                     <?php
 
-                    $sql = mysqli_query($mysqli, "SELECT user_id, user_name FROM users
+                    $sql = mysqli_query($mysqli, "SELECT user_id, user_name, user_avatar FROM users
                         WHERE user_type = 1 AND user_archived_at IS NULL ORDER BY user_name ASC"
                     );
                     while ($row = mysqli_fetch_assoc($sql)) {
                         $user_id = intval($row['user_id']);
                         $user_name = escapeHtml($row['user_name']);
                         ?>
-                        <option <?php if ($session_user_id == $user_id) { echo "selected"; } ?> value="<?= $user_id ?>"><?= $user_name ?></option>
+                        <option <?php if ($session_user_id == $user_id) { echo "selected"; } ?> value="<?= $user_id ?>"<?= selectOptionUser($row['user_id'], $row['user_name'], $row['user_avatar'] ?? '') ?>><?= $user_name ?></option>
 
                         <?php
                     }

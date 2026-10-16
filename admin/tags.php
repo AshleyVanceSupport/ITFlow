@@ -19,6 +19,8 @@ $tag_types = [
     3 => ['label' => 'Contact',    'icon' => 'fa-address-book'],
     4 => ['label' => 'Credential', 'icon' => 'fa-key'],
     5 => ['label' => 'Asset',      'icon' => 'fa-desktop'],
+    6 => ['label' => 'Vendor',     'icon' => 'fa-building'],
+    7 => ['label' => 'Domain',     'icon' => 'fa-globe'],
 ];
 
 // Label for the selected type
@@ -81,7 +83,7 @@ while ($row = mysqli_fetch_assoc($sql_tag_type_counts)) {
                             <div class="col-sm-6 mb-2">
                                 <div class="input-group">
                                     <input type="search" class="form-control" name="q" value="<?php if (isset($q)) { echo stripslashes(escapeHtml($q)); } ?>" placeholder="Search <?= $tag_type_display ?> Tags">
-                                        <button class="btn btn-primary"><i class="fa fa-search"></i></button>
+                                        <button class="btn btn-primary" title="Search"><i class="fa fa-search"></i></button>
                                 </div>
                             </div>
                             <div class="col-sm-6 mb-2">
@@ -127,7 +129,7 @@ while ($row = mysqli_fetch_assoc($sql_tag_type_counts)) {
                                     </td>
                                     <td>
                                         <div class="dropdown dropstart text-center">
-                                            <button class="btn btn-secondary btn-sm" type="button" data-bs-toggle="dropdown">
+                                            <button class="btn btn-secondary btn-sm" title="More actions" type="button" data-bs-toggle="dropdown">
                                                 <i class="fas fa-ellipsis-h"></i>
                                             </button>
                                             <div class="dropdown-menu">

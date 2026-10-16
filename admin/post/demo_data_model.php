@@ -367,6 +367,17 @@ function demoFirstId($mysqli, $table, $id_column, $archived_column = '') {
 
 // Deterministic stand-in for a serial number - same input, same serial, so a
 // reload after a removal does not produce a whole new set of numbers
+/** A 2FA seed that comes out the same on every run - 32 base32 characters from the seed. */
+function demoTotpSeed($seed) {
+    $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    $bytes = md5('itflow-demo-totp-' . $seed, true) . md5('itflow-demo-totp-2-' . $seed, true);
+    $out = '';
+    for ($i = 0; $i < 32; $i++) {
+        $out .= $alphabet[ord($bytes[$i]) % 32];
+    }
+    return $out;
+}
+
 function demoSerial($seed, $length = 10) {
     return strtoupper(substr(md5('itflow-demo-' . $seed), 0, $length));
 }
@@ -408,6 +419,57 @@ function demoAttachTags($mysqli, $join_table, $join_column, $tag_column, $row_id
             mysqli_query($mysqli, "INSERT INTO $join_table SET $join_column = $row_id, $tag_column = $tag_id");
         }
     }
+}
+
+// ------------------------------
+// demoVendorTags / demoVendorManager
+// What kind of vendor each demo vendor is, as Tags starter pack vendor tags,
+// and the account manager who looks after the account - a name, a direct
+// line and an email at the vendor's domain, the same every time it is seeded.
+// ------------------------------
+function demoVendorTags($name, $description, $notes = '', $ours = false) {
+    if ($ours) {
+        $map = [
+            'Distribution' => ['Distributor', 'Hardware'], 'Netgate' => ['Hardware', 'Security'], 'Ubiquiti' => ['Hardware'],
+            'Synology' => ['Hardware'], 'Proxmox' => ['Software'], 'Nextcloud' => ['Cloud', 'Hosting'], 'Licensing' => ['Cloud', 'Distributor'],
+            'Colocation' => ['Hosting'], 'Bank' => ['Professional Services'], 'CPA' => ['Professional Services'],
+            'Insurance' => ['Professional Services'], 'Property' => ['Professional Services'],
+        ];
+        foreach ($map as $match => $tags) {
+            if (stripos($name, $match) !== false) {
+                return $tags;
+            }
+        }
+        return [];
+    }
+    $text = "$name $description";
+    $tags = [];
+    if (preg_match('/internet|fibre|fiber|circuit|broadband|connect|wireless|cable/i', $text)) {
+        $tags[] = 'ISP';
+    }
+    if (preg_match('/phone|telecom|voice/i', $text)) {
+        $tags[] = 'Telecom';
+    }
+    if (!$tags) {
+        $tags[] = 'Line of Business';
+    }
+    if (stripos($notes, 'authorised list') !== false) {
+        $tags[] = 'Authorised Contacts Only';
+    }
+    return $tags;
+}
+
+function demoVendorManager($name, $phone, $domain) {
+    $people = ['Dana Whitlock', 'Marcus Feld', 'Priya Raman', 'Owen Castell', 'Jolene Avery', 'Theo Marsh', 'Rosa Delgado', 'Ian Kowalski', 'Hannah Pryce', 'Victor Lund'];
+    $person = $people[crc32($name) % count($people)];
+    $digits = preg_replace('/[^0-9]/', '', (string) $phone);
+    $direct = $digits !== '' ? substr($digits, 0, -2) . str_pad((string) ((intval(substr($digits, -2)) + 37) % 100), 2, '0', STR_PAD_LEFT) : '';
+    return [
+        'vendor_contact_name' => $person,
+        'vendor_contact_phone_country_code' => '1',
+        'vendor_contact_phone' => $direct,
+        'vendor_contact_email' => strtolower(str_replace(' ', '.', $person)) . '@' . $domain,
+    ];
 }
 
 // ------------------------------
@@ -475,10 +537,9 @@ function demoEnsureOrgVendors($mysqli) {
             $vendors[$vendor[0]] = intval($row['vendor_id']);
             continue;
         }
-        $vendors[$vendor[0]] = starterInsert($mysqli, 'vendors', [
+        $vendors[$vendor[0]] = starterInsert($mysqli, 'vendors', demoVendorManager($vendor[0], $vendor[2], $vendor[3]) + [
             'vendor_name' => $vendor[0],
             'vendor_description' => $vendor[1],
-            'vendor_contact_name' => 'Account Manager',
             'vendor_phone_country_code' => '1',
             'vendor_phone' => $vendor[2],
             'vendor_extension' => (string)(200 + (crc32($vendor[0]) % 90)),
@@ -492,6 +553,7 @@ function demoEnsureOrgVendors($mysqli) {
             'vendor_client_id' => 0,
             'vendor_created_at' => demoMonthDateTime(24, 2, 9, 0),
         ]);
+        demoAttachTags($mysqli, 'vendor_tags', 'vendor_id', 'tag_id', $vendors[$vendor[0]], 6, demoVendorTags($vendor[0], $vendor[1], '', true));
     }
 
     return $vendors;
@@ -752,6 +814,8 @@ function demoDataRemove($mysqli) {
         while ($row = mysqli_fetch_assoc($sql)) {
             $location_id = intval($row['location_id']);
             mysqli_query($mysqli, "DELETE FROM location_tags WHERE location_id = $location_id");
+            mysqli_query($mysqli, "DELETE FROM location_documents WHERE location_id = $location_id");
+            mysqli_query($mysqli, "DELETE FROM location_files WHERE location_id = $location_id");
         }
         mysqli_query($mysqli, "DELETE FROM locations WHERE location_client_id = $client_id");
 
@@ -1135,6 +1199,11 @@ function demoBuildClient($mysqli, $profile, $index, $context, &$counts) {
     $primary_contact_id = $contact_ids[0] ?? 0;
     $technical_contact_id = $contact_ids[2] ?? $primary_contact_id;
 
+    // Who to ask for at the main site - the technical contact
+    if ($primary_location_id && $technical_contact_id) {
+        mysqli_query($mysqli, "UPDATE locations SET location_contact_id = " . intval($technical_contact_id) . " WHERE location_id = " . intval($primary_location_id));
+    }
+
     // Notes on the account and on the technical contact
     starterInsert($mysqli, 'client_notes', [
         'client_note_type' => 'General',
@@ -1163,10 +1232,9 @@ function demoBuildClient($mysqli, $profile, $index, $context, &$counts) {
     // The client's own vendors - who they buy their line of business kit from
     $vendor_ids = [];
     foreach ($profile['vendors'] as $vendor_index => $vendor) {
-        $vendor_ids[] = starterInsert($mysqli, 'vendors', [
+        $vendor_id = starterInsert($mysqli, 'vendors', demoVendorManager($vendor[0], $vendor[2], $vendor[3]) + [
             'vendor_name' => $vendor[0],
             'vendor_description' => $vendor[1],
-            'vendor_contact_name' => 'Business Support',
             'vendor_phone_country_code' => '1',
             'vendor_phone' => $vendor[2],
             'vendor_email' => 'support@' . $vendor[3],
@@ -1176,9 +1244,12 @@ function demoBuildClient($mysqli, $profile, $index, $context, &$counts) {
             'vendor_code' => demoSerial($profile['abbreviation'] . $vendor[0], 6),
             'vendor_account_number' => demoSerial($profile['abbreviation'] . 'acct' . $vendor_index, 8),
             'vendor_notes' => $vendor[5],
+            'vendor_favorite' => $vendor_index === 0 ? 1 : 0,
             'vendor_client_id' => $client_id,
             'vendor_created_at' => demoMonthDateTime($months, 5, 13, 0),
         ]);
+        demoAttachTags($mysqli, 'vendor_tags', 'vendor_id', 'tag_id', $vendor_id, 6, demoVendorTags($vendor[0], $vendor[1], $vendor[5]));
+        $vendor_ids[] = $vendor_id;
         $counts['documentation']++;
     }
     $primary_vendor_id = $vendor_ids[0] ?? 0;
@@ -1189,9 +1260,9 @@ function demoBuildClient($mysqli, $profile, $index, $context, &$counts) {
         $network_ids[$network[0]] = starterInsert($mysqli, 'networks', [
             'network_name' => $network[0],
             'network_description' => $network[1],
+            'network_type' => $network[9] ?? networkGuessType($network[0], $network[1]),
             'network_vlan' => $network[2],
             'network' => $network[3],
-            'network_subnet' => '24',
             'network_gateway' => $network[4],
             'network_primary_dns' => $network[5],
             'network_secondary_dns' => $network[6],
@@ -1206,45 +1277,101 @@ function demoBuildClient($mysqli, $profile, $index, $context, &$counts) {
     }
     $primary_network_id = reset($network_ids) ?: 0;
 
+    // The internet connection, from the client's ISP - a /29 of public
+    // addresses (documentation range), the provider's router on the first
+    $wan = null;
+    $fleet = $profile['fleet'] ?? [];
+    foreach ($profile['vendors'] as $vendor_index => $vendor) {
+        if (!empty($fleet['Firewall/Router']) && preg_match('/internet|fibre|fiber|circuit|broadband|connect|cable/i', $vendor[0] . ' ' . $vendor[1])) {
+            $block = '203.0.113.' . (($index % 32) * 8);
+            $wan = ['base' => substr($block, 0, strrpos($block, '.')), 'first' => ($index % 32) * 8 + 1, 'vendor' => $vendor[0]];
+            $network_ids['Internet'] = starterInsert($mysqli, 'networks', [
+                'network_name' => 'Internet - ' . $vendor[0],
+                'network_description' => $vendor[1],
+                'network_type' => 'WAN',
+                'network' => $block . '/29',
+                'network_gateway' => $wan['base'] . '.' . $wan['first'],
+                'network_primary_dns' => '1.1.1.1',
+                'network_secondary_dns' => '8.8.8.8',
+                'network_dhcp_range' => '',
+                'network_notes' => 'Five usable static addresses. The first is the provider\'s router; the firewall WAN has the next one. Call the provider with the account number before touching the router.',
+                'network_location_id' => $primary_location_id,
+                'network_vendor_id' => $vendor_ids[$vendor_index] ?? 0,
+                'network_client_id' => $client_id,
+                'network_created_at' => demoMonthDateTime($months, 6, 14, 20),
+                'network_accessed_at' => demoDateTime($index % 13, 10, 5),
+            ]);
+            $counts['documentation']++;
+            break;
+        }
+    }
+
     // Assets, and the rack the infrastructure sits in
     $assets = demoBuildAssets($mysqli, $profile, $index, $client_id, $primary_location_id, $contact_ids, $primary_vendor_id, $network_ids, $months, $user_id, $counts);
     demoBuildRack($mysqli, $profile, $client_id, $primary_location_id, $assets, $months, $counts);
     demoBuildNetworkIps($mysqli, $profile, $assets, $network_ids, $counts);
     demoBuildPatchPanel($mysqli, $profile, $assets, $network_ids, $months, $counts);
+    demoBuildWan($mysqli, $profile, $assets, $network_ids, $wan, $months, $counts);
 
-    // Domain, DNS and the certificate on it
+    // Domain, DNS and the certificate on it. Half renew by themselves; the
+    // email records vary so the Email checks have something to say - DMARC
+    // enforced, monitoring only, or missing
+    $domain_auto_renew = $index % 2;
+    $domain_m365 = strpos($profile['mail_servers'], 'google') === false;
     $domain_id = starterInsert($mysqli, 'domains', [
         'domain_name' => $profile['domain'],
         'domain_description' => 'Primary domain - website and email',
         'domain_expire' => demoDate(-1 * (60 + ($index * 21))),
+        'domain_auto_renew' => $domain_auto_renew,
         'domain_ip' => '203.0.113.' . (10 + $index),
-        'domain_name_servers' => 'ns1.' . $profile['dns_host'] . ', ns2.' . $profile['dns_host'],
-        'domain_raw_whois' => 'Registrar: Harbour Registrar Services. Status: clientTransferProhibited. Registrant: ' . $profile['name'] . '.',
-        'domain_mail_servers' => $profile['mail_servers'],
+        'domain_name_servers' => 'ns1.' . $profile['dns_host'] . "\nns2." . $profile['dns_host'],
+        'domain_raw_whois' => "Registrar: Harbour Registrar Services\nRegistered: " . demoDate(365 * (6 + $index % 9) + $index * 11) . "\nExpires: " . demoDate(-1 * (60 + ($index * 21))) . "\nStatus: client transfer prohibited\nNameservers: ns1." . $profile['dns_host'] . ', ns2.' . $profile['dns_host'],
+        'domain_mail_servers' => '0 ' . $profile['mail_servers'],
+        'domain_dmarc' => [0 => 'v=DMARC1; p=reject; rua=mailto:dmarc@' . $profile['domain'], 1 => 'v=DMARC1; p=none; rua=mailto:dmarc@' . $profile['domain'], 2 => ''][$index % 3],
+        'domain_dkim' => $index % 4 === 3 ? '' : ($domain_m365 ? "selector1\nselector2" : 'google'),
+        'domain_refreshed_at' => demoDateTime(1 + $index % 6, 4, 0),
         // These three are vendor IDs, not names - who hosts the site, who runs
         // DNS, and who the mail lands with
         'domain_webhost' => intval($profile['build'] === 1 ? ($context['org_vendors']['Nextcloud Hosting Partner'] ?? 0) : $primary_vendor_id),
         'domain_dnshost' => intval($primary_vendor_id),
         'domain_mailhost' => intval($context['org_vendors']['Cascade Cloud Licensing'] ?? 0),
-        'domain_txt' => 'v=spf1 include:' . $profile['dns_host'] . ' -all',
-        'domain_notes' => 'Registrar login is held in the credential vault. Renewal is set to manual so it cannot lapse without a ticket.',
+        'domain_txt' => 'v=spf1 include:' . $profile['dns_host'] . ' -all' . ($domain_m365 ? "\nMS=ms" . substr(demoSerial($profile['domain'], 8), 0, 8) : "\ngoogle-site-verification=" . strtolower(demoSerial($profile['domain'], 20))),
+        'domain_notes' => 'Registrar login is held in the credential vault. ' . ($domain_auto_renew ? 'Auto-renew is on and charged to the card on file - check it before the card expires.' : 'Renewal is set to manual so it cannot lapse without a ticket.'),
         'domain_registrar' => $primary_vendor_id,
         'domain_client_id' => $client_id,
         'domain_created_at' => demoMonthDateTime($months, 7, 9, 45),
         'domain_accessed_at' => demoDateTime($index % 13, 15, 5),
     ]);
 
-    $certificate_id = starterInsert($mysqli, 'certificates', [
-        'certificate_name' => 'www.' . $profile['domain'],
-        'certificate_description' => $profile['cert_issuer'] === "Let's Encrypt" ? 'Public website certificate, renewed automatically by the reverse proxy' : 'Public website certificate, renewed manually at expiry',
-        'certificate_domain' => 'www.' . $profile['domain'],
-        'certificate_issued_by' => $profile['cert_issuer'],
-        'certificate_expire' => demoDate(-1 * (20 + ($index * 9))),
-        'certificate_domain_id' => $domain_id,
-        'certificate_client_id' => $client_id,
-        'certificate_created_at' => demoMonthDateTime($months, 7, 9, 50),
-    ]);
-    $counts['documentation'] += 2;
+    demoAttachTags($mysqli, 'domain_tags', 'domain_id', 'tag_id', $domain_id, 7, ['Primary', 'Managed DNS']);
+
+    // Every third client also keeps a campaign domain nobody remembers - parked,
+    // no mail, and close to lapsing or already lapsed
+    if ($index % 3 === 0) {
+        $campaign_days = $index % 2 ? -12 : 20;
+        $campaign_domain_id = starterInsert($mysqli, 'domains', [
+            'domain_name' => 'get' . $profile['domain'],
+            'domain_description' => 'Old campaign domain - forwards to the main site',
+            'domain_expire' => demoDate(-1 * $campaign_days),
+            'domain_auto_renew' => 0,
+            'domain_ip' => '203.0.113.' . (10 + $index),
+            'domain_name_servers' => 'ns1.' . $profile['dns_host'] . "\nns2." . $profile['dns_host'],
+            'domain_txt' => 'v=spf1 -all',
+            'domain_dmarc' => 'v=DMARC1; p=reject',
+            'domain_raw_whois' => "Registrar: Harbour Registrar Services\nRegistered: " . demoDate(365 * 3 + $index) . "\nStatus: client transfer prohibited",
+            'domain_notes' => 'Ask the client whether to keep it before it renews.',
+            'domain_registrar' => $primary_vendor_id,
+            'domain_dnshost' => intval($primary_vendor_id),
+            'domain_client_id' => $client_id,
+            'domain_created_at' => demoMonthDateTime($months, 7, 10, 5),
+            'domain_refreshed_at' => demoDateTime(2 + $index % 5, 4, 0),
+        ]);
+        demoAttachTags($mysqli, 'domain_tags', 'domain_id', 'tag_id', $campaign_domain_id, 7, ['Parked', 'Marketing']);
+        $counts['documentation']++;
+    }
+
+    $certificate_id = demoBuildCertificates($mysqli, $profile, $index, $client_id, $domain_id, $months, $counts);
+    $counts['documentation']++;
 
     // The renewals behind them. Both tables cascade off their parent, so the
     // client purge takes these with the domain and the certificate.
@@ -1262,13 +1389,6 @@ function demoBuildClient($mysqli, $profile, $index, $context, &$counts) {
         'domain_history_domain_id' => $domain_id,
         'domain_history_modified_at' => demoMonthDateTime(max(1, min(9, $months)), 6, 15, 40),
     ]);
-    starterInsert($mysqli, 'certificate_history', [
-        'certificate_history_column' => 'certificate_expire',
-        'certificate_history_old_value' => demoMonthDate(3, 20),
-        'certificate_history_new_value' => demoDate(-1 * (20 + ($index * 9))),
-        'certificate_history_certificate_id' => $certificate_id,
-        'certificate_history_modified_at' => demoMonthDateTime(3, 20, 4, 15),
-    ]);
 
     // Credentials - only when the vault actually opened for this session
     $credential_ids = [];
@@ -1282,9 +1402,12 @@ function demoBuildClient($mysqli, $profile, $index, $context, &$counts) {
                 'credential_password' => encryptCredentialEntry(demoSerial($profile['abbreviation'] . $credential[0], 14) . '!aA1'),
                 'credential_note' => $credential[4],
                 'credential_favorite' => $credential[6],
+                // A 2FA seed on the logins that have one, so the codes count down like the real thing
+                'credential_otp_secret' => !empty($credential[7]) ? demoTotpSeed($profile['abbreviation'] . $credential[0]) : '',
                 'credential_client_id' => $client_id,
                 'credential_created_at' => demoMonthDateTime($months, 8, 16, 10),
-                'credential_password_changed_at' => demoMonthDateTime(max(0, min(4, $months)), 8, 16, 10),
+                // Some changed lately, some due, one well over a year - never before the client was taken on
+                'credential_password_changed_at' => demoDateTime(min($credential[8] ?? 30, max(0, $months * 30 - 10)), 16, 10),
                 'credential_accessed_at' => demoDateTime(($index + 2) % 15, 11, 30),
             ]);
             $credential_ids[$credential[0]] = $credential_id;
@@ -1327,9 +1450,16 @@ function demoBuildClient($mysqli, $profile, $index, $context, &$counts) {
     }
     $runbook_id = $document_ids[0] ?? 0;
 
-    // Services, linked to the kit and credentials that actually run them
-    foreach ($profile['services'] as $service) {
+    // The site runbook belongs to the main site too
+    demoLink($mysqli, 'location_documents', 'location_id', $primary_location_id, 'document_id', $runbook_id);
 
+    // Services, linked to the kit and credentials that actually run them. The
+    // important ones are reviewed every six months, the rest yearly - last
+    // reviewed at different times, so a few are due and one or two are late
+    foreach ($profile['services'] as $service_index => $service) {
+
+        $review_months = $service[3] === 'High' ? 6 : 12;
+        $reviewed_days_ago = 20 + (($index * 37 + $service_index * 71) % ($review_months * 30));
         $service_id = starterInsert($mysqli, 'services', [
             'service_name' => $service[0],
             'service_description' => $service[1],
@@ -1337,7 +1467,9 @@ function demoBuildClient($mysqli, $profile, $index, $context, &$counts) {
             'service_importance' => $service[3],
             'service_backup' => $service[4],
             'service_notes' => $service[5],
-            'service_review_due' => demoDate(-1 * (90 + ($index * 5))),
+            'service_review_interval' => $review_months,
+            'service_reviewed_at' => demoDateTime($reviewed_days_ago, 14, 30),
+            'service_review_due' => demoDate($reviewed_days_ago - $review_months * 30),
             'service_client_id' => $client_id,
             'service_created_at' => demoMonthDateTime($months, 9, 10, 30),
             'service_accessed_at' => demoDateTime($index % 12, 16, 20),
@@ -1417,6 +1549,8 @@ function demoBuildClient($mysqli, $profile, $index, $context, &$counts) {
         foreach ($assets as $asset) {
             if (!empty($asset['credential']) && $asset['credential'] === $credential_name) {
                 demoLink($mysqli, 'asset_credentials', 'credential_id', $credential_id, 'asset_id', $asset['id']);
+                // The credential's own asset - what the asset's Credentials tab and the credential show
+                mysqli_query($mysqli, "UPDATE credentials SET credential_asset_id = " . intval($asset['id']) . " WHERE credential_id = " . intval($credential_id) . " AND credential_asset_id = 0");
             }
         }
     }
@@ -1431,7 +1565,7 @@ function demoBuildClient($mysqli, $profile, $index, $context, &$counts) {
     }
 
     // Support and billing
-    $projects = demoBuildProjects($mysqli, $profile, $index, $client_id, $months, $counts);
+    $projects = demoBuildProjects($mysqli, $profile, $index, $client_id, $months, $counts, $primary_contact_id);
     demoBuildTickets($mysqli, $profile, $index, $client_id, $contact_ids, $assets, $primary_location_id, $projects, $vendor_ids, $months, $context, $counts);
     demoBuildBilling($mysqli, $profile, $index, $client_id, $primary_vendor_id, $months, $context, $counts);
 
@@ -1454,41 +1588,57 @@ function demoBuildClient($mysqli, $profile, $index, $context, &$counts) {
                 'event_client_id' => $client_id,
                 'event_location_id' => $primary_location_id,
                 'event_calendar_id' => $onsite_calendar_id,
+                'event_created_by' => $context['user_id'],
                 'event_created_at' => demoDateTime($days_ago + 10, 9, 0),
             ]);
 
-            // Whoever is meeting us on site
-            if ($technical_contact_id) {
-                // attendee_invitation_status is a tinyint nothing in the app
-                // reads or writes yet, so it is left on its default rather than
-                // guessing at a meaning for it
+            // The agent going, and whoever is meeting us on site - who was sent
+            // the invitation when the visit was booked
+            if ($context['user_id']) {
                 starterInsert($mysqli, 'calendar_event_attendees', [
-                    'attendee_name' => $profile['people'][2][0] ?? $profile['people'][0][0],
-                    'attendee_email' => demoContactEmail($profile['people'][2][0] ?? $profile['people'][0][0], $profile['domain']),
+                    'attendee_user_id' => $context['user_id'],
+                    'attendee_event_id' => $event_id,
+                    'attendee_created_at' => demoDateTime($days_ago + 10, 9, 0),
+                ]);
+            }
+            if ($technical_contact_id) {
+                starterInsert($mysqli, 'calendar_event_attendees', [
                     'attendee_contact_id' => $technical_contact_id,
                     'attendee_event_id' => $event_id,
                     'attendee_created_at' => demoDateTime($days_ago + 10, 9, 0),
+                    'attendee_invitation_status' => 1,
+                    'attendee_invited_at' => demoDateTime($days_ago + 10, 9, 5),
                 ]);
             }
 
         }
     }
 
-    // The quarterly review, for the clients who get one
+    // The quarterly review, for the clients who get one - every three months,
+    // the first a couple of quarters back
     $internal_calendar_id = $context['calendars']['Internal'] ?? 0;
     if ($internal_calendar_id && in_array('Key Account', $profile['tags'])) {
-        starterInsert($mysqli, 'calendar_events', [
+        $review_id = starterInsert($mysqli, 'calendar_events', [
             'event_title' => $profile['abbreviation'] . ' - quarterly business review',
             'event_location' => $profile['sites'][0]['city'] . ', ' . $profile['sites'][0]['state'],
             'event_description' => 'Spend to date, open projects, asset age and anything coming up in the next quarter.',
-            'event_start' => demoDateTime(-1 * (14 + ($index % 30)), 14, 0),
-            'event_end' => demoDateTime(-1 * (14 + ($index % 30)), 15, 30),
+            'event_start' => demoDateTime(166 - ($index % 30), 14, 0),
+            'event_end' => demoDateTime(166 - ($index % 30), 15, 30),
             'event_all_day' => 0,
+            'event_repeat' => 'Month',
+            'event_repeat_interval' => 3,
             'event_client_id' => $client_id,
             'event_location_id' => $primary_location_id,
             'event_calendar_id' => $internal_calendar_id,
-            'event_created_at' => demoDateTime(3, 9, 0),
+            'event_created_by' => $context['user_id'],
+            'event_created_at' => demoDateTime(170, 9, 0),
         ]);
+        foreach (array_filter([$context['user_id'] ? ['attendee_user_id' => $context['user_id']] : null, $primary_contact_id ? ['attendee_contact_id' => $primary_contact_id] : null]) as $attendee) {
+            starterInsert($mysqli, 'calendar_event_attendees', $attendee + [
+                'attendee_event_id' => $review_id,
+                'attendee_created_at' => demoDateTime(170, 9, 0),
+            ]);
+        }
     }
 
     for ($trip_month = min(6, $months); $trip_month >= 0; $trip_month = $trip_month - 3) {
@@ -1509,6 +1659,110 @@ function demoBuildClient($mysqli, $profile, $index, $context, &$counts) {
     }
 
 }
+
+/**
+ * The client's certificates: the one on their website (checked, OK - the
+ * Let's Encrypt ones short-lived, one of them overdue to renew), and for some
+ * clients the firewall's factory self-signed admin certificate, a remote
+ * access portal still serving the certificate for its old name, and a RADIUS
+ * certificate from their own CA that has no host to check. Returns the
+ * website certificate's id, for the services that use it.
+ */
+function demoBuildCertificates($mysqli, $profile, $index, $client_id, $domain_id, $months, &$counts) {
+    $domain = $profile['domain'];
+    $fingerprint = function ($seed) {
+        return implode(':', str_split(strtoupper(hash('sha256', 'itflow-demo-' . $seed)), 2));
+    };
+    $short_lived = $profile['cert_issuer'] === "Let's Encrypt";
+    // Let's Encrypt certificates last 90 days and renew with 30 left; one is stuck
+    $expire_days = $short_lived ? ($index % 7 === 4 ? 12 : 31 + ($index * 13) % 58) : 20 + ($index * 9);
+    $expire = demoDate(-1 * $expire_days);
+    $issued = date('Y-m-d', strtotime($expire . ($short_lived ? ' -90 days' : ' -397 days')));
+
+    $website_id = starterInsert($mysqli, 'certificates', [
+        'certificate_name' => 'www.' . $domain,
+        'certificate_description' => $short_lived ? 'Public website certificate, renewed automatically by the reverse proxy' : 'Public website certificate, renewed manually at expiry',
+        'certificate_domain' => 'www.' . $domain,
+        'certificate_names' => 'www.' . $domain . "\n" . $domain,
+        'certificate_issued_by' => $profile['cert_issuer'],
+        'certificate_issued_at' => $issued,
+        'certificate_expire' => $expire,
+        'certificate_fingerprint' => $fingerprint('www.' . $domain . $issued),
+        'certificate_check_status' => 'ok',
+        'certificate_checked_at' => demoDateTime(1 + $index % 3, 3, 30),
+        'certificate_notes' => $short_lived ? 'Issued and renewed by the reverse proxy over HTTP-01 - port 80 has to stay open to it.' : 'Renewed by us at expiry - the CSR is generated on the web server and the key never leaves it.',
+        'certificate_domain_id' => $domain_id,
+        'certificate_client_id' => $client_id,
+        'certificate_created_at' => demoMonthDateTime($months, 7, 9, 50),
+    ]);
+    starterInsert($mysqli, 'certificate_history', [
+        'certificate_history_column' => 'certificate_expire',
+        'certificate_history_old_value' => date('Y-m-d', strtotime($expire . ($short_lived ? ' -60 days' : ' -365 days'))),
+        'certificate_history_new_value' => $expire,
+        'certificate_history_certificate_id' => $website_id,
+        'certificate_history_modified_at' => $issued . ' 04:15:00',
+    ]);
+    $counts['documentation']++;
+
+    // The firewall's admin page - the factory certificate, which browsers don't trust
+    $gateway = $profile['networks'][0][4] ?? '';
+    if ($index % 3 === 1 && $gateway !== '') {
+        starterInsert($mysqli, 'certificates', [
+            'certificate_name' => 'Firewall admin',
+            'certificate_description' => 'Management page on the LAN - still the factory self-signed certificate',
+            'certificate_domain' => $gateway . ':8443',
+            'certificate_names' => $gateway,
+            'certificate_issued_by' => 'Self-signed (factory)',
+            'certificate_issued_at' => demoDate(365 * 3 + $index * 17),
+            'certificate_expire' => demoDate(-1 * (365 * 7 - $index * 17)),
+            'certificate_fingerprint' => $fingerprint('fw-' . $domain),
+            'certificate_check_status' => 'untrusted',
+            'certificate_checked_at' => demoDateTime(1 + $index % 3, 3, 35),
+            'certificate_notes' => 'Replace with one from the internal CA at the next firmware upgrade, so the browser warning stops training people to click through.',
+            'certificate_client_id' => $client_id,
+            'certificate_created_at' => demoMonthDateTime($months, 7, 10, 10),
+        ]);
+        $counts['documentation']++;
+    }
+
+    // A remote access portal renamed in the spring, still serving the old name's certificate
+    if ($index % 4 === 2) {
+        starterInsert($mysqli, 'certificates', [
+            'certificate_name' => 'Remote access portal',
+            'certificate_description' => 'SSL VPN portal for staff working from home',
+            'certificate_domain' => 'remote.' . $domain,
+            'certificate_names' => 'vpn.' . $domain,
+            'certificate_issued_by' => 'Sectigo',
+            'certificate_issued_at' => demoDate(200 + $index),
+            'certificate_expire' => demoDate(-1 * (165 - $index)),
+            'certificate_fingerprint' => $fingerprint('vpn-' . $domain),
+            'certificate_check_status' => 'mismatch',
+            'certificate_checked_at' => demoDateTime(1 + $index % 3, 3, 40),
+            'certificate_notes' => 'The portal moved from vpn. to remote. - the new certificate is bought but not installed yet.',
+            'certificate_domain_id' => $domain_id,
+            'certificate_client_id' => $client_id,
+            'certificate_created_at' => demoMonthDateTime($months, 7, 10, 20),
+        ]);
+        $counts['documentation']++;
+    }
+
+    // From the client's own CA, for Wi-Fi - nothing to connect to, so nobody checks it
+    if ($index % 5 === 3) {
+        starterInsert($mysqli, 'certificates', [
+            'certificate_name' => 'Wi-Fi RADIUS (NPS)',
+            'certificate_description' => 'Server certificate the laptops check before joining the staff Wi-Fi',
+            'certificate_issued_by' => strtoupper($profile['abbreviation'] ?: substr($domain, 0, 4)) . '-DC01-CA',
+            'certificate_expire' => demoDate(-1 * (40 + $index * 3)),
+            'certificate_notes' => 'Renew from the internal CA before it expires - when it lapses, every laptop drops off the staff Wi-Fi at once.',
+            'certificate_client_id' => $client_id,
+            'certificate_created_at' => demoMonthDateTime($months, 7, 10, 30),
+        ]);
+        $counts['documentation']++;
+    }
+
+    return $website_id;
+}
+
 
 // ------------------------------
 // demoBuildAssets
@@ -1563,6 +1817,11 @@ function demoBuildAssets($mysqli, $profile, $index, $client_id, $location_id, $c
             // fleet anyone recognises.
             $batch = (int)floor(($number - 1) / 4);
             $purchase_months = min(70, 3 + ($batch * 12) + (($seed + $index) % 7) + (int)floor($profile['age_days'] / 120));
+            // A few of the oldest Windows machines never made the move to Windows 11
+            $os = $model[2];
+            if (strpos($os, 'Windows 11') === 0 && $purchase_months >= 50 && ($seed + $index) % 3 === 0) {
+                $os = 'Windows 10 Pro 22H2';
+            }
             $status = 'Deployed';
             if ($number === $quantity && $quantity > 3) {
                 $status = 'Ready to Deploy';
@@ -1578,7 +1837,7 @@ function demoBuildAssets($mysqli, $profile, $index, $client_id, $location_id, $c
                 'asset_make' => $model[0],
                 'asset_model' => $model[1],
                 'asset_serial' => demoSerial($profile['abbreviation'] . $asset_type . $number),
-                'asset_os' => $model[2],
+                'asset_os' => $os,
                 'asset_uri' => $ip ? demoAssetUri($asset_type, $ip) : '',
                 'asset_status' => $status,
                 'asset_purchase_reference' => 'PO-' . demoSerial($profile['abbreviation'] . 'po' . $seed, 6),
@@ -1646,6 +1905,7 @@ function demoBuildAssets($mysqli, $profile, $index, $client_id, $location_id, $c
                 'os' => $model[2],
                 'contact_id' => $contact_id,
                 'ip' => $ip,
+                'mac' => $interface_id ? demoMacAddress($profile['abbreviation'] . $asset_type . $number . 'mgmt') : null,
                 'interface_id' => $interface_id,
                 'install_months_ago' => $purchase_months,
                 'credential' => demoAssetCredentialName($asset_type),
@@ -1678,45 +1938,58 @@ function demoBuildRack($mysqli, $profile, $client_id, $location_id, $assets, $mo
     $rack_id = starterInsert($mysqli, 'racks', [
         'rack_name' => $profile['abbreviation'] . '-RACK-01',
         'rack_description' => 'Main comms rack',
-        'rack_model' => 'StarTech 12U Wall Mount',
-        'rack_depth' => 'Full',
-        'rack_type' => 'Wall Mount',
+        'rack_model' => 'StarTech 12U Wall Mount Enclosure',
+        'rack_depth' => '18 in',
+        'rack_type' => 'Wall-Mount Enclosed',
         'rack_units' => 12,
+        'rack_power_capacity' => 1000,
         'rack_physical_location' => 'Server room',
-        'rack_notes' => 'Keyed alike with the comms cupboard. Spare key is held by the onsite point of contact.',
+        'rack_notes' => 'Keyed alike with the comms cupboard. Spare key is held by the onsite point of contact. Fed from the 1500VA UPS at the bottom of the rack.',
         'rack_location_id' => $location_id,
         'rack_client_id' => $client_id,
         'rack_created_at' => demoMonthDateTime($months, 6, 15, 0),
     ]);
     $counts['documentation']++;
 
-    // Patch panel at the top, then the kit under it
-    $unit = 12;
-    starterInsert($mysqli, 'rack_units', [
-        'unit_start_number' => $unit,
-        'unit_end_number' => $unit,
-        'unit_device' => 'Patch panel - 24 port',
-        'unit_rack_id' => $rack_id,
-        'unit_created_at' => demoMonthDateTime($months, 6, 15, 5),
-    ]);
+    $racked_at = demoMonthDateTime($months, 6, 15, 5);
+    $rack_item = function ($start, $end, $fields) use ($mysqli, $rack_id, $racked_at) {
+        starterInsert($mysqli, 'rack_units', $fields + [
+            'unit_start_number' => $start,
+            'unit_end_number' => $end,
+            'unit_face' => 'front',
+            'unit_full_depth' => 1,
+            'unit_rack_id' => $rack_id,
+            'unit_created_at' => $racked_at,
+        ]);
+    };
 
+    // Patching at the top, front only - the PDU shares those units at the back
+    $rack_item(12, 12, ['unit_device' => 'Patch panel - 24 port Cat6', 'unit_type' => 'Patch Panel', 'unit_full_depth' => 0]);
+    $rack_item(11, 11, ['unit_device' => 'Horizontal cable manager', 'unit_type' => 'Cable Management', 'unit_full_depth' => 0]);
+    $rack_item(11, 12, ['unit_device' => 'Switched PDU - 8 outlet', 'unit_type' => 'PDU', 'unit_face' => 'rear', 'unit_full_depth' => 0]);
+
+    // Then the kit, top down. Firewalls and switches are short-depth; servers are not.
+    $unit = 11;
     foreach ($rackable as $asset) {
-        $unit--;
-        if ($unit < 1) {
+        $height = $asset['type'] === 'Server' ? 2 : 1;
+        $end = $unit - 1;
+        $start = $end - ($height - 1);
+        if ($start < 3) {
             break;
         }
-        $height = $asset['type'] === 'Server' ? 2 : 1;
-        $start = max(1, $unit - ($height - 1));
-        starterInsert($mysqli, 'rack_units', [
-            'unit_start_number' => $start,
-            'unit_end_number' => $unit,
-            'unit_device' => $asset['name'] . ' - ' . $asset['make'] . ' ' . $asset['model'],
+        $is_server = $asset['type'] === 'Server';
+        $is_poe = stripos($asset['model'], 'poe') !== false;
+        $rack_item($start, $end, [
+            'unit_device' => '',
             'unit_asset_id' => $asset['id'],
-            'unit_rack_id' => $rack_id,
-            'unit_created_at' => demoMonthDateTime($months, 6, 15, 5),
+            'unit_full_depth' => $is_server ? 1 : 0,
+            'unit_power_watts' => $is_server ? 220 : ($is_poe ? 150 : 35),
         ]);
         $unit = $start;
     }
+
+    // The UPS everything runs on, at the bottom where the weight belongs
+    $rack_item(1, 2, ['unit_device' => 'APC Smart-UPS 1500VA 2U', 'unit_type' => 'UPS', 'unit_notes' => 'Battery replaced at install']);
 
 }
 
@@ -1752,10 +2025,15 @@ function demoBuildPatchPanel($mysqli, $profile, $assets, $network_ids, $months, 
     $ports = [];
 
     for ($port = 1; $port <= $port_count; $port++) {
+        // Access ports on the office VLAN; the uplink carries every VLAN to the firewall
+        $trunk = array_unique(array_merge([1], array_filter(array_column($profile['networks'], 2))));
+        sort($trunk);
+        $vlans = $port === $port_count ? 'Trunk ' . implode(', ', $trunk) : (string) ($profile['networks'][0][2] ?? '');
         $ports[$port] = starterInsert($mysqli, 'asset_interfaces', [
             'interface_name' => 'Gi1/0/' . $port,
             'interface_description' => $port === $port_count ? 'Uplink to the edge firewall' : 'Access port',
             'interface_type' => 'Ethernet',
+            'interface_vlans' => $vlans,
             'interface_primary' => 0,
             'interface_network_id' => $network_id,
             'interface_asset_id' => $switch['id'],
@@ -1782,6 +2060,65 @@ function demoBuildPatchPanel($mysqli, $profile, $assets, $network_ids, $months, 
 }
 
 // ------------------------------
+// demoBuildWan
+// The edge firewall's WAN port on the internet connection, with the two
+// public addresses written down - the provider's router and the firewall.
+// ------------------------------
+function demoBuildWan($mysqli, $profile, $assets, $network_ids, $wan, $months, &$counts) {
+
+    $network_id = $network_ids['Internet'] ?? 0;
+    if (!$network_id || !$wan) {
+        return;
+    }
+    $firewall = null;
+    foreach ($assets as $asset) {
+        if ($asset['type'] === 'Firewall/Router') {
+            $firewall = $asset;
+            break;
+        }
+    }
+
+    $router_ip = $wan['base'] . '.' . $wan['first'];
+    $wan_ip = $wan['base'] . '.' . ($wan['first'] + 1);
+
+    starterInsert($mysqli, 'network_ips', [
+        'ip_address' => $router_ip,
+        'ip_type' => 'Static',
+        'ip_hostname' => 'isp-router',
+        'ip_description' => $wan['vendor'] . ' router - theirs, not ours',
+        'ip_network_id' => $network_id,
+    ]);
+    $counts['documentation']++;
+
+    if (!$firewall) {
+        return;
+    }
+
+    $mac = demoMacAddress($profile['abbreviation'] . 'wan' . $firewall['name']);
+    starterInsert($mysqli, 'asset_interfaces', [
+        'interface_name' => 'WAN',
+        'interface_description' => 'Internet - ' . $wan['vendor'],
+        'interface_type' => 'Ethernet',
+        'interface_mac' => $mac,
+        'interface_ip' => $wan_ip,
+        'interface_primary' => 0,
+        'interface_network_id' => $network_id,
+        'interface_asset_id' => $firewall['id'],
+        'interface_created_at' => demoMonthDateTime(min($months, $firewall['install_months_ago']), 15, 12, 6),
+    ]);
+    starterInsert($mysqli, 'network_ips', [
+        'ip_address' => $wan_ip,
+        'ip_type' => 'Static',
+        'ip_hostname' => $firewall['name'],
+        'ip_mac' => $mac,
+        'ip_description' => 'Firewall WAN - VPN and published services land here',
+        'ip_network_id' => $network_id,
+    ]);
+    $counts['documentation'] += 2;
+
+}
+
+// ------------------------------
 // demoBuildNetworkIps
 // Static IP documentation for the kit on the office network, plus the reserved
 // addresses at the top of the range an MSP would write down.
@@ -1798,6 +2135,7 @@ function demoBuildNetworkIps($mysqli, $profile, $assets, $network_ids, &$counts)
 
     starterInsert($mysqli, 'network_ips', [
         'ip_address' => $base . '.1',
+        'ip_type' => 'Static',
         'ip_hostname' => $profile['abbreviation'] . '-FW-01',
         'ip_description' => 'Default gateway',
         'ip_network_id' => $network_id,
@@ -1810,17 +2148,38 @@ function demoBuildNetworkIps($mysqli, $profile, $assets, $network_ids, &$counts)
         }
         starterInsert($mysqli, 'network_ips', [
             'ip_address' => $asset['ip'],
+            'ip_type' => 'Static',
             'ip_hostname' => $asset['name'],
+            'ip_mac' => $asset['mac'] ?? null,
             'ip_description' => $asset['make'] . ' ' . $asset['model'],
             'ip_network_id' => $network_id,
         ]);
         $counts['documentation']++;
     }
 
+    // The printers get their addresses from DHCP, pinned by reservation
+    $printer_number = 0;
+    foreach ($assets as $asset) {
+        if ($asset['type'] !== 'Printer' || $printer_number >= 3) {
+            continue;
+        }
+        starterInsert($mysqli, 'network_ips', [
+            'ip_address' => $base . '.' . (60 + $printer_number),
+            'ip_type' => 'Reservation',
+            'ip_hostname' => $asset['name'],
+            'ip_mac' => demoMacAddress($profile['abbreviation'] . $asset['name'] . 'dhcp'),
+            'ip_description' => $asset['make'] . ' ' . $asset['model'],
+            'ip_network_id' => $network_id,
+        ]);
+        $printer_number++;
+        $counts['documentation']++;
+    }
+
     starterInsert($mysqli, 'network_ips', [
         'ip_address' => $base . '.240',
+        'ip_type' => 'Reserved',
         'ip_hostname' => 'reserved-printers',
-        'ip_description' => 'Static reservations for printers and label writers',
+        'ip_description' => 'Held back for printers and label writers set by hand',
         'ip_network_id' => $network_id,
     ]);
     $counts['documentation']++;
@@ -1833,7 +2192,7 @@ function demoBuildNetworkIps($mysqli, $profile, $assets, $network_ids, &$counts)
 // actually arrives at an MSP, and it is what the per asset onboarding tickets
 // hang off. A refresh project sits behind them, and some have work running now.
 // ------------------------------
-function demoBuildProjects($mysqli, $profile, $index, $client_id, $months, &$counts) {
+function demoBuildProjects($mysqli, $profile, $index, $client_id, $months, &$counts, $contact_id = 0) {
 
     global $config_project_prefix;
 
@@ -1847,8 +2206,11 @@ function demoBuildProjects($mysqli, $profile, $index, $client_id, $months, &$cou
         'project_number' => demoNextNumber($mysqli, 'config_project_next_number'),
         'project_name' => 'Onboarding - ' . $profile['name'],
         'project_description' => 'Take on ' . $profile['name'] . ': document the environment, deploy monitoring and backup, capture credentials, standardise the endpoint build and hand over to the service desk.',
+        'project_start' => demoMonthDate($months, 3),
         'project_due' => demoMonthDate(max(0, $months - 1), 28),
+        'project_budget_hours' => 16 + ($index % 3) * 8,
         'project_manager' => $user_id,
+        'project_contact_id' => intval($contact_id),
         'project_client_id' => $client_id,
         'project_created_at' => demoMonthDateTime($months, 3, 9, 30),
         'project_completed_at' => demoMonthDateTime(max(0, $months - 1), 26, 16, 0),
@@ -1862,8 +2224,11 @@ function demoBuildProjects($mysqli, $profile, $index, $client_id, $months, &$cou
             'project_number' => demoNextNumber($mysqli, 'config_project_next_number'),
             'project_name' => 'Server and network refresh',
             'project_description' => 'Replaced end of life server hardware, rebuilt the switching and brought the site onto the standard build.',
+            'project_start' => demoMonthDate(15, 4),
             'project_due' => demoMonthDate(13, 20),
+            'project_budget_hours' => 40,
             'project_manager' => $user_id,
+            'project_contact_id' => intval($contact_id),
             'project_client_id' => $client_id,
             'project_created_at' => demoMonthDateTime(15, 4, 9, 30),
             'project_completed_at' => demoMonthDateTime(13, 18, 16, 45),
@@ -1871,15 +2236,25 @@ function demoBuildProjects($mysqli, $profile, $index, $client_id, $months, &$cou
         $counts['projects']++;
     }
 
-    // And whatever is running now
+    // And whatever is running now - one running late, one due soon, one not
+    // started yet and one with time in hand, so the projects list has some of each
     if (!empty($profile['project'])) {
+        $timing = [
+            ['start' => date('Y-m-d', strtotime('-45 days')), 'due' => date('Y-m-d', strtotime('-6 days'))],
+            ['start' => date('Y-m-d', strtotime('-30 days')), 'due' => date('Y-m-d', strtotime('+9 days'))],
+            ['start' => date('Y-m-d', strtotime('+14 days')), 'due' => date('Y-m-d', strtotime('+75 days'))],
+            ['start' => demoMonthDate(1, 8), 'due' => demoMonthDate(-2, 15)],
+        ][$index % 4];
         $projects['active'] = starterInsert($mysqli, 'projects', [
             'project_prefix' => $prefix,
             'project_number' => demoNextNumber($mysqli, 'config_project_next_number'),
             'project_name' => $profile['project'][0],
             'project_description' => $profile['project'][1],
-            'project_due' => demoMonthDate(-2, 15),
+            'project_start' => $timing['start'],
+            'project_due' => $timing['due'],
+            'project_budget_hours' => [12, 24, 32, 40][$index % 4],
             'project_manager' => $user_id,
+            'project_contact_id' => intval($contact_id),
             'project_client_id' => $client_id,
             'project_created_at' => demoMonthDateTime(1, 8, 10, 0),
         ]);
@@ -2226,6 +2601,12 @@ function demoBuildTickets($mysqli, $profile, $index, $client_id, $contact_ids, $
                 'ticket_onsite' => !empty($ticket['onsite']) ? 1 : 0,
             ];
 
+            // Some contacts rate their closed tickets from the portal - a slow
+            // first reply is what earns most of the bad ratings
+            if (($sequence + $index) % 5 < 2) {
+                $fields['ticket_feedback'] = $slow || ($sequence + $index) % 23 === 0 ? 'Bad' : 'Good';
+            }
+
             if (!empty($ticket['vendor']) && $vendor_ids) {
                 $fields['ticket_vendor_id'] = $vendor_ids[0];
                 $fields['ticket_vendor_ticket_number'] = 'V' . demoSerial($profile['abbreviation'] . 'vt' . $sequence, 7);
@@ -2305,7 +2686,7 @@ function demoBuildTickets($mysqli, $profile, $index, $client_id, $contact_ids, $
         if ($stage['closed']) {
             $fields['ticket_closed_at'] = demoDateTime($stage['closed'], 15, 30);
             $fields['ticket_closed_by'] = $user_id;
-            $fields['ticket_feedback'] = $slot === 0 ? 'Great' : 'Ok';
+            $fields['ticket_feedback'] = 'Good';
         }
         if ($stage['status'] === $context['status_open'] && !empty($ticket['onsite'])) {
             $fields['ticket_schedule'] = demoDateTime(-2, 10, 0);
@@ -2324,6 +2705,28 @@ function demoBuildTickets($mysqli, $profile, $index, $client_id, $contact_ids, $
         }
 
         $on_hold = $stage['status'] === $context['status_hold'];
+
+        // A live ticket is mid-conversation. The pool's last word is the fix, so it
+        // is left off; the newest has no replies yet; of the other two, one has the
+        // client chasing (our move) and one is with them, or on hold.
+        if (!$stage['resolved']) {
+            if ($stage['status'] === $context['status_new']) {
+                $replies = [];
+            } else {
+                if ($replies && end($replies)['type'] === 'Public') {
+                    array_pop($replies);
+                }
+                if ($slot === 3) {
+                    if (!$replies || end($replies)['type'] !== 'Client') {
+                        $replies[] = ['type' => 'Client', 'body' => '<p>Any update on this one? It is still happening.</p>', 'worked' => '', 'at' => demoDateTime(1, 9, 5)];
+                    }
+                } else {
+                    $replies[] = ['type' => 'Public', 'worked' => '00:20:00', 'at' => demoDateTime(1, 11, 20), 'body' => $on_hold
+                        ? '<p>Parts are on order - we will pick this back up as soon as they arrive.</p>'
+                        : '<p>Made a change on our side. Can you try again and let us know if it is still happening?</p>'];
+                }
+            }
+        }
 
         demoSeedTicket($mysqli, $fields, [
             'closed_at' => $stage['closed'] ? demoDateTime($stage['closed'], 15, 30) : '',
@@ -3122,7 +3525,8 @@ function demoBuildInternalDiary($mysqli, $context, &$counts) {
         return;
     }
 
-    // Weekly and monthly fixtures, running back a quarter and forward a month
+    // The standing meetings and windows - each one repeating event, every N
+    // weeks from a quarter back, with us on it
     // title, calendar, description, weekday offset from Monday, start hour, length in hours, every N weeks
     $fixtures = [
         ['Team stand up', $internal_id, 'Fifteen minutes on the queue, anything stuck and who is out.', 0, 8, 1, 1],
@@ -3136,31 +3540,34 @@ function demoBuildInternalDiary($mysqli, $context, &$counts) {
     ];
 
     foreach ($fixtures as $fixture) {
-        for ($week = 13; $week >= -4; $week--) {
 
-            if ($week % $fixture[6] !== 0) {
-                continue;
-            }
+        // Monday a quarter back, then the weekday offset
+        $days_ago = (13 * 7) - $fixture[3] + (int)date('N') - 1;
+        $start = demoDateTime($days_ago, $fixture[4], 0);
+        $end = date('Y-m-d H:i:s', strtotime($start . ' +' . $fixture[5] . ' hours'));
 
-            // Monday of that week, then the weekday offset
-            $days_ago = ($week * 7) - $fixture[3] + (int)date('N') - 1;
-            $start = demoDateTime($days_ago, $fixture[4], 0);
-            $end = date('Y-m-d H:i:s', strtotime($start . ' +' . $fixture[5] . ' hours'));
-
-            starterInsert($mysqli, 'calendar_events', [
-                'event_title' => $fixture[0],
-                'event_location' => $fixture[0] === 'Monthly maintenance window' ? 'Remote' : 'Office',
-                'event_description' => $fixture[2],
-                'event_start' => $start,
-                'event_end' => $end,
-                'event_all_day' => 0,
-                'event_client_id' => 0,
-                'event_calendar_id' => $fixture[1],
-                'event_created_at' => demoDateTime($days_ago + 7, 9, 0),
+        $event_id = starterInsert($mysqli, 'calendar_events', [
+            'event_title' => $fixture[0],
+            'event_location' => $fixture[0] === 'Monthly maintenance window' ? 'Remote' : 'Office',
+            'event_description' => $fixture[2],
+            'event_start' => $start,
+            'event_end' => $end,
+            'event_all_day' => 0,
+            'event_repeat' => 'Week',
+            'event_repeat_interval' => $fixture[6],
+            'event_client_id' => 0,
+            'event_calendar_id' => $fixture[1],
+            'event_created_by' => $user_id,
+            'event_created_at' => demoDateTime($days_ago + 7, 9, 0),
+        ]);
+        if ($user_id) {
+            starterInsert($mysqli, 'calendar_event_attendees', [
+                'attendee_user_id' => $user_id,
+                'attendee_event_id' => $event_id,
+                'attendee_created_at' => demoDateTime($days_ago + 7, 9, 0),
             ]);
-            $counts['company']++;
-
         }
+        $counts['company']++;
     }
 
     // One off internal days
@@ -4124,7 +4531,7 @@ function demoDataSpecs() {
             'recurring_ticket' => 'Monthly maintenance visit - Verity Insurance',
             'project' => null,
             'vendors' => [
-                ['Allegheny Business Fiber', 'Office internet and failover', '412-555-0158', 'alleghenyfiber.example', '4 hour response', 'Primary fibre with a 4G backup that has never been tested under load.'],
+                ['Allegheny Business Fiber', 'Office internet and failover', '412-555-0158', 'alleghenyfiber.example', '4 hour response', 'Primary fiber with a 4G backup that has never been tested under load.'],
                 ['Carrier Gateway Systems', 'Insurance carrier portal aggregator', '412-555-0159', 'carriergateway.example', '8x5 support', 'Browser fussy. Keep one machine on the known good version.'],
             ],
             'fleet' => ['Firewall/Router' => 1, 'Switch' => 2, 'Access Point' => 3, 'Server' => 2, 'Desktop' => 15, 'Laptop' => 5, 'Printer' => 3, 'Phone' => 14],
@@ -4410,27 +4817,30 @@ function demoExpandProfile($spec) {
     }
 
     // Networks
+    // Name, description, VLAN, subnet, gateway, DNS, DNS, DHCP range, notes, type -
+    // the internet connection is added per client from its ISP (demoBuildClient)
     $networks = [
-        ['Office LAN', 'Staff workstations, printers and handsets', 10, '192.168.10.0', '192.168.10.1', '192.168.10.1', '1.1.1.1', '192.168.10.50 - 192.168.10.220', 'Static addressing above .240 is reserved and documented in the IP list.'],
-        ['Guest Wireless', 'Isolated guest access - no route to the office LAN', 40, '192.168.40.0', '192.168.40.1', '1.1.1.1', '9.9.9.9', '192.168.40.20 - 192.168.40.200', 'Client isolation is on. Password is rotated at each quarterly visit.'],
+        ['Office LAN', 'Staff workstations, printers and handsets', 10, '192.168.10.0/24', '192.168.10.1', '192.168.10.1', '1.1.1.1', '192.168.10.50 - 192.168.10.220', 'Static addressing above .240 is reserved and documented in the IP list.', 'LAN'],
+        ['Guest Wireless', 'Isolated guest access - no route to the office LAN', 40, '192.168.40.0/24', '192.168.40.1', '1.1.1.1', '9.9.9.9', '192.168.40.20 - 192.168.40.200', 'Client isolation is on. Password is rotated at each quarterly visit.', 'Guest'],
     ];
     if ($servers > 1) {
-        $networks[] = ['Server VLAN', 'Hypervisors, storage and management interfaces', 20, '192.168.20.0', '192.168.20.1', '192.168.20.1', '1.1.1.1', 'Static addressing only', 'No DHCP. Every address here is recorded against the asset.'];
+        $networks[] = ['Server VLAN', 'Hypervisors, storage and management interfaces', 20, '192.168.20.0/24', '192.168.20.1', '192.168.20.1', '1.1.1.1', 'Static addressing only', 'No DHCP. Every address here is recorded against the asset.', 'Servers'];
     }
     if (in_array($spec['type'], ['Manufacturing', 'Logistics'])) {
-        $networks[] = ['Equipment VLAN', 'Shop floor and warehouse equipment - no internet access', 30, '192.168.30.0', '192.168.30.1', '192.168.30.1', '1.1.1.1', '192.168.30.40 - 192.168.30.240', 'Outbound internet is blocked at the firewall by design. Do not "fix" this.'];
+        $networks[] = ['Equipment VLAN', 'Shop floor and warehouse equipment - no internet access', 30, '192.168.30.0/24', '192.168.30.1', '192.168.30.1', '1.1.1.1', '192.168.30.40 - 192.168.30.240', 'Outbound internet is blocked at the firewall by design. Do not "fix" this.', 'IoT'];
     }
 
     // Credentials - names line up with demoAssetCredentialName so the vault
     // entries attach to the kit they actually open
     $mail_admin_uri = $mail === 'Google Workspace' ? 'https://admin.google.com' : 'https://admin.microsoft.com';
+    // [name, description, uri, username, note, tags, starred, has 2FA, password last changed (days ago)]
     $credentials = [
-        ['Firewall Administrator', 'Edge firewall management interface', 'https://192.168.10.1', 'msp-admin', 'Local administrator on the edge firewall. Rotated at every quarterly review.', ['Firewall', 'Local Admin', 'Rotate Quarterly'], 1],
-        [$mail . ' Administrator', 'Tenant administration for mail and identity', $mail_admin_uri, 'msp-admin@' . $domain, 'Break glass administrator. MFA enforced - the token lives with the on call phone.', ['Microsoft 365', 'Domain Admin', 'Break Glass'], 1],
-        ['Hypervisor and Storage Administrator', $foss ? 'Proxmox VE and TrueNAS management' : 'Hypervisor and NAS management', 'https://192.168.20.10:8006', 'msp-admin', 'Root equivalent. Use the individual accounts for day to day work and this only for maintenance.', ['Hypervisor', 'Local Admin', 'Break Glass'], 0],
-        ['Network Controller', 'UniFi controller for switching and wireless', 'https://192.168.10.12', 'msp-' . strtolower($short), 'Controller runs on the management stack, not on site.', ['Switch', 'Wireless', 'Shared'], 0],
-        ['Backup Console', $foss ? 'Proxmox Backup Server and Synology Active Backup' : 'Backup platform for servers and endpoints', 'https://backup.example', 'msp-' . strtolower($short), 'Console login for restore requests and job monitoring.', ['Backup Console', 'Service Account'], 0],
-        ['Registrar and DNS', 'Domain registrar and DNS control panel', 'https://registrar.example', 'billing@' . $domain, 'Registrar account is in the client name with us as technical contact.', ['Registrar and DNS', 'Shared'], 0],
+        ['Firewall Administrator', 'Edge firewall management interface', 'https://192.168.10.1', 'msp-admin', 'Local administrator on the edge firewall. Rotated at every quarterly review.', ['Firewall', 'Local Admin', 'Rotate Quarterly'], 1, 0, 25],
+        [$mail . ' Administrator', 'Tenant administration for mail and identity', $mail_admin_uri, 'msp-admin@' . $domain, 'Break glass administrator. MFA enforced - the token lives with the on call phone.', ['Microsoft 365', 'Domain Admin', 'Break Glass'], 1, 1, 120],
+        ['Hypervisor and Storage Administrator', $foss ? 'Proxmox VE and TrueNAS management' : 'Hypervisor and NAS management', 'https://192.168.20.10:8006', 'msp-admin', 'Root equivalent. Use the individual accounts for day to day work and this only for maintenance.', ['Hypervisor', 'Local Admin', 'Break Glass'], 0, 0, 430],
+        ['Network Controller', 'UniFi controller for switching and wireless', 'https://192.168.10.12', 'msp-' . strtolower($short), 'Controller runs on the management stack, not on site.', ['Switch', 'Wireless', 'Shared'], 0, 0, 60],
+        ['Backup Console', $foss ? 'Proxmox Backup Server and Synology Active Backup' : 'Backup platform for servers and endpoints', 'https://backup.example', 'msp-' . strtolower($short), 'Console login for restore requests and job monitoring.', ['Backup Console', 'Service Account'], 0, 1, 210],
+        ['Registrar and DNS', 'Domain registrar and DNS control panel', 'https://registrar.example', 'billing@' . $domain, 'Registrar account is in the client name with us as technical contact.', ['Registrar and DNS', 'Shared'], 0, 1, 15],
     ];
 
     // Services - the last two entries say which asset types run it and which

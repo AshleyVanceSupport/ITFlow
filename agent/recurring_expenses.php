@@ -46,8 +46,8 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
                     <div class="col-sm-4">
                         <div class="input-group">
                             <input type="search" class="form-control" name="q" value="<?php if (isset($q)) { echo stripslashes(escapeHtml($q)); } ?>" placeholder="Search Recurring Expenses">
-                                <button class="btn btn-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilter"><i class="fas fa-filter"></i></button>
-                                <button class="btn btn-primary"><i class="fa fa-search"></i></button>
+                                <button class="btn btn-secondary" title="More filters" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilter"><i class="fas fa-filter"></i></button>
+                                <button class="btn btn-primary" title="Search"><i class="fa fa-search"></i></button>
                         </div>
                     </div>
                     <div class="col-sm-8">
@@ -175,7 +175,7 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
                             <?= $category_name ?>
                             <div class="text-secondary"><small><?= truncate($recurring_expense_description, 60) ?></small></div>
                         </td>
-                        <td><?= $vendor_name ?></td>
+                        <td><?= $recurring_expense_vendor_id ? vendorLink($recurring_expense_vendor_id, $vendor_name, ['page' => true]) : '-' ?></td>
                         <td class="text-end font-monospace"><?= numfmt_format_currency($currency_format, $recurring_expense_amount, $recurring_expense_currency_code) ?></td>
                         <td><?= $recurring_expense_frequency_display ?></td>
                         <td><?= $recurring_expense_last_sent_display ?></td>
@@ -183,7 +183,7 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
                         <td><?= $client_name_display ?></td>
                         <td>
                             <div class="dropdown dropstart text-center">
-                                <button class="btn btn-secondary btn-sm" type="button" data-bs-toggle="dropdown">
+                                <button class="btn btn-secondary btn-sm" title="More actions" type="button" data-bs-toggle="dropdown">
                                     <i class="fas fa-ellipsis-h"></i>
                                 </button>
                                 <div class="dropdown-menu">

@@ -133,7 +133,7 @@ if (isset($_GET['quote_id'])) {
     // Quote File Attachments
     $sql_quote_files = mysqli_query(
         $mysqli,
-        "SELECT file_reference_name, file_name, file_created_at FROM quote_files LEFT JOIN files ON quote_files.file_id = files.file_id WHERE quote_id = $quote_id"
+        "SELECT files.file_id, file_name, file_ext, file_size, file_created_at FROM quote_files JOIN files ON quote_files.file_id = files.file_id WHERE quote_id = $quote_id AND file_archived_at IS NULL ORDER BY file_name ASC"
     );
 
 ?>
@@ -211,7 +211,7 @@ if (isset($_GET['quote_id'])) {
 
                 <div class="col-4">
                     <div class="dropdown dropstart text-center float-end">
-                        <button class="btn btn-secondary" type="button" data-bs-toggle="dropdown">
+                        <button class="btn btn-secondary" title="More actions" type="button" data-bs-toggle="dropdown">
                             <i class="fas fa-ellipsis-v"></i>
                         </button>
                         <div class="dropdown-menu">
@@ -354,12 +354,12 @@ if (isset($_GET['quote_id'])) {
                                             <td class="d-print-none">
                                                 <?php if ($quote_status !== "Invoiced" && $quote_status !== "Accepted" && $quote_status !== "Declined" && lookupUserPermission("module_sales") >= 2) { ?>
                                                     <div class="btn-group">
-                                                        <button type="button" class="btn btn-sm btn-link drag-handle">
+                                                        <button type="button" class="btn btn-sm btn-link drag-handle" title="Drag to reorder">
                                                             <i class="fas fa-bars text-muted"></i>
                                                         </button>
 
                                                         <div class="dropdown">
-                                                            <button class="btn btn-sm btn-light" type="button" data-bs-toggle="dropdown">
+                                                            <button class="btn btn-sm btn-light" title="More actions" type="button" data-bs-toggle="dropdown">
                                                                 <i class="fas fa-ellipsis-v"></i>
                                                             </button>
                                                             <div class="dropdown-menu">
@@ -436,7 +436,7 @@ if (isset($_GET['quote_id'])) {
                                                 </select>
                                             </td>
                                             <td class="text-center">
-                                                <button class="btn btn-light text-success" type="submit" name="add_quote_item">
+                                                <button class="btn btn-light text-success" title="Add item" type="submit" name="add_quote_item">
                                                     <i class="fa fa-check"></i>
                                                 </button>
                                             </td>
@@ -517,39 +517,40 @@ if (isset($_GET['quote_id'])) {
                 <div class="card-header text-bold">
                     <i class="fa fa-paperclip me-2"></i>Attachments
                     <div class="card-tools">
-                        <button type="button" class="btn btn-tool" data-lte-toggle="card-collapse">
+                        <button type="button" class="btn btn-tool" title="Show/hide" data-lte-toggle="card-collapse">
                             <i class="fas fa-minus"></i>
                         </button>
-                        <button type="button" class="btn btn-tool" data-lte-toggle="card-remove">
+                        <button type="button" class="btn btn-tool" title="Hide" data-lte-toggle="card-remove">
                             <i class="fas fa-times"></i>
                         </button>
                     </div>
                 </div>
                 <div class="card-body">
-                    <table class="table">
-                        <thead>
+                    <?php /* Through the file quick look and agent/file.php, which check access -
+                             not a link straight into the uploads folder */ ?>
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
                         <tr>
-                            <th>File Name</th>
-                            <th>Upload date</th>
+                            <th>File</th>
+                            <th>Uploaded</th>
+                            <th></th>
                         </tr>
                         </thead>
                         <tbody>
-                        <?php
-
-                        while ($quote_file = mysqli_fetch_assoc($sql_quote_files)) {
-                            $name = escapeHtml($quote_file['file_name']);
-                            $ref_name = escapeHtml($quote_file['file_reference_name']);
-                            $created = escapeHtml($quote_file['file_created_at']);
-
-                            ?>
+                        <?php while ($quote_file = mysqli_fetch_assoc($sql_quote_files)) {
+                            $quote_file_id = intval($quote_file['file_id']); ?>
                             <tr>
-                                <td><a target="_blank" href="../uploads/clients/<?= $client_id ?>/<?= $ref_name ?>"><?= $name ?></a></td>
-                                <td><?= $created ?></td>
+                                <td>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <?= fileTypeTile($quote_file['file_ext'], 'sm') ?>
+                                        <a class="ajax-modal text-break" href="#" data-modal-size="lg" data-modal-url="modals/file/file.php?id=<?= $quote_file_id ?>"><?= escapeHtml($quote_file['file_name']) ?></a>
+                                        <span class="small text-body-secondary text-nowrap"><?= formatBytes(intval($quote_file['file_size'])) ?></span>
+                                    </div>
+                                </td>
+                                <td class="small text-nowrap" title="<?= escapeHtml($quote_file['file_created_at']) ?>"><?= timeAgo($quote_file['file_created_at']) ?></td>
+                                <td class="text-end"><a class="btn btn-sm btn-light" href="file.php?file_id=<?= $quote_file_id ?>" title="Download"><i class="fas fa-fw fa-download"></i></a></td>
                             </tr>
-                            <?php
-                        }
-                        ?>
-
+                        <?php } ?>
                         </tbody>
                     </table>
                 </div>
@@ -564,10 +565,10 @@ if (isset($_GET['quote_id'])) {
                 <div class="card-header text-bold">
                     <i class="fa fa-history me-2"></i>History
                     <div class="card-tools">
-                        <button type="button" class="btn btn-tool" data-lte-toggle="card-collapse">
+                        <button type="button" class="btn btn-tool" title="Show/hide" data-lte-toggle="card-collapse">
                             <i class="fas fa-minus"></i>
                         </button>
-                        <button type="button" class="btn btn-tool" data-lte-toggle="card-remove">
+                        <button type="button" class="btn btn-tool" title="Hide" data-lte-toggle="card-remove">
                             <i class="fas fa-times"></i>
                         </button>
                     </div>

@@ -30,7 +30,7 @@ function starterContentPacks() {
         'tags' => [
             'label' => 'Tags',
             'icon' => 'fa-tags',
-            'description' => 'Client, location, contact, credential and asset tags.',
+            'description' => 'Client, location, contact, credential, asset, vendor and domain tags.',
         ],
         'ticket_templates' => [
             'label' => 'Ticket Templates',
@@ -661,6 +661,28 @@ function starterContentTags() {
         [5, 'Leased', '#6c757d', 'file-contract'],
         [5, 'Spare Stock', '#795548', 'boxes'],
         [5, 'Patch Excluded', '#ffc107', 'ban'],
+
+        // Vendor
+        [6, 'ISP', '#007bff', 'wifi'],
+        [6, 'Telecom', '#28a745', 'phone-alt'],
+        [6, 'Line of Business', '#6f42c1', 'cubes'],
+        [6, 'Software', '#20c997', 'window-restore'],
+        [6, 'Hardware', '#001f3f', 'server'],
+        [6, 'Cloud', '#0078d4', 'cloud'],
+        [6, 'Security', '#dc3545', 'shield-alt'],
+        [6, 'Distributor', '#795548', 'truck'],
+        [6, 'Printing', '#6c757d', 'print'],
+        [6, 'Hosting', '#17a2b8', 'globe'],
+        [6, 'Professional Services', '#343a40', 'briefcase'],
+        [6, 'Authorised Contacts Only', '#d81b60', 'user-lock'],
+
+        // Domain
+        [7, 'Primary', '#007bff', 'star'],
+        [7, 'Client-owned', '#6f42c1', 'user-tie'],
+        [7, 'Managed DNS', '#20c997', 'sitemap'],
+        [7, 'Parked', '#adb5bd', 'parking'],
+        [7, 'Marketing', '#fd7e14', 'bullhorn'],
+        [7, 'Do Not Renew', '#dc3545', 'ban'],
     ];
 
     return $tags;

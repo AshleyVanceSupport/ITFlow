@@ -196,8 +196,8 @@ $summary_total_income = floatval($row['total_income']);
                     <div class="col-sm-4">
                         <div class="input-group">
                             <input type="search" class="form-control" name="q" value="<?php if (isset($q)) { echo stripslashes(escapeHtml($q)); } ?>" placeholder="Search Income">
-                                <button class="btn btn-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilter"><i class="fas fa-filter"></i></button>
-                                <button class="btn btn-primary"><i class="fa fa-search"></i></button>
+                                <button class="btn btn-secondary" title="More filters" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilter"><i class="fas fa-filter"></i></button>
+                                <button class="btn btn-primary" title="Search"><i class="fa fa-search"></i></button>
                         </div>
                     </div>
                     <div class="col-md-2">
@@ -216,7 +216,7 @@ $summary_total_income = floatval($row['total_income']);
                                 <option value="">- All Categories -</option>
 
                                 <?php
-                                $sql_categories_filter = mysqli_query($mysqli, "SELECT category_id, category_name FROM categories
+                                $sql_categories_filter = mysqli_query($mysqli, "SELECT category_id, category_name, category_color, category_icon FROM categories
                                     WHERE category_type = 'Income'
                                     AND (EXISTS (SELECT 1 FROM revenues WHERE revenue_category_id = category_id)
                                         OR EXISTS (SELECT 1 FROM payments JOIN invoices ON payment_invoice_id = invoice_id WHERE invoice_category_id = category_id))
@@ -225,7 +225,7 @@ $summary_total_income = floatval($row['total_income']);
                                     $filter_category_id = intval($row['category_id']);
                                     $filter_category_name = escapeHtml($row['category_name']);
                                 ?>
-                                    <option <?php if ($category_filter == $filter_category_id) { echo "selected"; } ?> value="<?= $filter_category_id ?>"><?= $filter_category_name ?></option>
+                                    <option <?php if ($category_filter == $filter_category_id) { echo "selected"; } ?> value="<?= $filter_category_id ?>"<?= selectOptionColor($row['category_color'] ?? '', $row['category_icon'] ?? '') ?>><?= $filter_category_name ?></option>
                                 <?php
                                 }
                                 ?>
@@ -514,7 +514,7 @@ $summary_total_income = floatval($row['total_income']);
                         <td>
                             <?php if (lookupUserPermission("module_sales") >= 3) { ?>
                                 <div class="dropdown dropstart text-center">
-                                    <button class="btn btn-secondary btn-sm" type="button" data-bs-toggle="dropdown">
+                                    <button class="btn btn-secondary btn-sm" title="More actions" type="button" data-bs-toggle="dropdown">
                                         <i class="fas fa-ellipsis-h"></i>
                                     </button>
                                     <div class="dropdown-menu">

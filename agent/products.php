@@ -94,7 +94,7 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
                     <div class="col-sm-4">
                         <div class="input-group">
                             <input type="search" class="form-control" name="q" value="<?php if (isset($q)) {echo stripslashes(escapeHtml($q));} ?>" placeholder="Search <?= $type_display ?>">
-                                <button class="btn btn-primary"><i class="fa fa-search"></i></button>
+                                <button class="btn btn-primary" title="Search"><i class="fa fa-search"></i></button>
                         </div>
                     </div>
                     <div class="col-sm-3">
@@ -103,21 +103,20 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
                                 <option value="">- All Categories -</option>
 
                                 <?php
-                                $sql_categories_filter = mysqli_query($mysqli, "SELECT category_id, category_name FROM categories WHERE category_type = 'Income' AND EXISTS (SELECT 1 FROM products WHERE product_category_id = category_id AND product_$archive_query $type_query) ORDER BY category_name ASC");
+                                $sql_categories_filter = mysqli_query($mysqli, "SELECT category_id, category_name, category_color, category_icon FROM categories WHERE category_type = 'Income' AND EXISTS (SELECT 1 FROM products WHERE product_category_id = category_id AND product_$archive_query $type_query) ORDER BY category_name ASC");
                                 while ($row = mysqli_fetch_assoc($sql_categories_filter)) {
                                     $category_id = intval($row['category_id']);
                                     $category_name = escapeHtml($row['category_name']);
                                 ?>
-                                    <option <?php if ($category_filter == $category_id) { echo "selected"; } ?> value="<?= $category_id ?>"><?= $category_name ?></option>
+                                    <option <?php if ($category_filter == $category_id) { echo "selected"; } ?> value="<?= $category_id ?>"<?= selectOptionColor($row['category_color'] ?? '', $row['category_icon'] ?? '') ?>><?= $category_name ?></option>
                                 <?php
                                 }
                                 ?>
 
                             </select>
-                                <button class="btn btn-secondary" type="button"
-                                    data-toggle="ajax-modal"
+                                <button class="btn btn-secondary ajax-modal" title="New category" type="button"
                                     data-modal-size="sm"
-                                    data-ajax-url="ajax/ajax_category_add.php?category=Income">
+                                    data-modal-url="../admin/modals/category/category_add.php?category=Income">
                                     <i class="fas fa-plus"></i>
                                 </button>
                         </div>
@@ -273,7 +272,7 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
 
                             <td>
                                 <div class="dropdown dropstart text-center">
-                                    <button class="btn btn-secondary btn-sm" type="button" data-bs-toggle="dropdown">
+                                    <button class="btn btn-secondary btn-sm" title="More actions" type="button" data-bs-toggle="dropdown">
                                         <i class="fas fa-ellipsis-h"></i>
                                     </button>
                                     <div class="dropdown-menu">

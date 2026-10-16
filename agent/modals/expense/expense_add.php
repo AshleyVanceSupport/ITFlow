@@ -3,6 +3,8 @@
 require_once '../../../includes/modal_header.php';
 
 $client_id = intval($_GET['client_id'] ?? 0);
+// Opened from one of our vendors' pages - that vendor
+$prefill_vendor_id = intval($_GET['vendor_id'] ?? 0);
 
 ob_start();
 
@@ -80,18 +82,18 @@ ob_start();
                         <option value="">- Select a Vendor -</option>
                         <?php
 
-                        $sql = mysqli_query($mysqli, "SELECT vendor_id, vendor_name FROM vendors WHERE vendor_client_id = 0 AND vendor_archived_at IS NULL ORDER BY vendor_name ASC");
+                        $sql = mysqli_query($mysqli, "SELECT vendor_id, vendor_name, vendor_description FROM vendors WHERE vendor_client_id = 0 AND vendor_archived_at IS NULL ORDER BY vendor_favorite DESC, vendor_name ASC");
                         while ($row = mysqli_fetch_assoc($sql)) {
                             $vendor_id = intval($row['vendor_id']);
                             $vendor_name = escapeHtml($row['vendor_name']);
                             ?>
-                            <option value="<?= $vendor_id ?>"><?= $vendor_name ?></option>
+                            <option value="<?= $vendor_id ?>" <?= $vendor_id === $prefill_vendor_id ? 'selected' : '' ?><?= selectOptionVendor($row['vendor_name'], $row['vendor_description']) ?>><?= $vendor_name ?></option>
 
                             <?php
                         }
                         ?>
                     </select>
-                        <a class="btn btn-secondary" href="vendors.php" target="_blank"><i class="fas fa-fw fa-plus"></i></a>
+                        <a class="btn btn-secondary" title="Go to Vendors" href="vendors.php" target="_blank"><i class="fas fa-fw fa-plus"></i></a>
                 </div>
             </div>
         </div>
@@ -119,18 +121,18 @@ ob_start();
                         <option value="">- Select a Category -</option>
                         <?php
 
-                        $sql = mysqli_query($mysqli, "SELECT category_id, category_name FROM categories WHERE category_type = 'Expense' AND category_archived_at IS NULL ORDER BY category_name ASC");
+                        $sql = mysqli_query($mysqli, "SELECT category_id, category_name, category_color, category_icon FROM categories WHERE category_type = 'Expense' AND category_archived_at IS NULL ORDER BY category_name ASC");
                         while ($row = mysqli_fetch_assoc($sql)) {
                             $category_id = intval($row['category_id']);
                             $category_name = escapeHtml($row['category_name']);
                             ?>
-                            <option value="<?= $category_id ?>"><?= $category_name ?></option>
+                            <option value="<?= $category_id ?>"<?= selectOptionColor($row['category_color'] ?? '', $row['category_icon'] ?? '') ?>><?= $category_name ?></option>
 
                             <?php
                         }
                         ?>
                     </select>
-                        <button class="btn btn-secondary ajax-modal" type="button"
+                        <button class="btn btn-secondary ajax-modal" title="New category" type="button"
                             data-modal-url="../admin/modals/category/category_add.php?category=Expense">
                             <i class="fas fa-plus"></i>
                         </button>
@@ -149,12 +151,12 @@ ob_start();
                             <option value="0">- Select a Client (Optional) -</option>
                             <?php
 
-                            $sql = mysqli_query($mysqli, "SELECT client_id, client_name FROM clients WHERE client_archived_at IS NULL " . clientScopeSql('clients.client_id') . " ORDER BY client_name ASC");
+                            $sql = mysqli_query($mysqli, "SELECT client_id, client_name, client_abbreviation FROM clients WHERE client_archived_at IS NULL " . clientScopeSql('clients.client_id') . " ORDER BY client_name ASC");
                             while ($row = mysqli_fetch_assoc($sql)) {
                                 $client_id_select = intval($row['client_id']);
                                 $client_name = escapeHtml($row['client_name']);
                                 ?>
-                                <option value="<?= $client_id_select ?>"><?= $client_name ?></option>
+                                <option value="<?= $client_id_select ?>"<?= selectOptionClient($row['client_id'], $row['client_name'], $row['client_abbreviation'] ?? '') ?>><?= $client_name ?></option>
 
                                 <?php
                             }
