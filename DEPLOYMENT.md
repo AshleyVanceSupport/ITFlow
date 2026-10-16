@@ -3,13 +3,17 @@
 This repository is Mountaineer IT's build of [ITFlow](https://github.com/itflow-org/itflow).
 Servers install and update from **this** repository, never from itflow-org directly.
 
+The commands below assume Debian/Ubuntu with Apache, ITFlow at `/var/www/itflow`, and the
+web server user `www-data` (home directory `/var/www` – check with `getent passwd www-data`).
+Adjust paths if yours differ.
+
 ## Branches
 
 | Branch          | Purpose                                                        | Who pulls from it   |
 |-----------------|----------------------------------------------------------------|---------------------|
 | `MountaineerIT` | Production. Default branch. Changes arrive only by PR from `develop`. | Production servers  |
 | `develop`       | Staging. Our changes and ITFlow's releases land here first.    | Beta / test server  |
-| `master`        | Untouched copy of upstream `master`, for comparison only. Never deploy it. | Nobody |
+| `master`        | Untouched copy of upstream `master`, for comparison only. **Never deploy it** – see "Moving an existing install over". | Nobody |
 
 Flow:
 
@@ -25,31 +29,39 @@ MountaineerIT  ──►  production servers
 
 ## How a server knows which branch to follow
 
-ITFlow's updater (Admin > Update, or `scripts/update_cli.php`) does a `git fetch` from the
-clone's `origin` remote and hard-resets the files to `origin/$repo_branch`, then runs any
-pending database updates. `$repo_branch` lives in the server's `config.php`:
+ITFlow's updater does a `git fetch` from the clone's `origin` remote, hard-resets the files
+to `origin/$repo_branch`, then applies any pending database updates. `$repo_branch` lives
+in the server's `config.php`:
 
 | Server     | `origin`                                         | `$repo_branch`              |
 |------------|--------------------------------------------------|-----------------------------|
 | Production | `git@github.com:MountaineerIT/ITFLOW.git`        | `'MountaineerIT'` (default) |
 | Beta       | `git@github.com:MountaineerIT/ITFLOW.git`        | `'develop'`                 |
 
-The update page shows "Not the release branch" on anything other than `MountaineerIT`
-– expected on the beta server.
+Admin > Update shows "Not the release branch" on anything other than `MountaineerIT` –
+expected on the beta server.
+
+Clicking **Update** in Admin > Update does not update immediately: it *queues* the update and
+the cron dispatcher (`cron/cron.php`) runs it within a minute. So **cron must be installed and
+switched on** (Maintenance > Cron) for updates to happen.
 
 ## Giving a server access (deploy key)
 
-The repository is private, so each server gets its own read-only **deploy key**.
-Run as the user that owns the ITFlow files (usually `www-data`):
+While the repository is private, each server needs its own read-only **deploy key**.
+(If the repository is made public, servers can clone over HTTPS instead –
+`https://github.com/MountaineerIT/ITFLOW.git` – and this section can be skipped.)
+
+`/var/www` is owned by root, so create the `.ssh` folder as root first, then generate the
+key as `www-data`:
 
 ```bash
-sudo -u www-data mkdir -p /var/www/.ssh
+sudo install -d -o www-data -g www-data -m 700 /var/www/.ssh
 sudo -u www-data ssh-keygen -t ed25519 -N "" -C "itflow-$(hostname)" -f /var/www/.ssh/id_ed25519
 sudo -u www-data cat /var/www/.ssh/id_ed25519.pub
 sudo -u www-data ssh -o StrictHostKeyChecking=accept-new -T git@github.com   # accepts GitHub's host key
 ```
 
-(Use that user's home directory – check with `getent passwd www-data`.)
+The last command should say "successfully authenticated" once the key has been added.
 
 On GitHub: **Repository > Settings > Deploy keys > Add deploy key**, paste the public key,
 name it after the server, and leave **Allow write access unchecked**.
@@ -57,51 +69,118 @@ To retire a server, delete its key there.
 
 ## New install
 
-```bash
-cd /var/www
-sudo -u www-data git clone -b MountaineerIT git@github.com:MountaineerIT/ITFLOW.git itflow   # beta: -b develop
-```
+1. Create the database with the collation ITFlow's schema uses, so tables added by future
+   database updates match:
 
-Then run the web setup (`https://<host>/setup`) or `scripts/setup_cli.php`. Setup writes
-`$repo_branch = 'MountaineerIT'` into `config.php`; **on the beta server change it to
-`'develop'`**.
+   ```sql
+   CREATE DATABASE itflow CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+   ```
 
-Add the cron entry to the file owner's crontab and turn cron on in Maintenance > Cron:
+2. Create the install folder as root (`/var/www` is root-owned), then clone into it as
+   `www-data`:
 
-```
-* * * * * php /var/www/itflow/cron/cron.php >/dev/null
-```
+   ```bash
+   sudo install -d -o www-data -g www-data /var/www/itflow
+   sudo -u www-data git clone -b MountaineerIT git@github.com:MountaineerIT/ITFLOW.git /var/www/itflow
+   # beta server: use -b develop
+   ```
+
+3. Run the web setup (`https://<host>/setup`) or `scripts/setup_cli.php` (as `www-data`).
+   Setup writes `$repo_branch = 'MountaineerIT'` into `config.php`; **on the beta server
+   change it to `'develop'`**.
+   - Known issue: `setup_cli.php` crashes if the company or admin name contains an apostrophe
+     (e.g. "O'Brien IT"). Use the web setup for such names, or rename afterwards.
+
+4. Add the single cron entry to `www-data`'s crontab (`sudo crontab -u www-data -e`) and turn
+   cron on in Maintenance > Cron (it ships switched off):
+
+   ```
+   * * * * * php /var/www/itflow/cron/cron.php >/dev/null
+   ```
+
+5. Recommended cron setting: in Maintenance > Cron set **Domain Refresher** to run every
+   15–60 minutes. It refreshes only one domain per run, so on the default daily schedule a
+   list of N domains takes N days to refresh and expiry dates go stale.
+
+6. If you use **nginx** instead of Apache, the `.htaccess` files are ignored – deny web access
+   to `/.git`, `/config.php`, `/cron/`, `/scripts/` and `/uploads/backups/` in the nginx config.
 
 ## Moving an existing install over from itflow-org
 
-```bash
-cd /var/www/itflow
-sudo -u www-data git remote set-url origin git@github.com:MountaineerIT/ITFLOW.git
-sudo -u www-data git fetch origin
-```
+> ⚠️ **Change `$repo_branch` before updating.** An install set up from itflow-org has
+> `$repo_branch = 'master'` in `config.php`. In this repository `master` is the untouched
+> upstream copy, so updating without changing it would deploy upstream code and run
+> database updates that cannot be rolled back. (Recommended: rename this repository's
+> `master` branch, e.g. to `upstream-master`, so a forgotten setting fails instead.)
 
-Set `$repo_branch` in `config.php` (`'MountaineerIT'` or `'develop'`), then update from
-Admin > Update. The server must not be ahead of the branch it is moving to: a production
-server should already be on the same ITFlow release as `MountaineerIT` (or older), never on
-upstream's unreleased `develop`, because database updates cannot be rolled back.
+1. Check the server is not ahead of the branch it is moving to: it must be on the same ITFlow
+   release as that branch or older (Admin > Update shows the version). Never move a server
+   that has run upstream's unreleased `develop`.
+2. **Take a backup** (Admin > Backup) – see "Updating".
+3. Set up a deploy key as above, then point the clone at this repository:
+
+   ```bash
+   cd /var/www/itflow
+   sudo -u www-data git remote set-url origin git@github.com:MountaineerIT/ITFLOW.git
+   sudo -u www-data git fetch origin
+   ```
+
+4. Edit `config.php`: `$repo_branch = 'MountaineerIT';` (or `'develop'` on beta).
+5. Check `www-data`'s crontab has only the single `cron.php` line. Older installs may still
+   have separate lines for `nightly_tasks.php`, `ticket_email_parser.php` etc. – remove them,
+   or those jobs run twice and outside the schedules set in Maintenance > Cron.
+6. Make sure cron is switched on (Maintenance > Cron), then update from Admin > Update.
 
 ## Updating
 
-**Production** – manual, when you choose. Take a backup, then Admin > Update > Update,
-or from the shell:
+**Always take a backup first** (Admin > Backup, and keep a copy off the server). If a
+database update fails part-way, re-running it usually stops on the part that already ran,
+and recovery means restoring the backup or repairing the database by hand.
+
+**Production** – manual, when you choose: Admin > Update > Update. To run it from the shell
+instead (useful if the web update reports a problem):
 
 ```bash
 cd /var/www/itflow/scripts && sudo -u www-data php update_cli.php
 ```
 
-**Beta** – may update itself. Add to the file owner's crontab (runs nightly at 03:15):
+Don't run the shell update while an update queued from the web page is still in progress.
+
+**Beta** – may update itself nightly. Don't call `update_cli.php` straight from crontab: it
+swaps the files while the every-minute cron jobs may be running. Instead queue the update
+the same way the Update button does, and let the cron dispatcher apply it safely. Create
+`/var/www/itflow/scripts/custom/queue_update.php` (the `*/custom/` folders other than
+`agent/custom` are not tracked by git, so updates leave it alone; `scripts/` is not reachable
+from the web):
+
+```php
+<?php
+// Queue an ITFlow update for the cron dispatcher - same as Admin > Update > Update.
+if (php_sapi_name() !== 'cli') { exit(1); }
+require __DIR__ . '/../../config.php';
+mysqli_query($mysqli, "UPDATE settings SET config_update_queued_at = NOW() WHERE company_id = 1");
+mysqli_query($mysqli, "UPDATE cron_jobs SET cron_job_run_now = 1 WHERE cron_job_name = 'app_update'");
+```
+
+```bash
+sudo chown www-data:www-data /var/www/itflow/scripts/custom/queue_update.php
+```
+
+Then add to `www-data`'s crontab (03:15 nightly):
 
 ```
-15 3 * * * cd /var/www/itflow/scripts && php update_cli.php >> /var/log/itflow-update.log 2>&1
+15 3 * * * php /var/www/itflow/scripts/custom/queue_update.php
 ```
 
-The update discards local edits to tracked files. Untracked files – `config.php`,
-`uploads/` and the `*/custom/` directories – are left alone.
+The result appears in Maintenance > Cron (Application Update) and Admin > Update.
+
+**What an update keeps and replaces:** the update hard-resets every file tracked by git.
+Untracked files are kept: `config.php`, `uploads/`, and the `custom/` folders – **except
+`agent/custom/`**, whose `index.php`, `post.php` and `includes/` are tracked and will be
+overwritten. Don't edit tracked files on a server; make changes in this repository instead.
+
+**Browser caching:** CSS and JavaScript files are not versioned, so after an update ask users
+to hard-refresh (Ctrl+F5) if a page looks or behaves oddly.
 
 ## Pulling in ITFlow's updates
 
