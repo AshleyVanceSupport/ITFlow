@@ -180,7 +180,7 @@ ob_start();
                     <div class="input-group">
                             <span class="input-group-text"><i class="fa fa-fw fa-dollar-sign"></i></span>
                         <input type="text" class="form-control" name="rate_standard" placeholder="e.g., 100"
-                            value="<?= $rate_standard ?>">
+                            value="<?= $hourly_rate ?>">
                     </div>
                 </div>
 
@@ -189,7 +189,7 @@ ob_start();
                     <div class="input-group">
                             <span class="input-group-text"><i class="fa fa-fw fa-moon"></i></span>
                         <input type="text" class="form-control" name="rate_after_hours" placeholder="e.g., 150"
-                            value="<?= $rate_after_hours ?>">
+                            value="<?= $after_hours ?>">
                     </div>
                 </div>
 

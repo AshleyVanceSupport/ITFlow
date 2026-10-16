@@ -288,10 +288,15 @@ if (isset($_GET['delete_invoice'])) {
 
     mysqli_query($mysqli,"DELETE FROM invoices WHERE invoice_id = $invoice_id");
 
-    //Delete Items Associated with the Invoice
-    $sql = mysqli_query($mysqli,"SELECT item_id FROM invoice_items WHERE item_invoice_id = $invoice_id");
+    //Delete Items Associated with the Invoice, returning tangible products to stock
+    $sql = mysqli_query($mysqli,"SELECT item_id, item_product_id, item_quantity, product_type FROM invoice_items LEFT JOIN products ON item_product_id = product_id WHERE item_invoice_id = $invoice_id");
     while($row = mysqli_fetch_assoc($sql)) {
         $item_id = intval($row['item_id']);
+        $item_product_id = intval($row['item_product_id']);
+        $item_quantity = floatval($row['item_quantity']);
+        if ($item_product_id && $row['product_type'] === 'product' && $item_quantity != 0) {
+            mysqli_query($mysqli,"INSERT INTO product_stock SET stock_qty = $item_quantity, stock_note = 'Returned QTY $item_quantity back to stock from deleted Invoice $invoice_id', stock_product_id = $item_product_id");
+        }
         mysqli_query($mysqli,"DELETE FROM invoice_items WHERE item_id = $item_id");
     }
 
@@ -436,9 +441,12 @@ if (isset($_POST['edit_invoice_item'])) {
     $total = $subtotal + $tax_amount;
 
     // Determine what type of line item
-    $sql = mysqli_query($mysqli,"SELECT item_invoice_id FROM invoice_items WHERE item_id = $item_id");
+    $sql = mysqli_query($mysqli,"SELECT item_invoice_id, item_product_id, item_quantity, product_type FROM invoice_items LEFT JOIN products ON item_product_id = product_id WHERE item_id = $item_id");
     $row = mysqli_fetch_assoc($sql);
     $invoice_id = intval($row['item_invoice_id']);
+    $item_product_id = intval($row['item_product_id']);
+    $old_qty = floatval($row['item_quantity']);
+    $item_is_stocked = $item_product_id && $row['product_type'] === 'product';
 
     //Get Discount Amount
     $sql = mysqli_query($mysqli,"SELECT invoice_client_id, invoice_discount_amount, invoice_number, invoice_prefix FROM invoices WHERE invoice_id = $invoice_id");
@@ -449,6 +457,20 @@ if (isset($_POST['edit_invoice_item'])) {
     $invoice_discount = floatval($row['invoice_discount_amount']);
 
     enforceClientAccess();
+
+    // Keep stock in step with a quantity change on a tangible product
+    $qty_change = $qty - $old_qty;
+    if ($item_is_stocked && $qty_change != 0) {
+        if ($qty_change > 0) {
+            $available_stock = floatval(mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COALESCE(SUM(stock_qty), 0) AS available_stock FROM product_stock WHERE stock_product_id = $item_product_id"))['available_stock']);
+            if ($available_stock < $qty_change) {
+                flashAlert("Not Enough <strong>$name</strong> in stock", 'error');
+                redirect();
+            }
+        }
+        $stock_change = -$qty_change;
+        mysqli_query($mysqli,"INSERT INTO product_stock SET stock_qty = $stock_change, stock_note = 'QTY changed from $old_qty to $qty - Invoice $invoice_id', stock_product_id = $item_product_id");
+    }
 
     mysqli_query($mysqli,"UPDATE invoice_items SET item_name = '$name', item_description = '$description', item_quantity = $qty, item_price = $price, item_subtotal = $subtotal, item_tax = $tax_amount, item_total = $total, item_tax_id = $tax_id WHERE item_id = $item_id");
 
@@ -476,12 +498,13 @@ if (isset($_GET['delete_invoice_item'])) {
     $item_id = intval($_GET['delete_invoice_item']);
 
     $sql = mysqli_query($mysqli,"SELECT item_invoice_id, item_name, item_product_id, item_quantity, item_subtotal, item_tax,
-        item_total FROM invoice_items WHERE item_id = $item_id");
+        item_total, product_type FROM invoice_items LEFT JOIN products ON item_product_id = product_id WHERE item_id = $item_id");
     $row = mysqli_fetch_assoc($sql);
     $invoice_id = intval($row['item_invoice_id']);
     $item_name = escapeSql($row['item_name']);
     $item_quantity = floatval($row['item_quantity']);
     $item_product_id = intval($row['item_product_id']);
+    $item_is_stocked = $item_product_id && $row['product_type'] === 'product';
     $item_subtotal = floatval($row['item_subtotal']);
     $item_tax = floatval($row['item_tax']);
     $item_total = floatval($row['item_total']);
@@ -500,8 +523,8 @@ if (isset($_GET['delete_invoice_item'])) {
 
     mysqli_query($mysqli,"DELETE FROM invoice_items WHERE item_id = $item_id");
 
-    // Return Product Inventory
-    if ($item_product_id) {
+    // Return Product Inventory - only tangible products had stock taken when they were added
+    if ($item_is_stocked) {
         mysqli_query($mysqli,"INSERT INTO product_stock SET stock_qty = $item_quantity, stock_note = 'Returned QTY $item_quantity back to stock from Invoice $invoice_id', stock_product_id = $item_product_id");
     }
 

@@ -337,8 +337,8 @@ function roundUpToNearestMultiple($n, $increment = 1000) {
 
 
 function roundToNearest15Min($time) {
-    // Validate the input time format
-    if (!preg_match('/^(\d{2}):(\d{2}):(\d{2})$/', $time, $matches)) {
+    // Validate the input time format (hours can run past 99 - SEC_TO_TIME gives "100:00:00")
+    if (!preg_match('/^(\d+):(\d{2}):(\d{2})$/', $time, $matches)) {
         return false; // or throw an exception
     }
 
@@ -348,14 +348,9 @@ function roundToNearest15Min($time) {
     // Convert everything to seconds for easier calculation
     $totalSeconds = ($hours * 3600) + ($minutes * 60) + $seconds;
 
-    // Calculate the remainder when divided by 900 seconds (15 minutes)
-    $remainder = $totalSeconds % 900;
-
-    if ($remainder > 450) {  // If remainder is more than 7.5 minutes (450 seconds), round up
-        $totalSeconds += (900 - $remainder);
-    } else {  // Else round down
-        $totalSeconds -= $remainder;
-    }
+    // Round UP to the next 15 minutes (900 seconds), as the ticket invoice form says -
+    // any part of a quarter hour is billed as a quarter hour
+    $totalSeconds = (int) (ceil($totalSeconds / 900) * 900);
 
     // Convert total seconds to decimal hours
     $decimalHours = $totalSeconds / 3600;

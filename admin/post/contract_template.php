@@ -26,7 +26,7 @@ if (isset($_POST['add_contract_template'])) {
     $sla_med_res = intval($_POST['sla_medium_resolution_time']);
     $sla_high_res = intval($_POST['sla_high_resolution_time']);
     $rate_standard = intval($_POST['rate_standard']);
-    $rate_after_hours = intval($_POST['hourly_rate_after_hours']);
+    $rate_after_hours = intval($_POST['rate_after_hours']);
     $net_terms = intval($_POST['net_terms']);
 
     // Insert into database (numbers not quoted)

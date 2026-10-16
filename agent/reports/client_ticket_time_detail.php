@@ -105,6 +105,7 @@ $stmt = $mysqli->prepare("
         ON tr.ticket_reply_ticket_id = t.ticket_id
         AND tr.ticket_reply_time_worked IS NOT NULL
         AND TIME_TO_SEC(tr.ticket_reply_time_worked) > 0
+        AND tr.ticket_reply_archived_at IS NULL
         AND tr.ticket_reply_created_at BETWEEN ? AND ?
 
     WHERE c.client_archived_at IS NULL
