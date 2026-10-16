@@ -60,12 +60,15 @@ if (isset($_POST['ticket_vendor_id'])) {
     $vendor_id = '0';
 }
 
-if (isset($_POST['ticket_vendor_ticket_id'])) {
-    $vendor_ticket_number = intval($_POST['ticket_vendor_ticket_id']);
+// The vendor's own reference for it - a string (case numbers have letters in
+// them). ticket_vendor_ticket_id is the name the API used to take.
+$vendor_ticket_input = $_POST['ticket_vendor_ticket_number'] ?? $_POST['ticket_vendor_ticket_id'] ?? null;
+if ($vendor_ticket_input !== null) {
+    $vendor_ticket_number = escapeSql(mb_substr(trim((string) $vendor_ticket_input), 0, 255));
 } elseif ($ticket_row) {
-    $vendor_ticket_number = $ticket_row['ticket_vendor_ticket_id'];
+    $vendor_ticket_number = escapeSql((string) $ticket_row['ticket_vendor_ticket_number']);
 } else {
-    $vendor_ticket_number = '0';
+    $vendor_ticket_number = '';
 }
 
 if (isset($_POST['ticket_assigned_to'])) {
