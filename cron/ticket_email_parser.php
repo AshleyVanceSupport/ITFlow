@@ -557,7 +557,8 @@ $encryption = match (strtolower($encr)) {
     default    => '',         // 'notls' / plain tcp
 };
 
-$mailbox = new Mailbox([
+// Mountaineer IT: through Microsoft Graph when ITFlow's own Microsoft 365 app has the mailbox
+$mailbox = (function_exists('mitM365GraphMailbox') ? mitM365GraphMailbox($imap_provider, $user) : null) ?? new Mailbox([
     'host'           => $host,
     'port'           => $port,
     'encryption'     => $encryption,

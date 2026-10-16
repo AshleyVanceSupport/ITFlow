@@ -57,6 +57,12 @@ model: see DEPLOYMENT.md.
   `admin/post/settings_mail.php` (token test), `admin/oauth_microsoft_mail_callback.php`. UI:
   `admin/includes/mit_m365_card.php` required at the top of `admin/settings_mail.php`;
   handlers in `admin/post/mit_m365.php`. Re-apply the hooks if an upstream merge drops them.
+  Mail goes through Microsoft Graph (not SMTP/IMAP) once the app has the Mail permissions
+  (`MIT_M365_PERMISSIONS_VERSION` 2; older apps get "Update permissions" on the card): one-line
+  hooks in `cron/mail_queue.php` (`mitM365GraphSendMail` before `$mail->send()`) and
+  `cron/ticket_email_parser.php` (`mitM365GraphMailbox(...) ?? new Mailbox(...)`); the Graph
+  stand-ins for ImapEngine are in `functions/mit_m365_mailbox.php`. Also `(string)$config_smtp_host`
+  in mail_queue's two sendQueueEmail calls (crashed when the SMTP host was never set).
 - Next planned: per-tech Outlook calendar in Account settings (redirect URI
   `/agent/user/mit_outlook_callback.php` is already registered on the app) - ITFlow -> Outlook
   first, Outlook busy -> ITFlow second.

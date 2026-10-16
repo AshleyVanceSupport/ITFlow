@@ -27,6 +27,8 @@ if (isset($_POST['mit_m365_start'])) {
     }
     $_SESSION['mit_m365_device_code'] = $start['device_code'];
     $_SESSION['mit_m365_device_expires'] = time() + intval($start['expires_in'] ?? 900);
+    // 'update': bring the existing app up to today's permissions instead of creating one
+    $_SESSION['mit_m365_device_purpose'] = ($_POST['purpose'] ?? '') === 'update' ? 'update' : 'create';
 
     mitM365Json([
         'user_code' => $start['user_code'],
@@ -50,9 +52,22 @@ if (isset($_POST['mit_m365_poll'])) {
     if (!empty($poll['pending'])) {
         mitM365Json(['pending' => true]);
     }
-    unset($_SESSION['mit_m365_device_code'], $_SESSION['mit_m365_device_expires']);
+    $purpose = $_SESSION['mit_m365_device_purpose'] ?? 'create';
+    unset($_SESSION['mit_m365_device_code'], $_SESSION['mit_m365_device_expires'], $_SESSION['mit_m365_device_purpose']);
     if (!empty($poll['error'])) {
         mitM365Json(['error' => $poll['error'], 'blocked' => !empty($poll['blocked'])], 400);
+    }
+
+    if ($purpose === 'update') {
+        try {
+            $app = mitM365UpdatePermissions($poll['token']);
+        } catch (Throwable $e) {
+            logApp("Microsoft 365", "error", "Updating the app's permissions failed: " . $e->getMessage());
+            mitM365Json(['error' => $e->getMessage()], 400);
+        }
+        logAudit("Settings", "Edit", "$session_name updated the Microsoft 365 app permissions (" . escapeSql($app['client_id']) . ")");
+        flashAlert("Microsoft 365 app permissions updated - ITFlow now sends and receives mail through Microsoft Graph.");
+        mitM365Json(['ok' => true]);
     }
 
     // Creating the app can take a little while - Microsoft needs a moment to see it

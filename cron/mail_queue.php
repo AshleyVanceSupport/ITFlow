@@ -315,6 +315,11 @@ function sendQueueEmail(
         }
     }
 
+    // Mountaineer IT: through Microsoft Graph when ITFlow's own Microsoft 365 app has the mailbox
+    if ($provider === 'microsoft_oauth' && function_exists('mitM365GraphSendMail') && mitM365GraphSendMail($mail)) {
+        return true;
+    }
+
     $mail->send();
     return true;
 }
@@ -397,7 +402,7 @@ if (mysqli_num_rows($sql_queue) > 0) {
         try {
             sendQueueEmail(
                 ($config_smtp_provider ?: 'standard_smtp'),
-                $config_smtp_host,
+                (string)$config_smtp_host,
                 (int)$config_smtp_port,
                 (string)$config_smtp_encryption,
                 (string)$config_smtp_username,
@@ -475,7 +480,7 @@ if (mysqli_num_rows($sql_failed_queue) > 0) {
         try {
             sendQueueEmail(
                 ($config_smtp_provider ?: 'standard_smtp'),
-                $config_smtp_host,
+                (string)$config_smtp_host,
                 (int)$config_smtp_port,
                 (string)$config_smtp_encryption,
                 (string)$config_smtp_username,

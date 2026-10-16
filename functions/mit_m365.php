@@ -16,7 +16,11 @@
  *     (MIT_M365_CERT_SECRET) so ITFlow's checks pass; every token request to Microsoft goes
  *     through mitMicrosoftTokenFields(), which swaps the marker for a signed certificate
  *     assertion.
- *  4. The certificate lasts a year and is replaced 30 days before it runs out - the app adds
+ *  4. Mail goes through Microsoft Graph rather than SMTP/IMAP (no "Authenticated SMTP" switch
+ *     needed on the mailbox): cron/mail_queue.php hands each message to mitM365GraphSendMail(),
+ *     and cron/ticket_email_parser.php reads the mailbox through mitM365GraphMailbox()
+ *     (classes in functions/mit_m365_mailbox.php). Without the Mail permissions it stays on SMTP/IMAP.
+ *  5. The certificate lasts a year and is replaced 30 days before it runs out - the app adds
  *     its new key itself (Graph addKey, which needs no extra permission).
  *
  * The app only gets delegated permissions: it can reach the mailbox that is connected and the
@@ -40,8 +44,12 @@ const MIT_M365_GRAPH_APP_ID = '00000003-0000-0000-c000-000000000000';
 const MIT_M365_EXCHANGE_APP_ID = '00000002-0000-0ff1-ce00-000000000000';
 
 /** Delegated permissions the app is given and consented for, per resource. */
-const MIT_M365_GRAPH_SCOPES = ['User.Read', 'Calendars.ReadWrite', 'offline_access', 'openid', 'profile', 'email'];
+const MIT_M365_GRAPH_SCOPES = ['User.Read', 'Calendars.ReadWrite', 'Mail.ReadWrite', 'Mail.ReadWrite.Shared', 'Mail.Send', 'Mail.Send.Shared',
+    'offline_access', 'openid', 'profile', 'email'];
 const MIT_M365_EXCHANGE_SCOPES = ['IMAP.AccessAsUser.All', 'SMTP.Send'];
+
+/** Bumped when the permissions above change - an app set up with fewer is offered "Update permissions". */
+const MIT_M365_PERMISSIONS_VERSION = 2;
 
 const MIT_M365_CERT_DAYS = 365;
 const MIT_M365_RENEW_DAYS = 30;
@@ -78,7 +86,7 @@ function mitM365App() {
         return null;
     }
     $app = ['client_id' => $client_id];
-    foreach (['tenant_id', 'object_id', 'name', 'created_at', 'created_by', 'cert_expires', 'cert_thumbprint', 'setup', 'renew_error', 'renewed_at'] as $key) {
+    foreach (['tenant_id', 'object_id', 'name', 'created_at', 'created_by', 'cert_expires', 'cert_thumbprint', 'setup', 'renew_error', 'renewed_at', 'permissions_version'] as $key) {
         $app[$key] = mitSetting("m365_$key", '');
     }
     return $app;
@@ -99,7 +107,9 @@ function mitHttp($method, $url, array $headers = [], $body = null) {
         $headers[] = 'Content-Type: application/x-www-form-urlencoded';
     } elseif (is_string($body)) {
         curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
-        $headers[] = 'Content-Type: application/json';
+        if (!preg_grep('/^Content-Type:/i', $headers)) {
+            $headers[] = 'Content-Type: application/json';
+        }
     }
     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     $raw = curl_exec($ch);
@@ -296,19 +306,7 @@ function mitM365Provision($token, $created_by) {
         throw new RuntimeException('Could not tell which Microsoft 365 organisation that sign-in belongs to.');
     }
 
-    $graph = mitM365ResourceScopes($token, MIT_M365_GRAPH_APP_ID);
-    $exchange = mitM365ResourceScopes($token, MIT_M365_EXCHANGE_APP_ID);
-    $access = [];
-    foreach ([[MIT_M365_GRAPH_APP_ID, $graph, MIT_M365_GRAPH_SCOPES], [MIT_M365_EXCHANGE_APP_ID, $exchange, MIT_M365_EXCHANGE_SCOPES]] as [$app_id, $resource, $wanted]) {
-        $entries = [];
-        foreach ($wanted as $scope) {
-            if (empty($resource['scopes'][$scope])) {
-                throw new RuntimeException("Microsoft did not list the $scope permission in this organisation.");
-            }
-            $entries[] = ['id' => $resource['scopes'][$scope], 'type' => 'Scope'];
-        }
-        $access[] = ['resourceAppId' => $app_id, 'resourceAccess' => $entries];
-    }
+    [$access, $graph, $exchange] = mitM365RequiredAccess($token);
 
     $cert = mitM365NewCertificate();
 
@@ -347,20 +345,81 @@ function mitM365Provision($token, $created_by) {
         throw new RuntimeException(mitM365Error($response, 'Creating the app\'s service principal'));
     }
 
-    // Admin consent for the whole organisation, so nobody is asked to approve it
+    mitM365GrantConsent($token, $sp, $graph, $exchange);
+
+    mitM365SaveApp($tenant_id, $client_id, $object_id, $cert, $created_by, 'automatic');
+    mitSetSetting('m365_permissions_version', MIT_M365_PERMISSIONS_VERSION);
+    return mitM365App();
+}
+
+/** The app's requiredResourceAccess for MIT_M365_*_SCOPES: [access, graph resource, exchange resource]. */
+function mitM365RequiredAccess($token) {
+    $graph = mitM365ResourceScopes($token, MIT_M365_GRAPH_APP_ID);
+    $exchange = mitM365ResourceScopes($token, MIT_M365_EXCHANGE_APP_ID);
+    $access = [];
+    foreach ([[MIT_M365_GRAPH_APP_ID, $graph, MIT_M365_GRAPH_SCOPES], [MIT_M365_EXCHANGE_APP_ID, $exchange, MIT_M365_EXCHANGE_SCOPES]] as [$app_id, $resource, $wanted]) {
+        $entries = [];
+        foreach ($wanted as $scope) {
+            if (empty($resource['scopes'][$scope])) {
+                throw new RuntimeException("Microsoft did not list the $scope permission in this organisation.");
+            }
+            $entries[] = ['id' => $resource['scopes'][$scope], 'type' => 'Scope'];
+        }
+        $access[] = ['resourceAppId' => $app_id, 'resourceAccess' => $entries];
+    }
+    return [$access, $graph, $exchange];
+}
+
+/** Admin consent for the whole organisation, so nobody is asked to approve it - adds to or replaces earlier consent. */
+function mitM365GrantConsent($token, $sp, array $graph, array $exchange) {
     foreach ([[$graph['id'], MIT_M365_GRAPH_SCOPES], [$exchange['id'], MIT_M365_EXCHANGE_SCOPES]] as [$resource_id, $scopes]) {
-        $grant = mitGraph('POST', '/oauth2PermissionGrants', $token, [
-            'clientId' => $sp,
-            'consentType' => 'AllPrincipals',
-            'resourceId' => $resource_id,
-            'scope' => implode(' ', $scopes),
-        ]);
-        if ($grant['status'] !== 201) {
+        $existing = mitGraph('GET', '/oauth2PermissionGrants?$filter=' . rawurlencode("clientId eq '$sp' and resourceId eq '$resource_id' and consentType eq 'AllPrincipals'"), $token);
+        $grant_id = $existing['json']['value'][0]['id'] ?? '';
+        if ($grant_id !== '') {
+            $grant = mitGraph('PATCH', '/oauth2PermissionGrants/' . rawurlencode($grant_id), $token, ['scope' => implode(' ', $scopes)]);
+            $ok = $grant['status'] === 204 || $grant['status'] === 200;
+        } else {
+            $grant = mitGraph('POST', '/oauth2PermissionGrants', $token, [
+                'clientId' => $sp,
+                'consentType' => 'AllPrincipals',
+                'resourceId' => $resource_id,
+                'scope' => implode(' ', $scopes),
+            ]);
+            $ok = $grant['status'] === 201;
+        }
+        if (!$ok) {
             throw new RuntimeException(mitM365Error($grant, 'Approving the app\'s permissions'));
         }
     }
+}
 
-    mitM365SaveApp($tenant_id, $client_id, $object_id, $cert, $created_by, 'automatic');
+/**
+ * Bring an app set up earlier up to today's permissions (MIT_M365_PERMISSIONS_VERSION), with an
+ * admin's sign-in token: the app's permission list and the organisation-wide consent.
+ */
+function mitM365UpdatePermissions($token) {
+    $app = mitM365App();
+    if (!$app || $app['object_id'] === '') {
+        throw new RuntimeException('There is no Microsoft 365 app to update.');
+    }
+    if (mitM365TokenTenant($token) !== $app['tenant_id']) {
+        throw new RuntimeException('That sign-in belongs to a different Microsoft 365 organisation than the app.');
+    }
+    [$access, $graph, $exchange] = mitM365RequiredAccess($token);
+
+    $patched = mitGraph('PATCH', '/applications/' . rawurlencode($app['object_id']), $token, ['requiredResourceAccess' => $access]);
+    if ($patched['status'] !== 204 && $patched['status'] !== 200) {
+        throw new RuntimeException(mitM365Error($patched, 'Updating the app\'s permissions'));
+    }
+    $found = mitGraph('GET', '/servicePrincipals?$filter=' . rawurlencode("appId eq '{$app['client_id']}'") . '&$select=id', $token);
+    $sp = $found['json']['value'][0]['id'] ?? '';
+    if ($sp === '') {
+        throw new RuntimeException(mitM365Error($found, 'Finding the app in your organisation'));
+    }
+    mitM365GrantConsent($token, $sp, $graph, $exchange);
+
+    mitSetSetting('m365_permissions_version', MIT_M365_PERMISSIONS_VERSION);
+    mitDeleteSettings('m365_mail_graph_');  // the next mail token picks up the new permissions
     return mitM365App();
 }
 
@@ -429,6 +488,7 @@ function mitM365UseManualApp($tenant_id, $client_id, $object_id, $created_by) {
         throw new RuntimeException(mitM365Error($response, 'Signing in with the certificate on that app'));
     }
     mitM365SaveApp($tenant_id, $client_id, $object_id, $cert, $created_by, 'manual');
+    mitSetSetting('m365_permissions_version', MIT_M365_PERMISSIONS_VERSION);
     mitDeleteSettings('m365_pending_cert');
     return mitM365App();
 }
@@ -499,4 +559,118 @@ function mitM365Forget() {
         config_mail_oauth_access_token = NULL, config_mail_oauth_access_token_expires_at = NULL
         WHERE company_id = 1 AND config_mail_oauth_client_id = '$client_id'");
     mitDeleteSettings('m365_');
+}
+
+/*
+ * ---------- mail through Microsoft Graph ----------
+ */
+
+/**
+ * A Graph token for the connected mailbox that carries $permission (Mail.Send, Mail.ReadWrite), or
+ * null when ITFlow's mail is not on our app or the app does not have that permission yet - the
+ * caller then stays on SMTP/IMAP. Throws when the mailbox is on our app but Microsoft refuses.
+ */
+function mitM365MailGraphToken($permission) {
+    global $mysqli;
+    $app = mitM365App();
+    if (!$app) {
+        return null;
+    }
+    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT config_mail_oauth_client_id, config_mail_oauth_client_secret, config_mail_oauth_tenant_id,
+        config_mail_oauth_refresh_token FROM settings WHERE company_id = 1"));
+    if (!$row || $row['config_mail_oauth_client_id'] !== $app['client_id'] || $row['config_mail_oauth_client_secret'] !== MIT_M365_CERT_SECRET
+        || empty($row['config_mail_oauth_refresh_token'])) {
+        return null;
+    }
+
+    $token = mitSetting('m365_mail_graph_token', '');
+    $expires = mitSetting('m365_mail_graph_expires', '');
+    // A token for the refresh token on file - a newly connected mailbox gets a new one
+    $for = sha1($row['config_mail_oauth_refresh_token']);
+    if ($token === '' || $expires === '' || strtotime($expires) - 120 <= time() || mitSetting('m365_mail_graph_for', '') !== $for) {
+        // The mailbox's refresh token is good for Graph as well as Exchange
+        $token_url = MIT_M365_LOGIN . '/' . rawurlencode($row['config_mail_oauth_tenant_id']) . '/oauth2/v2.0/token';
+        $response = mitHttp('POST', $token_url, [], mitMicrosoftTokenFields($token_url, [
+            'client_id' => $app['client_id'],
+            'client_secret' => MIT_M365_CERT_SECRET,
+            'grant_type' => 'refresh_token',
+            'refresh_token' => $row['config_mail_oauth_refresh_token'],
+            'scope' => 'https://graph.microsoft.com/.default offline_access',
+        ]));
+        if (empty($response['json']['access_token'])) {
+            throw new RuntimeException(mitM365Error($response, 'Signing in to Microsoft 365 as the mailbox'));
+        }
+        $token = $response['json']['access_token'];
+        mitSetSetting('m365_mail_graph_token', $token);
+        mitSetSetting('m365_mail_graph_expires', date('Y-m-d H:i:s', time() + intval($response['json']['expires_in'] ?? 3600)));
+        mitSetSetting('m365_mail_graph_scopes', (string) ($response['json']['scope'] ?? ''));
+        if (!empty($response['json']['refresh_token'])) {
+            $for = sha1($response['json']['refresh_token']);
+            $refresh = mysqli_real_escape_string($mysqli, $response['json']['refresh_token']);
+            mysqli_query($mysqli, "UPDATE settings SET config_mail_oauth_refresh_token = '$refresh' WHERE company_id = 1");
+        }
+        mitSetSetting('m365_mail_graph_for', $for);
+    }
+
+    $scopes = mitM365MailGraphScopes();
+    if (in_array('Mail.Send', $scopes, true) && in_array('Mail.ReadWrite', $scopes, true)) {
+        // Permissions added by hand in Entra count as an update too
+        mitSetSetting('m365_permissions_version', MIT_M365_PERMISSIONS_VERSION);
+    }
+    return in_array($permission, $scopes, true) ? $token : null;
+}
+
+/** The Graph permissions on the mailbox's last token, without the resource prefix. */
+function mitM365MailGraphScopes() {
+    $scopes = [];
+    foreach (preg_split('/\s+/', trim((string) mitSetting('m365_mail_graph_scopes', ''))) as $scope) {
+        if ($scope !== '') {
+            $scopes[] = preg_replace('#^https://graph\.microsoft\.com/#i', '', $scope);
+        }
+    }
+    return $scopes;
+}
+
+/**
+ * Hook in cron/mail_queue.php: send a message PHPMailer has put together through Graph. False when
+ * mail is not on our app (PHPMailer then sends by SMTP as usual); throws PHPMailer's exception on failure.
+ */
+function mitM365GraphSendMail($mail) {
+    try {
+        $token = mitM365MailGraphToken('Mail.Send');
+    } catch (Throwable $e) {
+        throw new PHPMailer\PHPMailer\Exception($e->getMessage());
+    }
+    if (!$token) {
+        return false;
+    }
+    $mail->preSend();
+    // Graph takes the finished message as base64 MIME - attachments and invites as built
+    $response = mitHttp('POST', MIT_M365_GRAPH . '/me/sendMail', ['Authorization: Bearer ' . $token, 'Content-Type: text/plain'],
+        base64_encode($mail->getSentMIMEMessage()));
+    if ($response['status'] !== 202) {
+        throw new PHPMailer\PHPMailer\Exception(mitM365Error($response, 'Sending through Microsoft 365'));
+    }
+    return true;
+}
+
+/**
+ * Hook in cron/ticket_email_parser.php: the mailbox as an ImapEngine-like object read through Graph,
+ * or null when it stays on IMAP. $username is the IMAP username - the signed-in mailbox or a shared one.
+ */
+function mitM365GraphMailbox($provider, $username) {
+    if ($provider !== 'microsoft_oauth') {
+        return null;
+    }
+    try {
+        $token = mitM365MailGraphToken('Mail.ReadWrite');
+    } catch (Throwable $e) {
+        logApp("Cron-Email-Parser", "error", "Microsoft 365: " . $e->getMessage());
+        cronJobStop('', 1);
+    }
+    if (!$token) {
+        return null;
+    }
+    require_once __DIR__ . '/mit_m365_mailbox.php';
+    return new MitGraphMailbox($token, (string) $username);
 }

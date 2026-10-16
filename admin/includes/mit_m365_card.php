@@ -9,6 +9,19 @@ $mit_m365_csrf = $_SESSION['csrf_token'];
 $mit_m365_mailbox_connected = $mit_m365_app && !empty($config_mail_oauth_refresh_token)
     && ($config_mail_oauth_client_id ?? '') === $mit_m365_app['client_id'];
 $mit_m365_mail_uses_ms = ($config_smtp_provider ?? '') === 'microsoft_oauth' || ($config_imap_provider ?? '') === 'microsoft_oauth';
+
+// Is mail going through Microsoft Graph? Needs the Mail permissions on the mailbox's token.
+$mit_m365_graph_mail = false;
+$mit_m365_graph_error = '';
+if ($mit_m365_mailbox_connected) {
+    try {
+        $mit_m365_graph_mail = mitM365MailGraphToken('Mail.Send') !== null && in_array('Mail.ReadWrite', mitM365MailGraphScopes(), true);
+    } catch (Throwable $e) {
+        $mit_m365_graph_error = $e->getMessage();
+    }
+    $mit_m365_app = mitM365App();  // the token check may have recorded the permissions
+}
+$mit_m365_needs_update = $mit_m365_app && intval($mit_m365_app['permissions_version']) < MIT_M365_PERMISSIONS_VERSION;
 ?>
 
 <div class="card mb-3" id="mitM365">
@@ -48,8 +61,31 @@ $mit_m365_mail_uses_ms = ($config_smtp_provider ?? '') === 'microsoft_oauth' || 
                 </div>
             </div>
 
+            <?php if ($mit_m365_needs_update) { ?>
+                <div class="alert alert-warning">
+                    <strong>Update the app's permissions</strong> so ITFlow sends and receives mail through Microsoft Graph -
+                    Microsoft's current way, with no SMTP or IMAP to switch on for the mailbox.
+                    Sign in once as a <strong>Global Administrator</strong>:
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-sm btn-primary js-mit-m365-start" data-purpose="update"><i class="fab fa-microsoft me-2"></i>Update permissions</button>
+                    </div>
+                    <div class="small mt-2">
+                        Or add them by hand in the Entra admin center (app <em><?= escapeHtml($mit_m365_app['name']) ?></em> &gt; API permissions):
+                        Microsoft Graph, Delegated, <code>Mail.ReadWrite, Mail.ReadWrite.Shared, Mail.Send, Mail.Send.Shared</code>, then
+                        <strong>Grant admin consent</strong>. ITFlow picks them up within the hour.
+                    </div>
+                </div>
+            <?php } ?>
+
             <?php if ($mit_m365_mailbox_connected) { ?>
-                <div class="text-success"><i class="fas fa-check-circle me-2"></i>Mailbox connected. To use a different mailbox, click Connect Microsoft 365 below again.</div>
+                <?php if ($mit_m365_graph_error !== '') { ?>
+                    <div class="text-danger"><i class="fas fa-exclamation-triangle me-2"></i><?= escapeHtml($mit_m365_graph_error) ?></div>
+                <?php } elseif ($mit_m365_graph_mail) { ?>
+                    <div class="text-success"><i class="fas fa-check-circle me-2"></i>Mailbox connected - mail is sent and received through Microsoft Graph.
+                        To use a different mailbox, click Connect Microsoft 365 on the <a href="?tab=oauth">OAuth</a> tab again.</div>
+                <?php } else { ?>
+                    <div class="text-success"><i class="fas fa-check-circle me-2"></i>Mailbox connected - mail still goes through SMTP and IMAP until the permissions above are updated.</div>
+                <?php } ?>
             <?php } else { ?>
                 <div class="alert alert-info mb-0">
                     <strong>Next: connect the mailbox ITFlow should use.</strong>
@@ -66,24 +102,8 @@ $mit_m365_mail_uses_ms = ($config_smtp_provider ?? '') === 'microsoft_oauth' || 
                 ITFlow can create its own app in your Microsoft 365 for email and Outlook calendars - with the permissions it needs, approved
                 for your organisation, and a certificate it renews itself. You sign in once as a Global Administrator; nothing else to copy or paste.
             </p>
-            <button type="button" class="btn btn-primary" id="mitM365Start"><i class="fab fa-microsoft me-2"></i>Set up automatically</button>
+            <button type="button" class="btn btn-primary js-mit-m365-start" data-purpose="create"><i class="fab fa-microsoft me-2"></i>Set up automatically</button>
             <button type="button" class="btn btn-link" data-bs-toggle="collapse" data-bs-target="#mitM365Manual">Set up by hand instead</button>
-
-            <div class="border rounded p-3 mt-3" id="mitM365Flow" hidden>
-                <div class="js-step-code" hidden>
-                    <div class="mb-2">
-                        1. Go to <a class="js-verify fw-semibold" href="https://microsoft.com/devicelogin" target="_blank" rel="noopener">microsoft.com/devicelogin</a>
-                        and enter this code:
-                    </div>
-                    <div class="d-flex align-items-center gap-2 mb-2">
-                        <code class="fs-3 fw-bold js-code"></code>
-                        <button type="button" class="btn btn-sm btn-outline-secondary js-copy"><i class="far fa-copy me-1"></i>Copy</button>
-                    </div>
-                    <div class="mb-2">2. Sign in as a <strong>Global Administrator</strong> and accept the permissions ("Microsoft Graph Command Line Tools").</div>
-                    <div class="text-body-secondary"><span class="spinner-border spinner-border-sm me-2"></span><span class="js-status">Waiting for you to sign in...</span></div>
-                </div>
-                <div class="text-danger js-error" hidden></div>
-            </div>
 
             <div class="collapse mt-3" id="mitM365Manual">
                 <div class="border rounded p-3">
@@ -111,11 +131,31 @@ $mit_m365_mail_uses_ms = ($config_smtp_provider ?? '') === 'microsoft_oauth' || 
                 </div>
             </div>
 
+
+        <?php } ?>
+
+            <div class="border rounded p-3 mt-3" id="mitM365Flow" hidden>
+                <div class="js-step-code" hidden>
+                    <div class="mb-2">
+                        1. Go to <a class="js-verify fw-semibold" href="https://microsoft.com/devicelogin" target="_blank" rel="noopener">microsoft.com/devicelogin</a>
+                        and enter this code:
+                    </div>
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <code class="fs-3 fw-bold js-code"></code>
+                        <button type="button" class="btn btn-sm btn-outline-secondary js-copy"><i class="far fa-copy me-1"></i>Copy</button>
+                    </div>
+                    <div class="mb-2">2. Sign in as a <strong>Global Administrator</strong> and accept the permissions ("Microsoft Graph Command Line Tools").</div>
+                    <div class="text-body-secondary"><span class="spinner-border spinner-border-sm me-2"></span><span class="js-status">Waiting for you to sign in...</span></div>
+                </div>
+                <div class="text-danger js-error" hidden></div>
+            </div>
+
+
             <script>
             (function () {
-                const start = document.getElementById('mitM365Start');
                 const flow = document.getElementById('mitM365Flow');
-                if (!start || !flow) {
+                const buttons = document.querySelectorAll('.js-mit-m365-start');
+                if (!flow || !buttons.length) {
                     return;
                 }
                 const csrf = <?= json_encode($mit_m365_csrf) ?>;
@@ -123,8 +163,11 @@ $mit_m365_mail_uses_ms = ($config_smtp_provider ?? '') === 'microsoft_oauth' || 
                 const errorBox = flow.querySelector('.js-error');
                 const statusText = flow.querySelector('.js-status');
 
+                let start = buttons[0];
+                let purpose = 'create';
+
                 function post(action) {
-                    const body = new URLSearchParams({csrf_token: csrf});
+                    const body = new URLSearchParams({csrf_token: csrf, purpose: purpose});
                     body.set(action, '1');
                     return fetch('post.php', {method: 'POST', credentials: 'same-origin', body: body})
                         .then(function (res) { return res.json(); });
@@ -132,14 +175,18 @@ $mit_m365_mail_uses_ms = ($config_smtp_provider ?? '') === 'microsoft_oauth' || 
                 function fail(message, blocked) {
                     step.hidden = true;
                     errorBox.hidden = false;
-                    errorBox.textContent = message + (blocked ? ' Your organisation blocks this kind of sign-in - use "Set up by hand instead" below.' : '');
+                    const manual = document.getElementById('mitM365Manual');
+                    errorBox.textContent = message + (blocked ? (manual ? ' Your organisation blocks this kind of sign-in - use "Set up by hand instead" below.'
+                        : ' Your organisation blocks this kind of sign-in - add the permissions by hand as described above.') : '');
                     start.disabled = false;
-                    if (blocked) {
-                        document.getElementById('mitM365Manual').classList.add('show');
+                    if (blocked && manual) {
+                        manual.classList.add('show');
                     }
                 }
 
-                start.addEventListener('click', function () {
+                buttons.forEach(function (button) { button.addEventListener('click', function () {
+                    start = button;
+                    purpose = button.dataset.purpose || 'create';
                     start.disabled = true;
                     flow.hidden = false;
                     errorBox.hidden = true;
@@ -162,23 +209,21 @@ $mit_m365_mail_uses_ms = ($config_smtp_provider ?? '') === 'microsoft_oauth' || 
                                     statusText.textContent = 'Done - reloading...';
                                     window.location.href = 'settings_mail.php?tab=oauth';
                                 } else {
-                                    fail(result.error || 'Setting up the app failed.', result.blocked);
+                                    fail(result.error || 'That did not work.', result.blocked);
                                 }
                             }).catch(function () {
                                 setTimeout(poll, json.interval * 1000);
                             });
                         };
                         setTimeout(function () {
-                            statusText.textContent = 'Waiting for you to sign in... (once you have, creating the app takes up to a minute)';
+                            statusText.textContent = 'Waiting for you to sign in... (once you have, this takes up to a minute)';
                             poll();
                         }, json.interval * 1000);
                     }).catch(function () {
                         fail('Could not reach the server - check the connection and try again.');
                     });
-                });
+                }); });
             })();
             </script>
-
-        <?php } ?>
     </div>
 </div>
