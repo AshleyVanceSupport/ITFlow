@@ -313,6 +313,8 @@ if (isset($_POST['test_email_imap'])) {
     };
 
     $http_form_post = function (string $url, array $fields): array {
+        // Mountaineer IT: our Microsoft 365 app signs in with a certificate (functions/mit_m365.php)
+        $fields = mitMicrosoftTokenFields($url, $fields);
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);
@@ -459,12 +461,13 @@ if (isset($_POST['test_oauth_token_refresh'])) {
         $token_url = MICROSOFT_OAUTH_BASE_URL . rawurlencode($oauth_tenant_id) . "/oauth2/v2.0/token";
     }
 
-    $post_fields = http_build_query([
+    // Mountaineer IT: our Microsoft 365 app signs in with a certificate (functions/mit_m365.php)
+    $post_fields = http_build_query(mitMicrosoftTokenFields($token_url, [
         'client_id' => $oauth_client_id,
         'client_secret' => $oauth_client_secret,
         'refresh_token' => $oauth_refresh_token,
         'grant_type' => 'refresh_token',
-    ]);
+    ]));
 
     $ch = curl_init($token_url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);

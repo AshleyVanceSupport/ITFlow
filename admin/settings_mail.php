@@ -66,6 +66,8 @@ $send_ready = $smtp_standard_ready || $smtp_oauth_ready;
 $imap_ready = $imap_standard_ready || $imap_oauth_ready;
 ?>
 
+<?php require_once "includes/mit_m365_card.php"; // Mountaineer IT: Microsoft 365 app setup ?>
+
 <div class="card card-dark">
     <div class="card-header py-3">
         <h3 class="card-title"><i class="fas fa-fw fa-envelope me-2"></i>Mail Configuration</h3>

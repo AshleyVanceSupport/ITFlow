@@ -10,6 +10,10 @@
  * them in one process, where the second declaration is a fatal error.
  */
 function httpFormPost(string $url, array $fields): array {
+    // Mountaineer IT: our Microsoft 365 app signs in with a certificate (functions/mit_m365.php)
+    if (function_exists('mitMicrosoftTokenFields')) {
+        $fields = mitMicrosoftTokenFields($url, $fields);
+    }
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);

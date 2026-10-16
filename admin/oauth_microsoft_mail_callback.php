@@ -54,14 +54,15 @@ $scope = 'offline_access openid profile https://outlook.office.com/IMAP.AccessAs
 $ch = curl_init($token_url);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
+// Mountaineer IT: our Microsoft 365 app signs in with a certificate (functions/mit_m365.php)
+curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query(mitMicrosoftTokenFields($token_url, [
     'client_id' => $config_mail_oauth_client_id,
     'client_secret' => $config_mail_oauth_client_secret,
     'grant_type' => 'authorization_code',
     'code' => $code,
     'redirect_uri' => $redirect_uri,
     'scope' => $scope,
-], '', '&'));
+]), '', '&'));
 curl_setopt($ch, CURLOPT_TIMEOUT, 20);
 
 $raw_body = curl_exec($ch);

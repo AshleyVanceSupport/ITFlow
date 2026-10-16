@@ -49,8 +49,17 @@ model: see DEPLOYMENT.md.
   Each tech can pick their calendar colour (admins: anyone's) from the Techs legend - saved as
   the `calendar.color` preference via `ajax.php?mit_agent_color`; `mitAgentColor()` falls back
   to the automatic colour.
-- Next planned: Microsoft 365 connector with automatic app registration (admin signs in once),
-  then per-tech Outlook sync - ITFlow -> Outlook first, Outlook busy -> ITFlow second.
+- Microsoft 365 app (Oct 2026): `functions/mit_m365.php` (ours) creates ITFlow's own app in the
+  tenant (device-code sign-in as Global Admin, Graph CLI client) or takes a hand-made one, with a
+  certificate instead of a secret, renewed 30 days before expiry via Graph `addKey`. Settings in
+  `mit_settings` (M003). The mail OAuth secret holds the marker `mit-m365-certificate`; one-line
+  hooks swap it for a signed client assertion: `functions/request.php` (httpFormPost),
+  `admin/post/settings_mail.php` (token test), `admin/oauth_microsoft_mail_callback.php`. UI:
+  `admin/includes/mit_m365_card.php` required at the top of `admin/settings_mail.php`;
+  handlers in `admin/post/mit_m365.php`. Re-apply the hooks if an upstream merge drops them.
+- Next planned: per-tech Outlook calendar in Account settings (redirect URI
+  `/agent/user/mit_outlook_callback.php` is already registered on the app) - ITFlow -> Outlook
+  first, Outlook busy -> ITFlow second.
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files
   upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
   SSRF, broken tag links, Clients/Tickets/dashboard/search performance.
