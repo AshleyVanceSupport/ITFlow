@@ -55,6 +55,8 @@
         <?php } ?>
         <!-- End Custom Nav Links -->
 
+        <?php require_once __DIR__ . '/mit_timers_nav.php'; // Mountaineer IT: ticket timers running in this browser ?>
+
         <!-- Notifications - js/notifications.js fills the panel when the bell is
              opened and keeps the badge current. Without the script the bell is a
              plain link to the full page. The panel follows the page theme, not

@@ -81,6 +81,11 @@ model: see DEPLOYMENT.md.
   source - hooks in `functions/calendar.php` (calendarSources `+=`, calendarSourceItems early
   return), striped via `[data-kind="outlook_busy"]` CSS in `agent/calendar.php`; counted in
   `mitScheduleConflicts()`. Titles only for the owner; others see Busy/Tentative/Out of office.
+- Ticket timers in the top bar (Oct 2026): `includes/mit_timers_nav.php` + `js/mit_timers.js` (ours)
+  list the browser's ticket timers (ITFlow's localStorage keys `<id>-startTime`/`-pausedTime`
+  from `agent/js/ticket_time_tracking.js` - re-check if upstream changes them) with pause /
+  resume / discard. Hooks: one require in `includes/top_nav.php` before the bell, and
+  `agent/ajax.php?mit_timer_tickets` (ticket names, client-scoped).
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files
   upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
   SSRF, broken tag links, Clients/Tickets/dashboard/search performance.

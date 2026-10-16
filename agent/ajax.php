@@ -2316,6 +2316,32 @@ if (isset($_POST['mit_calendar_state'])) {
 }
 
 /*
+ * Mountaineer IT: the tickets behind the timers in this browser (js/mit_timers.js) - number,
+ * subject, client and whether it is still open. Only tickets this agent can see come back.
+ */
+if (isset($_GET['mit_timer_tickets'])) {
+
+    header('Content-Type: application/json');
+    $ids = array_slice(array_values(array_unique(array_filter(array_map('intval', explode(',', (string) ($_GET['ids'] ?? '')))))), 0, 100);
+    $tickets = [];
+    if ($ids && lookupUserPermission('module_support') >= 1) {
+        $result = mysqli_query($mysqli, "SELECT ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_resolved_at, ticket_closed_at, ticket_archived_at, client_name
+            FROM tickets LEFT JOIN clients ON client_id = ticket_client_id
+            WHERE ticket_id IN (" . implode(',', $ids) . ") " . clientScopeSql('ticket_client_id'));
+        while ($row = mysqli_fetch_assoc($result)) {
+            $tickets[intval($row['ticket_id'])] = [
+                'reference' => ticketReference($row),
+                'subject' => $row['ticket_subject'],
+                'client' => (string) $row['client_name'],
+                'open' => ticketIsOpen($row) && empty($row['ticket_archived_at']),
+            ];
+        }
+    }
+    echo json_encode((object) $tickets);
+    exit;
+}
+
+/*
  * Mountaineer IT: a tech's calendar colour - their own, or anyone's for an admin.
  * Empty colour goes back to the automatic one.
  */
