@@ -40,7 +40,11 @@ model: see DEPLOYMENT.md.
 1. `git remote add upstream https://github.com/itflow-org/itflow.git` (if missing);
    `git fetch upstream master --tags`.
 2. Merge only official releases: `upstream/master` / the newest `vYY.MM` tag – not
-   upstream `develop`.
+   upstream `develop`. Exception (Oct 2026): upstream `develop` (unreleased 26.11 work, DB
+   2.8.9) was merged into our `develop` at the user's request to get the new ticket page
+   early. Until upstream releases 26.11, `develop` is ahead of any release - **do not promote
+   `develop` to `MountaineerIT` before 26.11 is out** without the user explicitly accepting
+   unreleased upstream code in production. When 26.11 is released, merge its tag as usual.
 3. Summarise for the user: version, notable features/fixes, new files in
    `admin/database_updates/` (DB version change), anything touching our deviations above.
 4. On `develop`, `git merge <tag>`, resolve conflicts keeping our deviations, `php -l`
