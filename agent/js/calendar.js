@@ -3,7 +3,8 @@
 // Items are fetched for the range on screen from ajax.php?calendar_items -
 // the events on the calendars ticked, and the built-in sources ticked - for
 // one client or all, everyone's or one agent's. What is ticked, whose, and
-// the view are remembered in this browser.
+// the view are remembered in this browser and saved to the agent's account
+// (Mountaineer IT - ajax.php?mit_calendar_state), so every device opens the same way.
 //
 // Picking a day or a time range opens New Event for it. A click opens the
 // item's quick look. Scheduled tickets and events that do not repeat can be
@@ -37,12 +38,34 @@
     } catch (e) {
         state = {};
     }
+    // Mountaineer IT: what is saved to the agent's account wins, so every device opens the same way
+    try {
+        const saved = JSON.parse(root.dataset.savedState || '{}');
+        if (saved && typeof saved === 'object' && Object.keys(saved).length) {
+            state = saved;
+        }
+    } catch (e) {
+        // Nothing saved yet - this browser's copy, or the defaults
+    }
+    let saveTimer = null;
     function save() {
         try {
             window.localStorage.setItem(storeKey, JSON.stringify(state));
         } catch (e) {
-            // Private window or storage blocked - it just won't be remembered
+            // Private window or storage blocked - the account copy below still keeps it
         }
+        // Mountaineer IT: and to the agent's account, a moment after the last change
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(function () {
+            fetch('ajax.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                credentials: 'same-origin',
+                body: new URLSearchParams({mit_calendar_state: 1, csrf_token: csrf, page: clientId ? 'client' : 'all', state: JSON.stringify(state)}).toString()
+            }).catch(function () {
+                // Offline - this browser still remembers it
+            });
+        }, 800);
     }
 
     state.hidden = Array.isArray(state.hidden) ? state.hidden : [];

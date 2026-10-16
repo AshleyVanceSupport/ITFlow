@@ -110,3 +110,62 @@ function mitScheduleConflicts($user_id, $start, $end, $ticket_id = 0) {
     }
     return $conflicts;
 }
+
+/*
+ * ---------- per-user preferences (mit_user_preferences, database update M002) ----------
+ */
+
+/** A saved preference for a user, or $default. */
+function mitUserPreference($user_id, $preference, $default = null) {
+    global $mysqli;
+    $user_id = intval($user_id);
+    $preference = escapeSql($preference);
+    if (!$user_id) {
+        return $default;
+    }
+    $result = mysqli_query($mysqli, "SELECT value FROM mit_user_preferences WHERE user_id = $user_id AND preference = '$preference' LIMIT 1");
+    $row = $result ? mysqli_fetch_assoc($result) : null;
+    return $row ? $row['value'] : $default;
+}
+
+/** Save a preference for a user. */
+function mitSetUserPreference($user_id, $preference, $value) {
+    global $mysqli;
+    $user_id = intval($user_id);
+    if (!$user_id) {
+        return;
+    }
+    $preference = mysqli_real_escape_string($mysqli, (string) $preference);
+    $value = mysqli_real_escape_string($mysqli, (string) $value);
+    mysqli_query($mysqli, "INSERT INTO mit_user_preferences SET user_id = $user_id, preference = '$preference', value = '$value'
+        ON DUPLICATE KEY UPDATE value = '$value'");
+}
+
+/** The calendar's settings as saved for this user ('all' or 'client' page), cleaned - [] when none. */
+function mitCalendarState($user_id, $page) {
+    $state = json_decode((string) mitUserPreference($user_id, "calendar.$page", ''), true);
+    return is_array($state) ? mitCleanCalendarState($state) : [];
+}
+
+/** Only the keys the calendar page uses, in the shapes it expects. */
+function mitCleanCalendarState(array $state) {
+    $clean = [];
+    if (isset($state['view']) && in_array($state['view'], ['dayGridMonth', 'timeGridWeek', 'timeGridDay', 'listWeek', 'listMonth', 'listDay'], true)) {
+        $clean['view'] = $state['view'];
+    }
+    if (isset($state['agent'])) {
+        $clean['agent'] = max(0, intval($state['agent']));
+    }
+    if (isset($state['hidden']) && is_array($state['hidden'])) {
+        $clean['hidden'] = array_values(array_slice(array_map('strval', array_map('intval', $state['hidden'])), 0, 200));
+    }
+    if (isset($state['sources']) && is_array($state['sources'])) {
+        $clean['sources'] = [];
+        foreach ($state['sources'] as $key => $on) {
+            if (preg_match('/^[a-z_]{1,40}$/', (string) $key)) {
+                $clean['sources'][$key] = (bool) $on;
+            }
+        }
+    }
+    return $clean;
+}

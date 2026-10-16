@@ -2293,6 +2293,28 @@ if (isset($_POST['calendar_move'])) {
  * The calendar's To schedule list: an agent's open tickets with no work booked
  * (most urgent first), to drag onto the calendar - in one client, or all.
  */
+/*
+ * Mountaineer IT: the calendar's view, whose calendar and what is ticked, saved to the
+ * agent's account so it is the same on every device (functions/mit_calendar.php).
+ */
+if (isset($_POST['mit_calendar_state'])) {
+
+    validateCSRFToken();
+
+    header('Content-Type: application/json');
+    $page = ($_POST['page'] ?? '') === 'client' ? 'client' : 'all';
+    $raw = (string) ($_POST['state'] ?? '');
+    $state = strlen($raw) <= 8192 ? json_decode($raw, true) : null;
+    if (!is_array($state)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Bad calendar settings']);
+        exit;
+    }
+    mitSetUserPreference($session_user_id, "calendar.$page", json_encode(mitCleanCalendarState($state)));
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
 if (isset($_GET['calendar_unscheduled'])) {
 
     header('Content-Type: application/json');

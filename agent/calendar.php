@@ -55,7 +55,8 @@ foreach ($sources as $key => $source) {
     data-can-schedule="<?= $can_schedule ? 1 : 0 ?>"
     data-mobile="<?= !empty($session_mobile) ? 1 : 0 ?>"
     data-initial-date="<?= calendarIsDate($_GET['date'] ?? '') ? escapeHtml($_GET['date']) : '' ?>"
-    data-sources="<?= escapeHtml(json_encode($page_sources)) ?>">
+    data-sources="<?= escapeHtml(json_encode($page_sources)) ?>"
+    data-saved-state="<?= escapeHtml(json_encode((object) mitCalendarState($session_user_id, $page_client_id ? 'client' : 'all'))) ?>">
 
     <div class="col-lg-auto itflow-cal-side order-2 order-lg-1 d-print-none">
 
