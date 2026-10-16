@@ -19,9 +19,9 @@ Flow:
 
 ```
 itflow-org/itflow (official releases)
-        │  merged on request ("Claude, pull in ITFlow's updates") – PR into develop
+        │  merged on request ("Claude, pull in ITFlow's updates")
         ▼
-develop  ──►  beta server         ← feature branches are PR'd into develop too
+develop  ──►  beta server         ← our changes are committed straight to develop
         │  PR once tested on beta ("Claude, promote develop to production")
         ▼
 MountaineerIT  ──►  production servers
@@ -219,13 +219,13 @@ To retire a server, delete its key there.
 
 Ask Claude Code (with this repository attached): *"Check ITFlow for updates and bring them in."*
 It will fetch the latest **official release** from itflow-org, summarise what changed
-(including any database updates), merge it into a branch off `develop` and open a PR into
-`develop`. Once that is merged the beta server picks it up; test there, then ask Claude to
-open the `develop` → `MountaineerIT` PR.
+(including any database updates), merge it into `develop` and, once you confirm, push it.
+The beta server picks it up; test there, then ask Claude to open the
+`develop` → `MountaineerIT` PR.
 
 ## Rules for our own changes
 
-- Feature branches come off `develop` and are PR'd into `develop`.
+- Changes are committed straight to `develop` and tested on the beta server – no PRs needed.
 - Nothing is pushed or merged into `MountaineerIT` except a reviewed PR from `develop`.
 - Don't modify `libs/` (third-party code).
 - Keep edits to upstream files small – every changed line can conflict when ITFlow releases

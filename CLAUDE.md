@@ -6,12 +6,13 @@ model: see DEPLOYMENT.md.
 ## Branches
 - `MountaineerIT` – production, default branch. **Never push to or merge into it without
   asking the user first.** Changes reach it only via a PR from `develop`.
-- `develop` – staging; beta server tracks it. All work goes here first via PR.
+- `develop` – staging; beta server tracks it. All work goes here first, committed directly.
 - `master` – untouched copy of upstream master, comparison only.
 - Other branches are leftover upstream copies; ignore them.
 
 ## Rules
-- Feature branches off `develop`, PR into `develop`.
+- Commit directly to `develop` (no feature branches or PRs into `develop`) – after the user
+  confirms the push. PRs are only for `develop` → `MountaineerIT`.
 - **Ask the user to confirm before every `git push`** (any branch) and before merging any PR.
 - Explain the plan before big changes or anything touching the schema (`db.sql`,
   `admin/database_updates/`). Upstream numbers migrations sequentially – custom ones would
@@ -32,8 +33,8 @@ model: see DEPLOYMENT.md.
    upstream `develop`.
 3. Summarise for the user: version, notable features/fixes, new files in
    `admin/database_updates/` (DB version change), anything touching our deviations above.
-4. Branch `upstream/vYY.MM` off `develop`, `git merge <tag>`, resolve conflicts keeping our
-   deviations, `php -l` changed PHP files, push, open PR into `develop`.
+4. On `develop`, `git merge <tag>`, resolve conflicts keeping our deviations, `php -l`
+   changed PHP files, then ask the user before pushing to `develop`.
 
 ## "Promote to production"
 Open a PR `develop` → `MountaineerIT` listing what's included and any DB updates. Ask the
