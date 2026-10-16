@@ -74,7 +74,7 @@ foreach ($sources as $key => $source) {
 
                 <?php if (count($agents) > 1) { ?>
                     <!-- Mountaineer IT: each tech's colour - their booked tickets are drawn in it. Click one to see their calendar. -->
-                    <div class="small text-body-secondary text-uppercase fw-semibold mb-1">Techs</div>
+                    <div class="small text-body-secondary text-uppercase fw-semibold mt-3 mb-1">Techs</div>
                     <div class="mb-3" id="mitTechLegend">
                         <?php foreach ($agents as $agent) { ?>
                             <button type="button" class="btn btn-link btn-sm p-0 d-flex align-items-center gap-2 text-body text-decoration-none text-start w-100 mit-tech-pick" data-agent="<?= intval($agent['user_id']) ?>" title="Show <?= escapeHtml($agent['user_name']) ?>'s calendar">

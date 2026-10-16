@@ -14,9 +14,12 @@ model: see DEPLOYMENT.md.
 - Commit directly to `develop` (no feature branches or PRs into `develop`) – after the user
   confirms the push. PRs are only for `develop` → `MountaineerIT`.
 - **Ask the user to confirm before every `git push`** (any branch) and before merging any PR.
-- Explain the plan before big changes or anything touching the schema (`db.sql`,
-  `admin/database_updates/`). Upstream numbers migrations sequentially – custom ones would
-  collide, so don't add any without agreeing a scheme with the user.
+- Explain the plan before big changes or anything touching the schema.
+- **Our database changes go in `admin/database_updates/mountaineerit/` as M001.php, M002.php …**
+  (agreed scheme). Never add files to ITFlow's numbered `admin/database_updates/*.php` and
+  never edit `db.sql`. Our updates are tracked by name in `mit_database_updates`, run by
+  `admin/database_updates_mountaineerit.php` after ITFlow's (update_cli) and at the end of
+  both installers. Each file must be safe to run twice (use `mitColumnExists()` etc.).
 - Don't modify `libs/` unless asked.
 - Keep diffs against upstream minimal so release merges stay clean.
 
@@ -32,6 +35,17 @@ model: see DEPLOYMENT.md.
   invoices/expenses, payments, autopay, contract templates, ticket time rounding, time
   reports, quote due date, invoice stock, task rows, Admin > Modules, setup_cli/restore_cli.
   When an upstream release fixes the same thing, resolve conflicts in favour of upstream.
+- Calendar (Oct 2026): `functions/mit_calendar.php` (ours) - tech colours, booking end
+  times (`tickets.ticket_schedule_end`, M001), overlap conflicts. Hooks in
+  `functions/ticket.php` (ticketSetSchedule/ticketCancelSchedule), `functions/app.php`
+  (createiCalStr `$end`), `functions/calendar.php` (ticket items + feeds), `agent/ajax.php`
+  (calendar_move), `agent/calendar.php` + `agent/js/calendar.js` (Techs legend, opens on me),
+  `agent/modals/ticket/ticket_edit_schedule.php` + `agent/js/ticket_schedule_modal.js`
+  (Tech + How long), `agent/post/ticket.php` (edit_ticket_schedule), `agent/ticket.php`
+  (start - end wording), `functions.php` (require), `scripts/update_cli.php`, `setup/index.php`,
+  `scripts/setup_cli.php` (run our DB updates). Re-apply them if an upstream merge drops them.
+- Next planned: Microsoft 365 connector with automatic app registration (admin signs in once),
+  then per-tech Outlook sync - ITFlow -> Outlook first, Outlook busy -> ITFlow second.
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files
   upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
   SSRF, broken tag links, Clients/Tickets/dashboard/search performance.
