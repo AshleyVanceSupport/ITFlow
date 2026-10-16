@@ -433,6 +433,9 @@ if (isset($_POST['add_company_settings'])) {
     // Seed the defaults shared with the CLI installer
     seedDefaultData($mysqli);
 
+    // Mountaineer IT's own database updates, so a new install starts with them
+    require_once "../admin/database_updates_mountaineerit.php";
+
     $_SESSION['alert_message'] = "Company <strong>$name</strong> created";
 
     header("Location: ?localization");

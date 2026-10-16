@@ -291,6 +291,12 @@ mysqli_query($mysqli,"INSERT INTO companies SET company_name = '$company_name', 
 // Seed the defaults shared with the web installer
 seedDefaultData($mysqli);
 
+// Mountaineer IT's own database updates, so a new install starts with them
+require_once "../admin/database_updates_mountaineerit.php";
+if ($mit_updates_error) {
+    echo "Warning: Mountaineer IT database update failed at $mit_updates_error - run scripts/update_cli.php --update_db to retry.\n";
+}
+
 // Finalizing
 mysqli_query($mysqli,"UPDATE companies SET company_locale = '$locale', company_currency = '$currency_code' WHERE company_id = 1");
 mysqli_query($mysqli,"UPDATE settings SET config_timezone = '$timezone' WHERE company_id = 1");
