@@ -28,6 +28,7 @@
                     'user_details.php' => ['fa-id-badge', 'Profile'],
                     'user_security.php' => ['fa-shield-alt', 'Security'],
                     'user_preferences.php' => ['fa-sliders-h', 'Preferences'],
+                    'mit_outlook.php' => ['fa-calendar-alt', 'Outlook calendar'], // Mountaineer IT
                     'user_activity.php' => ['fa-history', 'Activity'],
                 ];
                 foreach ($account_pages as $page => [$icon, $label]) { ?>

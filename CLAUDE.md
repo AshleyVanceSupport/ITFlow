@@ -64,9 +64,14 @@ model: see DEPLOYMENT.md.
   `cron/ticket_email_parser.php` (`mitM365GraphMailbox(...) ?? new Mailbox(...)`); the Graph
   stand-ins for ImapEngine are in `functions/mit_m365_mailbox.php`. Also `(string)$config_smtp_host`
   in mail_queue's two sendQueueEmail calls (crashed when the SMTP host was never set).
-- Next planned: per-tech Outlook calendar in Account settings (redirect URI
-  `/agent/user/mit_outlook_callback.php` is already registered on the app) - ITFlow -> Outlook
-  first, Outlook busy -> ITFlow second.
+- Outlook calendar per tech (Oct 2026, Phase 4 step 1): `functions/mit_outlook.php` (ours, required
+  from mit_m365.php) - Account > Outlook calendar (`agent/user/mit_outlook.php`, handlers
+  `agent/user/post/mit_outlook.php`, Microsoft returns to `agent/user/mit_outlook_callback.php`).
+  Tables `mit_outlook_links` / `mit_outlook_events` (M004); refresh tokens AES-GCM encrypted with
+  a key from config.php. Cron job `mit_outlook_sync` (`cron/mit_outlook_sync.php`, one entry
+  added to `includes/cron_jobs.php`) pushes changed bookings every minute and checks Outlook
+  for edits every 15 min (ITFlow wins). Side-nav entry in `agent/user/includes/user_side_nav.php`.
+- Next planned (Phase 4 step 2): Outlook busy times -> ITFlow calendar and booking conflicts.
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files
   upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
   SSRF, broken tag links, Clients/Tickets/dashboard/search performance.

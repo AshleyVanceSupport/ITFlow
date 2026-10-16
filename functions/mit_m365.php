@@ -280,10 +280,15 @@ function mitM365TokenTenant($token) {
     return is_array($claims) ? (string) ($claims['tid'] ?? '') : '';
 }
 
+/** This server's address, e.g. https://itflow.example.com */
+function mitM365BaseUrl() {
+    global $config_base_url;
+    return (defined('BASE_URL') && !empty(BASE_URL)) ? rtrim((string) BASE_URL, '/') : 'https://' . rtrim((string) $config_base_url, '/');
+}
+
 /** The addresses Microsoft may send people back to on this server. */
 function mitM365RedirectUris() {
-    global $config_base_url;
-    $base = (defined('BASE_URL') && !empty(BASE_URL)) ? rtrim((string) BASE_URL, '/') : 'https://' . rtrim((string) $config_base_url, '/');
+    $base = mitM365BaseUrl();
     return [
         $base . '/admin/oauth_microsoft_mail_callback.php',  // ITFlow's mailbox Connect
         $base . '/agent/user/mit_outlook_callback.php',      // each person's Outlook calendar (Phase 4)
@@ -684,3 +689,6 @@ function mitM365GraphMailbox($provider, $username) {
     require_once __DIR__ . '/mit_m365_mailbox.php';
     return new MitGraphMailbox($token, (string) $username);
 }
+
+// Each person's Outlook calendar, on the same app
+require_once __DIR__ . '/mit_outlook.php';

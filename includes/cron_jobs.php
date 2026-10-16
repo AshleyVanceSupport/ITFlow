@@ -120,6 +120,15 @@ function cronJobRegistry(): array
             'enabled' => 0,
             'interval_safe' => false,
         ],
+        [
+            // Mountaineer IT (functions/mit_outlook.php)
+            'name' => 'mit_outlook_sync',
+            'label' => 'Outlook Calendar Sync',
+            'script' => 'mit_outlook_sync.php',
+            'description' => 'Puts each tech\'s booked tickets in the Outlook calendar they connected under Account > Outlook calendar, and puts back events changed there.',
+            'schedule' => 'Interval',
+            'interval_minutes' => 1,
+        ],
     ];
 }
 
