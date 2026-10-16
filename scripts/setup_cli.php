@@ -41,7 +41,7 @@ $optional_args = [
     'phone'         => 'Company phone (optional)',
     'company-email' => 'Company email (optional)',
     'website'       => 'Company website (optional)',
-    'repo-branch'   => 'Git repo branch to track (optional, default master)'
+    'repo-branch'   => 'Git repo branch to track (optional, default MountaineerIT)'
 ];
 
 // Parse command line options
@@ -173,8 +173,8 @@ $base_url = getOptionOrPrompt('base-url', "Enter the base URL (e.g. example.com/
 $base_url = rtrim($base_url, '/');
 
 // Repo Branch
-$repo_branch = getOptionOrPrompt('repo-branch', "Git repo branch to track", false, 'master');
-if (empty($repo_branch)) $repo_branch = 'master';
+$repo_branch = getOptionOrPrompt('repo-branch', "Git repo branch to track", false, 'MountaineerIT');
+if (empty($repo_branch)) $repo_branch = 'MountaineerIT';
 
 // Locale, Timezone, Currency
 echo "\n=== Localization ===\n";

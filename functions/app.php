@@ -332,7 +332,7 @@ function getRepoBranch(): string
 
     $branch = trim((string) ($repo_branch ?? ''));
 
-    return $branch === '' ? 'master' : $branch;
+    return $branch === '' ? 'MountaineerIT' : $branch;
 }
 
 /*

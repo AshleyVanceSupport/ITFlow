@@ -136,7 +136,7 @@ $app_update_available = $latest_version !== ''
             <div class="col-md-3 col-6 mb-3">
                 <small class="text-secondary text-uppercase">Branch</small>
                 <div class="h5 mb-0"><?= escapeHtml($repo_branch) ?></div>
-                <?php if ($repo_branch !== 'master') { ?>
+                <?php if ($repo_branch !== 'MountaineerIT') { ?>
                     <small class="text-warning">Not the release branch</small>
                 <?php } ?>
             </div>
