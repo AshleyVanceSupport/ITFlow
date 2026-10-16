@@ -25,6 +25,16 @@ model: see DEPLOYMENT.md.
   (`getRepoBranch`), `admin/update.php` (release-branch badge), `setup/index.php` and
   `scripts/setup_cli.php` (default `$repo_branch`).
 - `DEPLOYMENT.md`, `CLAUDE.md`, `scripts/install.sh` (Debian one-line installer) – ours.
+- Removed `.github/workflows/first-interaction.yml` (upstream's welcome bot – it points people
+  to ITFlow's forum). If an upstream merge brings it back, delete it again.
+- Bug and security fixes made here ahead of upstream (Oct 2026, "Phase 1" – see `git log`):
+  portal contacts, saved-card charging, income/transactions XSS, API client checks, recurring
+  invoices/expenses, payments, autopay, contract templates, ticket time rounding, time
+  reports, quote due date, invoice stock, task rows, Admin > Modules, setup_cli/restore_cli.
+  When an upstream release fixes the same thing, resolve conflicts in favour of upstream.
+- Phase 2 (after the next upstream release is merged): recheck the review findings in files
+  upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
+  SSRF, broken tag links, Clients/Tickets/dashboard/search performance.
 
 ## "Pull in ITFlow's updates"
 1. `git remote add upstream https://github.com/itflow-org/itflow.git` (if missing);

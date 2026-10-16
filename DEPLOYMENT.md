@@ -57,21 +57,23 @@ curl -fsSL https://raw.githubusercontent.com/MountaineerIT/ITFLOW/develop/script
 
 (Minimal Debian may not have `curl`: use `wget -qO- <same URL> | bash -s -- --branch develop`.)
 
-It asks for the server name, certificate type (Let's Encrypt for a public name, self-signed
-for an internal one), timezone, company name and the first admin's name, email and password,
+It asks for the server name, HTTPS type (Let's Encrypt for a public name, self-signed for an
+internal one, or `none` for a server behind a reverse proxy that handles HTTPS), timezone, company name and the first admin's name, email and password,
 shows a summary and asks to continue. It then:
 
 - installs Apache, MariaDB, PHP and git, and sets PHP upload limits to 500 MB
 - creates the `itflow` database (utf8mb4_general_ci) and a database user with a random password
 - clones this repository into `/var/www/itflow` as `www-data`, on the chosen branch
-- sets up the Apache site with HTTP→HTTPS redirect and the certificate
+- sets up the Apache site with HTTP→HTTPS redirect and the certificate (or plain HTTP with `-s none`)
 - runs ITFlow's setup (company, first admin, `config.php` with `$repo_branch` set)
-- installs the cron entry, switches cron on, sets Domain Refresher to every 30 minutes
+- writes `/etc/cron.d/itflow` (jobs run as `www-data`; errors go to the system log -
+  `journalctl -t itflow-cron`), switches cron on, sets Domain Refresher to every 30 minutes
 - on non-production branches, schedules the nightly self-update (see "Updating")
 - saves the database password to `/root/itflow-install-credentials.txt` (root only)
 
 Every question can also be given as an option for an unattended install – run it with
-`--help` to list them. Known limit: company and admin names can't contain `'` or `\` yet.
+`--help` to list them. The short options match ITFlow's own installer: `-b` branch, `-d`
+domain, `-s` HTTPS type, `-t` timezone, `-u` unattended.
 
 It is for fresh servers only: it stops if `/var/www/itflow` or an `itflow` database already
 exists. If it stops part-way, fix the problem it reports and rerun on a fresh server (or drop
@@ -98,8 +100,6 @@ the `itflow` database and user and delete `/var/www/itflow` first).
 3. Run the web setup (`https://<host>/setup`) or `scripts/setup_cli.php` (as `www-data`).
    Setup writes `$repo_branch = 'MountaineerIT'` into `config.php`; **on the beta server
    change it to `'develop'`**.
-   - Known issue: `setup_cli.php` crashes if the company or admin name contains an apostrophe
-     (e.g. "O'Brien IT"). Use the web setup for such names, or rename afterwards.
 
 4. Add the single cron entry to `www-data`'s crontab (`sudo crontab -u www-data -e`) and turn
    cron on in Maintenance > Cron (it ships switched off):

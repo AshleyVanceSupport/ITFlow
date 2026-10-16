@@ -44,13 +44,14 @@ usage() {
 ITFlow installer (Mountaineer IT build) for Debian 12 / 13
 
 Options:
-  --branch NAME          Branch to install and track: develop (beta) or MountaineerIT (production).
+  -b, --branch NAME      Branch to install and track: develop (beta) or MountaineerIT (production).
                          Default: MountaineerIT
-  --domain FQDN          Server name, e.g. itflow-beta.example.com
-  --ssl MODE             letsencrypt | self-signed
+  -d, --domain FQDN      Server name, e.g. itflow-beta.example.com
+  -s, --ssl MODE         letsencrypt | self-signed | none
                          letsencrypt needs the domain's public DNS pointing here and ports 80/443 open.
+                         none = plain HTTP, for a server behind a reverse proxy that handles HTTPS.
   --email ADDRESS        Email for Let's Encrypt expiry notices
-  --timezone TZ          e.g. America/New_York (default: this server's timezone)
+  -t, --timezone TZ      e.g. America/New_York (default: this server's timezone)
   --locale LOCALE        Default: en_US
   --currency CODE        Default: USD
   --country NAME         Default: United States
@@ -60,7 +61,8 @@ Options:
   --admin-password PASS  First admin's password (min 8 chars; asked for if not given)
   --auto-update          Update nightly from the branch (default on for non-production branches)
   --no-auto-update       Don't schedule nightly updates
-  -y, --yes              Don't ask for confirmation before installing
+  -y, -u, --yes, --unattended
+                         Don't ask for confirmation before installing
   -h, --help             Show this help
 EOF
 }
@@ -108,11 +110,6 @@ ask_secret() {
     printf -v "$__var" '%s' "$__a"
 }
 
-# ITFlow's command-line setup does not escape these values yet, so a quote would break it.
-check_text() {
-    [[ "$2" != *"'"* && "$2" != *'\'* ]] || die "$1 can't contain ' or \\ yet (known setup bug). Use a name without them and change it afterwards in ITFlow."
-}
-
 random_password() { tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 || true; }
 
 # The whole install runs inside main(), called on the last line, so bash has read the
@@ -124,11 +121,11 @@ main() {
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --branch)          BRANCH="${2:?}"; shift 2 ;;
-        --domain)          DOMAIN="${2:?}"; shift 2 ;;
-        --ssl)             SSL_MODE="${2:?}"; shift 2 ;;
+        -b|--branch)       BRANCH="${2:?}"; shift 2 ;;
+        -d|--domain)       DOMAIN="${2:?}"; shift 2 ;;
+        -s|--ssl)          SSL_MODE="${2:?}"; shift 2 ;;
         --email)           LE_EMAIL="${2:?}"; shift 2 ;;
-        --timezone)        TIMEZONE="${2:?}"; shift 2 ;;
+        -t|--timezone)     TIMEZONE="${2:?}"; shift 2 ;;
         --locale)          LOCALE="${2:?}"; shift 2 ;;
         --currency)        CURRENCY="${2:?}"; shift 2 ;;
         --country)         COUNTRY="${2:?}"; shift 2 ;;
@@ -138,7 +135,7 @@ while [[ $# -gt 0 ]]; do
         --admin-password)  ADMIN_PASSWORD="${2:?}"; shift 2 ;;
         --auto-update)     AUTO_UPDATE=1; shift ;;
         --no-auto-update)  AUTO_UPDATE=0; shift ;;
-        -y|--yes)          ASSUME_YES=1; shift ;;
+        -y|-u|--yes|--unattended) ASSUME_YES=1; shift ;;
         -h|--help)         usage; exit 0 ;;
         *) die "unknown option: $1 (see --help)" ;;
     esac
@@ -170,10 +167,13 @@ DOMAIN="${DOMAIN,,}"
 [[ "$DOMAIN" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || die "invalid server name: $DOMAIN"
 
 if [[ -z "$SSL_MODE" ]]; then
-    ask SSL_MODE "HTTPS certificate: letsencrypt (public DNS) or self-signed (internal)" "letsencrypt"
+    ask SSL_MODE "HTTPS: letsencrypt (public DNS), self-signed (internal) or none (behind a reverse proxy)" "letsencrypt"
 fi
-[[ "$SSL_MODE" == "letsencrypt" || "$SSL_MODE" == "self-signed" ]] || die "--ssl must be letsencrypt or self-signed"
+[[ "$SSL_MODE" == "selfsigned" ]] && SSL_MODE="self-signed"   # upstream installer's spelling
+[[ "$SSL_MODE" == "letsencrypt" || "$SSL_MODE" == "self-signed" || "$SSL_MODE" == "none" ]] \
+    || die "--ssl must be letsencrypt, self-signed or none"
 [[ "$SSL_MODE" == "letsencrypt" ]] && ask LE_EMAIL "Email for Let's Encrypt notices"
+if [[ "$SSL_MODE" == "none" ]]; then SITE_URL="http://$DOMAIN"; else SITE_URL="https://$DOMAIN"; fi
 
 DEFAULT_TZ="$(cat /etc/timezone 2>/dev/null || timedatectl show -p Timezone --value 2>/dev/null || echo UTC)"
 ask TIMEZONE "Timezone" "$DEFAULT_TZ"
@@ -186,9 +186,6 @@ ask ADMIN_EMAIL "Admin email (login)"
 ask_secret ADMIN_PASSWORD "Admin password (min 8 chars)"
 [[ ${#ADMIN_PASSWORD} -ge 8 ]] || die "admin password must be at least 8 characters"
 
-check_text "Company name" "$COMPANY_NAME"
-check_text "Admin name" "$ADMIN_NAME"
-check_text "Country" "$COUNTRY"
 
 if [[ -z "$AUTO_UPDATE" ]]; then
     if [[ "$BRANCH" == "MountaineerIT" ]]; then AUTO_UPDATE=0; else AUTO_UPDATE=1; fi
@@ -198,8 +195,8 @@ cat <<EOF
 
     Install ITFlow with these settings:
       Branch       $BRANCH $( [[ "$BRANCH" == "MountaineerIT" ]] && echo "(production)" || echo "(beta / testing)" )
-      URL          https://$DOMAIN
-      Certificate  $SSL_MODE
+      URL          $SITE_URL
+      HTTPS        $SSL_MODE
       Timezone     $TIMEZONE
       Company      $COMPANY_NAME
       Admin        $ADMIN_NAME <$ADMIN_EMAIL>
@@ -302,6 +299,25 @@ else
     [[ -f "$CERT_FILE" ]] || make-ssl-cert generate-default-snakeoil >/dev/null 2>&1 || true
 fi
 
+if [[ "$SSL_MODE" == "none" ]]; then
+    # Plain HTTP - HTTPS is handled by a reverse proxy in front of this server
+    cat > "$SITE_CONF" <<EOF
+# ITFlow - written by the Mountaineer IT installer (no HTTPS: behind a reverse proxy)
+<VirtualHost *:80>
+    ServerName $DOMAIN
+    DocumentRoot $INSTALL_DIR
+
+    <Directory $INSTALL_DIR>
+        Options -Indexes +FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog \${APACHE_LOG_DIR}/itflow-error.log
+    CustomLog \${APACHE_LOG_DIR}/itflow-access.log combined
+</VirtualHost>
+EOF
+else
 cat > "$SITE_CONF" <<EOF
 # ITFlow - written by the Mountaineer IT installer
 <VirtualHost *:80>
@@ -330,6 +346,7 @@ cat > "$SITE_CONF" <<EOF
     CustomLog \${APACHE_LOG_DIR}/itflow-access.log combined
 </VirtualHost>
 EOF
+fi
 a2ensite -q itflow >/dev/null
 apache2ctl configtest >/dev/null 2>&1 || die "Apache configuration test failed - run 'apache2ctl configtest' to see why."
 systemctl enable apache2 >/dev/null 2>&1 || true
@@ -344,8 +361,10 @@ if [[ "$SSL_MODE" == "letsencrypt" ]]; then
         warn "Check that $DOMAIN points to this server and ports 80/443 are open, then run:"
         warn "  certbot --apache -d $DOMAIN --cert-name itflow -m $LE_EMAIL --agree-tos"
     fi
-else
+elif [[ "$SSL_MODE" == "self-signed" ]]; then
     ok "self-signed certificate (browsers will warn until you trust it)"
+else
+    ok "plain HTTP on port 80 - point your reverse proxy at this server"
 fi
 
 # ---------------------------------------------------------------------------- ITFlow setup
@@ -363,12 +382,20 @@ info "Running ITFlow setup"
 grep -q "config_enable_setup = 0" "$INSTALL_DIR/config.php" || { cat /tmp/itflow-setup.log >&2; die "ITFlow setup did not finish."; }
 rm -f /tmp/itflow-setup.log
 chmod 640 "$INSTALL_DIR/config.php"
+if [[ "$SSL_MODE" == "none" ]]; then
+    # The proxy talks to ITFlow over plain HTTP, so ITFlow must not insist on HTTPS itself
+    sed -i 's/^\$config_https_only = TRUE;/$config_https_only = FALSE;/' "$INSTALL_DIR/config.php"
+fi
 ok "company, admin user and config.php created (tracking '$BRANCH')"
 
 # ---------------------------------------------------------------------------- cron
 
 info "Setting up scheduled jobs"
-CRON_LINES="* * * * * php $INSTALL_DIR/cron/cron.php >/dev/null 2>&1"
+# Jobs go in /etc/cron.d/itflow (run as the web user). Normal output is discarded; errors go
+# to the system log, tagged itflow-cron / itflow-update (see: journalctl -t itflow-cron).
+PHP_BIN="$(command -v php)"
+CRON_LINES="# ITFlow - written by the Mountaineer IT installer
+* * * * * $WEB_USER $PHP_BIN $INSTALL_DIR/cron/cron.php 2>&1 >/dev/null | logger -t itflow-cron"
 if [[ $AUTO_UPDATE -eq 1 ]]; then
     install -o "$WEB_USER" -g "$WEB_USER" -m 640 /dev/stdin "$INSTALL_DIR/scripts/custom/queue_update.php" <<'EOF'
 <?php
@@ -378,9 +405,10 @@ require __DIR__ . '/../../config.php';
 mysqli_query($mysqli, "UPDATE settings SET config_update_queued_at = NOW() WHERE company_id = 1");
 mysqli_query($mysqli, "UPDATE cron_jobs SET cron_job_run_now = 1 WHERE cron_job_name = 'app_update'");
 EOF
-    CRON_LINES+=$'\n'"15 3 * * * php $INSTALL_DIR/scripts/custom/queue_update.php >/dev/null 2>&1"
+    CRON_LINES+=$'\n'"15 3 * * * $WEB_USER $PHP_BIN $INSTALL_DIR/scripts/custom/queue_update.php 2>&1 >/dev/null | logger -t itflow-update"
 fi
-printf '%s\n' "$CRON_LINES" | crontab -u "$WEB_USER" -
+printf '%s\n' "$CRON_LINES" > /etc/cron.d/itflow
+chmod 644 /etc/cron.d/itflow
 systemctl enable --now cron >/dev/null 2>&1 || service cron start >/dev/null 2>&1 || true
 
 # Domain Refresher checks one domain per run - run it every 30 minutes instead of daily.
@@ -398,7 +426,7 @@ ok "cron installed and switched on$( [[ $AUTO_UPDATE -eq 1 ]] && echo ", nightly
 umask 077
 cat > "$CREDENTIALS_FILE" <<EOF
 ITFlow installed $(date '+%Y-%m-%d %H:%M')
-URL:            https://$DOMAIN
+URL:            $SITE_URL
 Branch:         $BRANCH
 Install dir:    $INSTALL_DIR
 Admin login:    $ADMIN_EMAIL
@@ -411,7 +439,7 @@ cat <<EOF
 
   ITFlow is installed.
 
-    Open:        https://$DOMAIN
+    Open:        $SITE_URL
     Log in as:   $ADMIN_EMAIL
     Branch:      $BRANCH
     Details:     $CREDENTIALS_FILE (database password - keep it safe)
