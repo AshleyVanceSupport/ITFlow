@@ -378,7 +378,7 @@ if (isset($_POST['add_payment_stripe'])) {
 
     // Get Client Payment Details
     $sql = mysqli_query($mysqli, "SELECT payment_provider_account, payment_provider_client, payment_provider_private_key,
-        payment_provider_public_key, saved_payment_description, saved_payment_provider_method FROM client_saved_payment_methods LEFT JOIN payment_providers ON saved_payment_provider_id = payment_provider_id LEFT JOIN client_payment_provider ON saved_payment_client_id = client_id WHERE saved_payment_id = $saved_payment_id LIMIT 1");
+        payment_provider_public_key, saved_payment_description, saved_payment_provider_method FROM client_saved_payment_methods LEFT JOIN payment_providers ON saved_payment_provider_id = payment_provider_id LEFT JOIN client_payment_provider ON saved_payment_client_id = client_id AND client_payment_provider.payment_provider_id = saved_payment_provider_id WHERE saved_payment_id = $saved_payment_id AND saved_payment_client_id = $client_id LIMIT 1");
     $row = mysqli_fetch_assoc($sql);
 
     $public_key = escapeSql($row['payment_provider_public_key']);

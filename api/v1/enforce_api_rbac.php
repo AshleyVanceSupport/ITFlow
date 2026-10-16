@@ -177,7 +177,9 @@ if (lookupUserPermission($resource_module[$resource]) < $required_level) {
 // permission at all, just an optional filter applied inside apiClientScopeSql().
 $client_id = intval($_POST['client_id'] ?? $_GET['client_id'] ?? 0);
 $client_id_supplied = isset($_POST['client_id']) || isset($_GET['client_id']);
-$is_write = in_array($operation_file, ['create.php', 'update.php', 'delete.php'], true);
+// Fail closed: every endpoint other than the GET-only reads is a write, so archive,
+// unarchive, close, resolve and anything added later are checked against the client too.
+$is_write = !in_array($operation_file, ['read.php', 'time.php'], true);
 if ($is_write && !apiUserCanAccessClient($client_id)) {
     // Writes act on a single client the caller names (client_id 0 = a global record).
     // The user must be able to access it - this also blocks a restricted user from

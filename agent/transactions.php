@@ -222,7 +222,7 @@ if ($account_filter) {
             <h3 class="card-title mt-2"><i class="fas fa-fw fa-list-alt me-2"></i>Transactions</h3>
             <?php if ($account_filter) { ?>
             <div class="card-tools">
-                <button type="button" class="btn btn-primary ajax-modal" data-modal-url="modals/transaction/transaction_export.php?account=<?= $account_filter ?>&type=<?= urlencode($type_filter) ?>&category=<?= $category_filter ?>&client=<?= $client_filter ?>&payment_method=<?= urlencode($payment_method_filter) ?>&amount_min=<?= $amount_min_filter ?>&amount_max=<?= $amount_max_filter ?>&dtf=<?= $dtf ?>&dtt=<?= $dtt ?>&q=<?= urlencode($q ?? '') ?>"><i class="fa fa-download me-2"></i>Export</button>
+                <button type="button" class="btn btn-primary ajax-modal" data-modal-url="modals/transaction/transaction_export.php?account=<?= $account_filter ?>&type=<?= urlencode($type_filter) ?>&category=<?= $category_filter ?>&client=<?= $client_filter ?>&payment_method=<?= urlencode($payment_method_filter) ?>&amount_min=<?= $amount_min_filter ?>&amount_max=<?= $amount_max_filter ?>&dtf=<?= urlencode($dtf ?? '') ?>&dtt=<?= urlencode($dtt ?? '') ?>&q=<?= urlencode($q ?? '') ?>"><i class="fa fa-download me-2"></i>Export</button>
             </div>
             <?php } ?>
         </div>
