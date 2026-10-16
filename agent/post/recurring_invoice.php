@@ -16,12 +16,13 @@ if (isset($_POST['add_invoice_recurring'])) {
     $recurring_invoice_frequency = validateRecurringFrequency($_POST['frequency']);
 
     $sql = mysqli_query($mysqli,"SELECT invoice_amount, invoice_category_id, invoice_client_id, invoice_currency_code,
-        invoice_date, invoice_note, invoice_number, invoice_prefix, invoice_scope FROM invoices WHERE invoice_id = $invoice_id");
+        invoice_date, invoice_discount_amount, invoice_note, invoice_number, invoice_prefix, invoice_scope FROM invoices WHERE invoice_id = $invoice_id");
     $row = mysqli_fetch_assoc($sql);
     $invoice_prefix = escapeSql($row['invoice_prefix']);
     $invoice_number = intval($row['invoice_number']);
     $invoice_date = escapeSql(validateDate($row['invoice_date']));
     $invoice_amount = floatval($row['invoice_amount']);
+    $invoice_discount_amount = floatval($row['invoice_discount_amount']);
     $invoice_currency_code = escapeSql($row['invoice_currency_code']);
     $invoice_scope = escapeSql($row['invoice_scope']);
     $invoice_note = escapeSql($row['invoice_note']);
@@ -41,7 +42,7 @@ if (isset($_POST['add_invoice_recurring'])) {
 
     $recurring_invoice_number = mysqli_insert_id($mysqli);
 
-    mysqli_query($mysqli,"INSERT INTO recurring_invoices SET recurring_invoice_prefix = '$config_recurring_invoice_prefix', recurring_invoice_number = $recurring_invoice_number, recurring_invoice_scope = '$invoice_scope', recurring_invoice_frequency = '$recurring_invoice_frequency', recurring_invoice_next_date = DATE_ADD('$invoice_date', INTERVAL 1 $recurring_invoice_frequency), recurring_invoice_status = 1, recurring_invoice_amount = $invoice_amount, recurring_invoice_currency_code = '$invoice_currency_code', recurring_invoice_note = '$invoice_note', recurring_invoice_category_id = $category_id, recurring_invoice_client_id = $client_id");
+    mysqli_query($mysqli,"INSERT INTO recurring_invoices SET recurring_invoice_prefix = '$config_recurring_invoice_prefix', recurring_invoice_number = $recurring_invoice_number, recurring_invoice_scope = '$invoice_scope', recurring_invoice_frequency = '$recurring_invoice_frequency', recurring_invoice_next_date = DATE_ADD('$invoice_date', INTERVAL 1 $recurring_invoice_frequency), recurring_invoice_status = 1, recurring_invoice_discount_amount = $invoice_discount_amount, recurring_invoice_amount = $invoice_amount, recurring_invoice_currency_code = '$invoice_currency_code', recurring_invoice_note = '$invoice_note', recurring_invoice_category_id = $category_id, recurring_invoice_client_id = $client_id");
 
     $recurring_invoice_id = mysqli_insert_id($mysqli);
 
@@ -443,20 +444,22 @@ if (isset($_GET['force_recurring'])) {
         mysqli_query($mysqli,"INSERT INTO invoice_items SET item_name = '$item_name', item_description = '$item_description', item_quantity = $item_quantity, item_price = $item_price, item_subtotal = $item_subtotal, item_tax = $item_tax_amount, item_total = $item_total, item_tax_id = $tax_id, item_invoice_id = $new_invoice_id");
     }
 
+    // Update Recurring Balances by tallying up recurring items, and move the schedule on by one
+    // period from the date this invoice was due - whether or not it is sent. Otherwise the nightly
+    // run bills the same period again on the original date.
+    $sql_recurring_invoice_total = mysqli_query($mysqli,"SELECT SUM(item_total) AS recurring_invoice_total FROM recurring_invoice_items WHERE item_recurring_invoice_id = $recurring_invoice_id");
+    $row = mysqli_fetch_assoc($sql_recurring_invoice_total);
+    $new_recurring_invoice_amount = floatval($row['recurring_invoice_total']) - $recurring_invoice_discount_amount;
+
+    mysqli_query($mysqli,"UPDATE recurring_invoices SET recurring_invoice_amount = $new_recurring_invoice_amount, recurring_invoice_last_sent = CURDATE(), recurring_invoice_next_date = DATE_ADD(recurring_invoice_next_date, INTERVAL 1 $recurring_invoice_frequency) WHERE recurring_invoice_id = $recurring_invoice_id");
+
+    //Also update the newly created invoice with the new amounts
+    mysqli_query($mysqli,"UPDATE invoices SET invoice_amount = $new_recurring_invoice_amount WHERE invoice_id = $new_invoice_id");
+
     // Only send the invoice if the recurring invoice is set to auto-send, otherwise just leave as draft for manual sending
     if ($recurring_invoice_auto_send == 1) {
 
         mysqli_query($mysqli,"INSERT INTO history SET history_status = 'Sent', history_description = 'Invoice Sent from Recurring!', history_invoice_id = $new_invoice_id");
-
-        //Update Recurring Balances by tallying up recurring items also update recurring dates
-        $sql_recurring_invoice_total = mysqli_query($mysqli,"SELECT SUM(item_total) AS recurring_invoice_total FROM recurring_invoice_items WHERE item_recurring_invoice_id = $recurring_invoice_id");
-        $row = mysqli_fetch_assoc($sql_recurring_invoice_total);
-        $new_recurring_invoice_amount = floatval($row['recurring_invoice_total']) - $recurring_invoice_discount_amount;
-
-        mysqli_query($mysqli,"UPDATE recurring_invoices SET recurring_invoice_amount = $new_recurring_invoice_amount, recurring_invoice_last_sent = CURDATE(), recurring_invoice_next_date = DATE_ADD(CURDATE(), INTERVAL 1 $recurring_invoice_frequency) WHERE recurring_invoice_id = $recurring_invoice_id");
-
-        //Also update the newly created invoice with the new amounts
-        mysqli_query($mysqli,"UPDATE invoices SET invoice_amount = $new_recurring_invoice_amount WHERE invoice_id = $new_invoice_id");
 
         if ($config_recurring_auto_send_invoice == 1) {
             $sql = mysqli_query($mysqli,"SELECT * FROM invoices

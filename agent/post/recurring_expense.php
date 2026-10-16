@@ -6,6 +6,30 @@
 
 defined('FROM_POST_HANDLER') || die("Direct file access is not allowed");
 
+/*
+ * The first date after today a recurring expense should post on. Monthly ones (frequency 1)
+ * only use the day; yearly ones use the month and day. Days are limited to 1-28 by the form,
+ * so every month has them. Strictly after today, because tonight's run may already be past.
+ */
+function recurringExpenseNextDate($frequency, $month, $day) {
+    $today = new DateTimeImmutable('today');
+
+    if ($frequency == 1) {
+        $next = $today->setDate((int) $today->format('Y'), (int) $today->format('n'), $day);
+        if ($next <= $today) {
+            $next_month = $today->modify('first day of next month');
+            $next = $next_month->setDate((int) $next_month->format('Y'), (int) $next_month->format('n'), $day);
+        }
+    } else {
+        $next = $today->setDate((int) $today->format('Y'), $month, $day);
+        if ($next <= $today) {
+            $next = $next->setDate((int) $today->format('Y') + 1, $month, $day);
+        }
+    }
+
+    return $next->format('Y-m-d');
+}
+
 if (isset($_POST['create_recurring_expense'])) {
 
     validateCSRFToken();
@@ -27,11 +51,9 @@ if (isset($_POST['create_recurring_expense'])) {
         enforceClientAccess();
     }
 
-    $year = date('Y');
-    if (strtotime("$year-$month-$day") < time()) {
-        $year++;
-    }
-    $start_date = "$year-$month-$day";
+    $day = max(1, min(28, $day));
+    $month = max(1, min(12, $month));
+    $start_date = recurringExpenseNextDate($frequency, $month, $day);
 
     mysqli_query($mysqli,"INSERT INTO recurring_expenses SET recurring_expense_frequency = $frequency, recurring_expense_day = $day, recurring_expense_month = $month, recurring_expense_next_date = '$start_date', recurring_expense_description = '$description', recurring_expense_reference = '$reference', recurring_expense_amount = $amount, recurring_expense_currency_code = '$session_company_currency', recurring_expense_vendor_id = $vendor, recurring_expense_client_id = $client_id, recurring_expense_category_id = $category, recurring_expense_account_id = $account");
 
@@ -73,11 +95,18 @@ if (isset($_POST['edit_recurring_expense'])) {
         enforceClientAccess();
     }
 
-    $year = date('Y');
-    if (strtotime("$year-$month-$day") < time()) {
-        $year++;
-    }
-    $start_date = "$year-$month-$day";
+    $day = max(1, min(28, $day));
+    $month = max(1, min(12, $month));
+
+    // Keep the schedule as it is unless the frequency, month or day changed - recalculating on
+    // every save moved a monthly expense to the next occurrence of its original month, skipping
+    // every month in between
+    $existing = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT recurring_expense_frequency, recurring_expense_day, recurring_expense_month, recurring_expense_next_date FROM recurring_expenses WHERE recurring_expense_id = $recurring_expense_id"));
+    $schedule_changed = !$existing
+        || intval($existing['recurring_expense_frequency']) !== $frequency
+        || intval($existing['recurring_expense_day']) !== $day
+        || ($frequency != 1 && intval($existing['recurring_expense_month']) !== $month);
+    $start_date = $schedule_changed ? recurringExpenseNextDate($frequency, $month, $day) : escapeSql($existing['recurring_expense_next_date']);
 
     mysqli_query($mysqli,"UPDATE recurring_expenses SET recurring_expense_frequency = $frequency, recurring_expense_day = $day, recurring_expense_month = $month, recurring_expense_next_date = '$start_date', recurring_expense_description = '$description', recurring_expense_reference = '$reference', recurring_expense_amount = $amount, recurring_expense_currency_code = '$session_company_currency', recurring_expense_vendor_id = $vendor, recurring_expense_client_id = $client_id, recurring_expense_category_id = $category, recurring_expense_account_id = $account WHERE recurring_expense_id = $recurring_expense_id");
 

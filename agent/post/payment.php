@@ -27,8 +27,20 @@ if (isset($_POST['add_payment'])) {
 
     enforceClientAccess();
 
-    //Check to see if amount entered is greater than the balance of the invoice
-    if ($amount > $balance) {
+    // Work the balance out here rather than trusting the one posted with the form - a stale
+    // modal or two people paying at once would otherwise let the invoice go negative
+    $balance_row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT invoice_amount, invoice_status,
+        (SELECT IFNULL(SUM(payment_amount), 0) FROM payments WHERE payment_invoice_id = $invoice_id) AS amount_paid
+        FROM invoices WHERE invoice_id = $invoice_id"));
+    $balance = floatval($balance_row['invoice_amount'] ?? 0) - floatval($balance_row['amount_paid'] ?? 0);
+
+    if (!$balance_row || in_array($balance_row['invoice_status'], ['Draft', 'Cancelled'], true)) {
+        flashAlert("Payments can't be added to a draft or cancelled invoice", 'error');
+        redirect();
+    }
+
+    //Check to see if amount entered is greater than the balance of the invoice (compared in cents)
+    if (round($amount * 100) <= 0 || round($amount * 100) > round($balance * 100)) {
         flashAlert("Payment can not be more than the balance", 'error');
         redirect();
     } else {
@@ -89,7 +101,7 @@ if (isset($_POST['add_payment'])) {
         $email_data = [];
 
         //Determine if invoice has been paid then set the status accordingly
-        if ($invoice_balance == 0) {
+        if (round($invoice_balance * 100) <= 0) {
 
             $invoice_status = "Paid";
 
@@ -199,6 +211,9 @@ if (isset($_POST['edit_payment'])) {
     enforceClientAccess();
 
     mysqli_query($mysqli,"UPDATE payments SET payment_date = '$date', payment_amount = $amount, payment_account_id = $account, payment_method = '$payment_method', payment_reference = '$reference' WHERE payment_id = $payment_id");
+
+    // The amount may have changed, so the invoice may no longer be (or may now be) paid
+    updateInvoiceStatusFromPayments(intval(getFieldById('payments', $payment_id, 'payment_invoice_id')));
 
     logAudit("Payment", "Edit", "Payment edited amount of " . numfmt_format_currency($currency_format, $amount, $session_company_currency));
 

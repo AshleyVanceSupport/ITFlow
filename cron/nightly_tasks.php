@@ -870,8 +870,14 @@ if ($invoices_pending_send > 0) {
 
 
 // Start Recurring Payments
+
+// Not loaded with the company settings at the top of this script, so the internal "paid"
+// notification below was never sent
+$config_invoice_paid_notification_email = escapeSql(mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT config_invoice_paid_notification_email FROM settings WHERE company_id = 1"))['config_invoice_paid_notification_email'] ?? '');
+
 $sql_recurring_payments = mysqli_query($mysqli, "
     SELECT client_id, client_name, contact_email, contact_name, invoice_amount, invoice_currency_code,
+        (SELECT IFNULL(SUM(payment_amount), 0) FROM payments WHERE payment_invoice_id = invoice_id) AS invoice_amount_paid,
         invoice_date, invoice_due, invoice_id, invoice_number, invoice_prefix, invoice_scope,
         invoice_url_key, recurring_payment_account_id, recurring_payment_currency_code,
         recurring_payment_method, recurring_payment_saved_payment_id FROM recurring_payments
@@ -889,7 +895,12 @@ while ($row = mysqli_fetch_assoc($sql_recurring_payments)) {
     $invoice_scope = escapeSql($row['invoice_scope']);
     $invoice_date = escapeSql($row['invoice_date']);
     $invoice_due = escapeSql($row['invoice_due']);
-    $invoice_amount = floatval($row['invoice_amount']);
+    // Autopay collects what is still owed - an invoice with a partial payment against it was
+    // otherwise charged in full. Nothing owed, nothing to collect.
+    $invoice_amount = round(floatval($row['invoice_amount']) - floatval($row['invoice_amount_paid']), 2);
+    if ($invoice_amount <= 0) {
+        continue;
+    }
     $invoice_url_key = escapeSql($row['invoice_url_key']);
     $invoice_currency_code = escapeSql($row['invoice_currency_code']);
     $recurring_payment_account_id = intval($row['recurring_payment_account_id']);
@@ -983,7 +994,7 @@ while ($row = mysqli_fetch_assoc($sql_recurring_payments)) {
                     continue;
                 }
 
-                if ($payment_intent->status == "succeeded" && intval($balance_to_pay) == intval($pi_amount_paid)) {
+                if ($payment_intent->status == "succeeded" && intval(round($balance_to_pay * 100)) == intval($payment_intent->amount_received)) {
 
                     // Update Invoice Status
                     mysqli_query($mysqli, "UPDATE invoices SET invoice_status = 'Paid' WHERE invoice_id = $invoice_id");
