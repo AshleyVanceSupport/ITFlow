@@ -72,6 +72,19 @@ foreach ($sources as $key => $source) {
                     <?php } ?>
                 </select>
 
+                <?php if (count($agents) > 1) { ?>
+                    <!-- Mountaineer IT: each tech's colour - their booked tickets are drawn in it. Click one to see their calendar. -->
+                    <div class="small text-body-secondary text-uppercase fw-semibold mb-1">Techs</div>
+                    <div class="mb-3" id="mitTechLegend">
+                        <?php foreach ($agents as $agent) { ?>
+                            <button type="button" class="btn btn-link btn-sm p-0 d-flex align-items-center gap-2 text-body text-decoration-none text-start w-100 mit-tech-pick" data-agent="<?= intval($agent['user_id']) ?>" title="Show <?= escapeHtml($agent['user_name']) ?>'s calendar">
+                                <span class="rounded-circle flex-shrink-0" style="width: .75rem; height: .75rem; background-color: <?= mitAgentColor($agent['user_id']) ?>"></span>
+                                <span class="text-truncate small"><?= escapeHtml($agent['user_name']) ?><?= intval($agent['user_id']) === intval($session_user_id) ? ' (me)' : '' ?></span>
+                            </button>
+                        <?php } ?>
+                    </div>
+                <?php } ?>
+
                 <div class="d-flex align-items-center mb-1">
                     <span class="small text-body-secondary text-uppercase fw-semibold">Calendars</span>
                     <?php if ($can_manage) { ?>

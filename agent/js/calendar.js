@@ -57,6 +57,9 @@
     });
     if (agentSelect && state.agent && agentSelect.querySelector('option[value="' + Number(state.agent) + '"]')) {
         agentSelect.value = String(Number(state.agent));
+    } else if (agentSelect && !('agent' in state) && agentSelect.querySelector('option[value="' + myId + '"]')) {
+        // Mountaineer IT: the first visit opens on your own calendar
+        agentSelect.value = String(myId);
     }
 
     function shownCalendars() {
@@ -162,7 +165,7 @@
     function saved(json) {
         itflowToast(json.message, 'success');
         if (json.conflicts && json.conflicts.length) {
-            itflowToast('Same agent, within two hours: ' + json.conflicts.join('; '), 'warning');
+            itflowToast('Same agent, overlapping: ' + json.conflicts.join('; '), 'warning');
         }
     }
 
@@ -307,7 +310,7 @@
 
         if (props.kind === 'ticket') {
             confirmDialog({
-                title: 'Move ' + event.title.split(' ')[0] + ' to ' + words(start, false) + '?',
+                title: (info.oldEvent && info.oldEvent.start && info.oldEvent.start.getTime() === start.getTime() ? 'Change ' + event.title.split(' ')[0] + ' to end at ' + words(end, false) : 'Move ' + event.title.split(' ')[0] + ' to ' + words(start, false)) + '?',
                 text: 'The agent and the contact are emailed the new time, as when it is rescheduled on the ticket.',
                 confirmButtonText: 'Move it'
             }).then(function (result) {
@@ -315,7 +318,7 @@
                     info.revert();
                     return;
                 }
-                post({kind: 'ticket', id: props.ticket_id, start: ymdhm(start), all_day: event.allDay ? 1 : 0}, function (json) {
+                post({kind: 'ticket', id: props.ticket_id, start: ymdhm(start), end: end && !event.allDay ? ymdhm(end) : '', all_day: event.allDay ? 1 : 0}, function (json) {
                     saved(json);
                     calendar.refetchEvents();
                 }, function (error) {
@@ -414,6 +417,16 @@
             }
             save();
             calendar.refetchEvents();
+        });
+    });
+
+    // Mountaineer IT: a tech in the Techs legend shows their calendar
+    root.querySelectorAll('.mit-tech-pick').forEach(function (button) {
+        button.addEventListener('click', function () {
+            if (agentSelect) {
+                agentSelect.value = button.dataset.agent;
+                agentSelect.dispatchEvent(new Event('change', {bubbles: true}));
+            }
         });
     });
 

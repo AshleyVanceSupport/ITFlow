@@ -48,3 +48,6 @@ require_once __DIR__ . '/functions/ticket_fields.php';
 require_once __DIR__ . '/functions/ticket.php';
 require_once __DIR__ . '/functions/project.php';
 require_once __DIR__ . '/functions/service.php';
+
+// Mountaineer IT additions
+require_once __DIR__ . '/functions/mit_calendar.php';

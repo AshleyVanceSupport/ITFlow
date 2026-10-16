@@ -1782,11 +1782,24 @@ if (isset($_POST['edit_ticket_schedule'])) {
         redirect();
     }
 
-    $result = ticketSetSchedule($row, $schedule, intval($_POST['onsite'] ?? 0) ? 1 : 0);
+    // Mountaineer IT: the tech doing it (assigned to them if it is someone new) and how long it takes
+    $schedule_tech = intval($_POST['schedule_tech'] ?? $row['ticket_assigned_to']);
+    if ($schedule_tech && $schedule_tech !== intval($row['ticket_assigned_to'])) {
+        [$assigned_ok, $assigned_message] = ticketChangeAssignee($row['ticket_id'], $schedule_tech);
+        if (!$assigned_ok) {
+            flashAlert($assigned_message, 'error');
+            redirect();
+        }
+        $row = ticketForRequest($row['ticket_id'], 2);
+    }
+    $schedule_minutes = max(15, min(24 * 60, intval($_POST['schedule_minutes'] ?? CALENDAR_TICKET_MINUTES)));
+    $schedule_end = date('Y-m-d H:i:s', strtotime($schedule) + $schedule_minutes * 60);
 
-    flashAlert("Ticket scheduled for " . escapeHtml($result['when_text']));
+    $result = ticketSetSchedule($row, $schedule, intval($_POST['onsite'] ?? 0) ? 1 : 0, $schedule_end);
+
+    flashAlert("Ticket scheduled for " . escapeHtml($result['when_text']) . (!empty($row['user_name']) ? ' with ' . escapeHtml($row['user_name']) : ''));
     if ($result['conflicts']) {
-        flashAlert("The same agent has other work within two hours of it: <br>" . implode(", <br>", array_map('escapeHtml', $result['conflicts'])), 'warning');
+        flashAlert("The same agent already has work booked at that time: <br>" . implode(", <br>", array_map('escapeHtml', $result['conflicts'])), 'warning');
     }
 
     redirect();

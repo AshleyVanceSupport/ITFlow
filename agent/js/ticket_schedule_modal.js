@@ -17,7 +17,7 @@
 
     function load() {
         const date = (field.value || '').slice(0, 10);
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        if (!Number(panel.dataset.user) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
             panel.hidden = true;
             return;
         }
@@ -62,6 +62,19 @@
 
     field.addEventListener('change', load);
     field.addEventListener('input', load);
+
+    // Mountaineer IT: the day shown is the chosen tech's
+    const tech = document.getElementById('scheduleTech');
+    if (tech) {
+        tech.addEventListener('change', function () {
+            const option = tech.options[tech.selectedIndex];
+            panel.dataset.user = tech.value;
+            panel.dataset.name = option ? (option.dataset.name || option.textContent.replace(' (me)', '')) : '';
+            shown = '';
+            load();
+        });
+    }
+
     load();
 
 })();

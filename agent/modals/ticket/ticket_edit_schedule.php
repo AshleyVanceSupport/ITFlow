@@ -15,6 +15,20 @@ $ticket_onsite = intval($row['ticket_onsite']);
 $client_name = escapeHtml($row['client_name']);
 $client_id = intval($row['ticket_client_id']);
 
+// Mountaineer IT: who does the work, and for how long (database update M001)
+$schedule_tech = intval($row['ticket_assigned_to']);
+$schedule_minutes = $row['ticket_schedule'] ? mitTicketScheduleMinutes($row['ticket_schedule'], $row['ticket_schedule_end'] ?? null) : CALENDAR_TICKET_MINUTES;
+$schedule_lengths = mitScheduleLengths();
+if (!isset($schedule_lengths[$schedule_minutes])) {
+    $schedule_lengths[$schedule_minutes] = $schedule_minutes . ' min';
+    ksort($schedule_lengths);
+}
+$schedule_agents = [];
+$sql_schedule_agents = mysqli_query($mysqli, "SELECT user_id, user_name, user_avatar FROM users WHERE user_type = 1 AND user_status = 1 AND user_archived_at IS NULL ORDER BY user_name");
+while ($agent_row = mysqli_fetch_assoc($sql_schedule_agents)) {
+    $schedule_agents[] = $agent_row;
+}
+
 ob_start();
 
 ?>
@@ -38,6 +52,34 @@ ob_start();
             </div>
         </div>
 
+        <div class="row g-2 mb-3">
+            <div class="col-sm-7">
+                <label>Tech</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fa fa-fw fa-user-cog"></i></span>
+                    <select class="form-select select2" name="schedule_tech" id="scheduleTech">
+                        <?php if (!$schedule_tech) { ?>
+                            <option value="0">- Unassigned -</option>
+                        <?php } ?>
+                        <?php foreach ($schedule_agents as $agent_row) { ?>
+                            <option value="<?= intval($agent_row['user_id']) ?>" data-name="<?= escapeHtml($agent_row['user_name']) ?>" <?= intval($agent_row['user_id']) === $schedule_tech ? 'selected' : '' ?><?= selectOptionUser($agent_row['user_id'], $agent_row['user_name'], $agent_row['user_avatar']) ?>><?= escapeHtml($agent_row['user_name']) ?><?= intval($agent_row['user_id']) === intval($session_user_id) ? ' (me)' : '' ?></option>
+                        <?php } ?>
+                    </select>
+                </div>
+            </div>
+            <div class="col-sm-5">
+                <label>How long</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fa fa-fw fa-hourglass-half"></i></span>
+                    <select class="form-select" name="schedule_minutes" id="scheduleMinutes">
+                        <?php foreach ($schedule_lengths as $minutes => $label) { ?>
+                            <option value="<?= intval($minutes) ?>" <?= intval($minutes) === $schedule_minutes ? 'selected' : '' ?>><?= escapeHtml($label) ?></option>
+                        <?php } ?>
+                    </select>
+                </div>
+            </div>
+        </div>
+
         <div class="mb-3">
             <label>Visit</label>
             <div class="input-group">
@@ -49,9 +91,9 @@ ob_start();
             </div>
         </div>
 
-        <?php if (intval($row['ticket_assigned_to'])) { ?>
-            <!-- What else the agent has that day, so it is not booked on top of something (agent/js/ticket_schedule_modal.js) -->
-            <div class="border rounded p-2 small" id="scheduleAgentDay" data-user="<?= intval($row['ticket_assigned_to']) ?>" data-ticket="<?= $ticket_id ?>" data-name="<?= escapeHtml($row['user_name']) ?>" hidden>
+        <?php if ($schedule_agents) { ?>
+            <!-- What else the chosen tech has that day, so it is not booked on top of something (agent/js/ticket_schedule_modal.js) -->
+            <div class="border rounded p-2 small" id="scheduleAgentDay" data-user="<?= $schedule_tech ?>" data-ticket="<?= $ticket_id ?>" data-name="<?= escapeHtml($row['user_name']) ?>" hidden>
                 <div class="d-flex align-items-center mb-1">
                     <span class="fw-semibold"><i class="far fa-calendar-alt fa-fw text-secondary me-1"></i><span class="js-day-title"></span></span>
                     <a class="ms-auto js-day-open" href="calendar.php">Calendar</a>

@@ -1163,33 +1163,26 @@ function ticketMailSchedule($row, $cal_str, $cancelled, $when_text) {
 }
 
 /**
- * Book the work on a ticket for $schedule ('Y-m-d H:i:s'), onsite or remote:
- * the agent, the contact and the watchers are emailed with the calendar file,
- * and it is noted on the ticket. Returns ['when_text' => ..., 'conflicts' =>
- * the same agent's other open work within two hours, as plain text].
+ * Book the work on a ticket from $schedule to $end ('Y-m-d H:i:s'; no end = the
+ * default length), onsite or remote: the agent, the contact and the watchers are
+ * emailed with the calendar file, and it is noted on the ticket. Returns
+ * ['when_text' => ..., 'conflicts' => the same agent's other open work that
+ * overlaps it, as plain text].
  */
-function ticketSetSchedule(array $row, $schedule, $onsite) {
+function ticketSetSchedule(array $row, $schedule, $onsite, $end = null) {
     global $mysqli, $config_base_url, $session_user_id, $session_name;
     $ticket_id = intval($row['ticket_id']);
     $client_id = intval($row['ticket_client_id']);
     $onsite = $onsite ? 1 : 0;
     $schedule = escapeSql($schedule);
+    // Mountaineer IT: booked work has an end (database update M001)
+    $end = mitTicketScheduleEnd($schedule, $end);
+    $end_sql = escapeSql($end);
 
-    mysqli_query($mysqli, "UPDATE tickets SET ticket_schedule = '$schedule', ticket_onsite = $onsite WHERE ticket_id = $ticket_id");
+    mysqli_query($mysqli, "UPDATE tickets SET ticket_schedule = '$schedule', ticket_schedule_end = '$end_sql', ticket_onsite = $onsite WHERE ticket_id = $ticket_id");
 
-    // The same agent's other open tickets within two hours of it
-    $conflicts = [];
-    $assigned_to = intval($row['ticket_assigned_to']);
-    if ($assigned_to) {
-        $start = date('Y-m-d H:i:s', strtotime($schedule) - 7200);
-        $end = date('Y-m-d H:i:s', strtotime($schedule) + 7200);
-        $sql = mysqli_query($mysqli, "SELECT ticket_prefix, ticket_number, ticket_schedule, ticket_subject FROM tickets
-            WHERE ticket_schedule BETWEEN '$start' AND '$end' AND ticket_id <> $ticket_id AND ticket_assigned_to = $assigned_to
-            AND ticket_resolved_at IS NULL AND ticket_closed_at IS NULL ORDER BY ticket_schedule");
-        while ($conflict = mysqli_fetch_assoc($sql)) {
-            $conflicts[] = ticketReference($conflict) . ' - ' . $conflict['ticket_subject'] . ' @ ' . date('g:ia', strtotime($conflict['ticket_schedule']));
-        }
-    }
+    // The same agent's other open tickets booked at an overlapping time
+    $conflicts = mitScheduleConflicts($row['ticket_assigned_to'], $schedule, $end, $ticket_id);
 
     // Who to tell, with the calendar file
     $mail_row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT tickets.ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_details, ticket_client_id, client_name,
@@ -1202,8 +1195,8 @@ function ticketSetSchedule(array $row, $schedule, $onsite) {
         WHERE tickets.ticket_id = $ticket_id"));
     $cal_subject = intval($mail_row['ticket_number']) . ": " . $mail_row['client_name'] . " - " . $mail_row['ticket_subject'];
     $cal_description = mb_substr(strip_tags((string) $mail_row['ticket_details']), 0, 100) . " - https://$config_base_url/client/ticket.php?id=$ticket_id";
-    $cal_str = createiCalStr($schedule, $cal_subject, $cal_description, (string) $mail_row['location_address'], getTicketCalendarUid($ticket_id));
-    $when_text = date('l, F j, Y \a\t g:ia', strtotime($schedule));
+    $cal_str = createiCalStr($schedule, $cal_subject, $cal_description, (string) $mail_row['location_address'], getTicketCalendarUid($ticket_id), $end);
+    $when_text = mitScheduleWhenText($schedule, $end);
     ticketMailSchedule($mail_row, $cal_str, false, $when_text);
 
     // Note it on the ticket
@@ -1224,7 +1217,7 @@ function ticketCancelSchedule(array $row) {
     $client_id = intval($row['ticket_client_id']);
     $old_schedule = $row['ticket_schedule'];
 
-    mysqli_query($mysqli, "UPDATE tickets SET ticket_schedule = NULL WHERE ticket_id = $ticket_id");
+    mysqli_query($mysqli, "UPDATE tickets SET ticket_schedule = NULL, ticket_schedule_end = NULL WHERE ticket_id = $ticket_id");
 
     $mail_row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT tickets.ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_client_id, client_name,
             contact_name, contact_email, user_name, user_email

@@ -752,7 +752,7 @@ function getTicketCalendarUid($ticket_id) {
  * reply would arrive there as a new ticket. Rescheduling sends it again with the
  * same UID and a higher SEQUENCE, which moves the one already added.
  */
-function createiCalStr($datetime, $title, $description, $location, $uid = null) {
+function createiCalStr($datetime, $title, $description, $location, $uid = null, $end = null) {
     global $config_timezone;
     if (empty($uid)) {
         $uid = date('Y-m-d-H-i-s') . "@" . ($_SERVER['SERVER_NAME'] ?? 'itflow');
@@ -760,7 +760,7 @@ function createiCalStr($datetime, $title, $description, $location, $uid = null) 
     return icsCalendar(['method' => 'PUBLISH', 'invite' => true], [[
         'uid' => $uid,
         'start' => $datetime,
-        'end' => date('Y-m-d H:i:s', strtotime($datetime) + CALENDAR_TICKET_MINUTES * 60),
+        'end' => mitTicketScheduleEnd($datetime, $end),
         'summary' => $title,
         'description' => $description,
         'location' => $location,

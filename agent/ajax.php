@@ -2235,7 +2235,13 @@ if (isset($_POST['calendar_move'])) {
             $start = substr($start, 0, 10) . ' ' . ($row['ticket_schedule'] ? date('H:i:s', strtotime($row['ticket_schedule'])) : '09:00:00');
         }
         $onsite = isset($_POST['onsite']) ? intval($_POST['onsite']) : intval($row['ticket_onsite']);
-        $result = ticketSetSchedule($row, $start, $onsite);
+        // Mountaineer IT: resized to a new end, or moved keeping the length it had
+        $end = ticketScheduleValue($_POST['end'] ?? '');
+        if ($end === '' || $end <= $start || !empty($_POST['all_day'])) {
+            $length = $row['ticket_schedule'] ? mitTicketScheduleMinutes($row['ticket_schedule'], $row['ticket_schedule_end'] ?? null) : CALENDAR_TICKET_MINUTES;
+            $end = date('Y-m-d H:i:s', strtotime($start) + $length * 60);
+        }
+        $result = ticketSetSchedule($row, $start, $onsite, $end);
 
         echo json_encode(['ok' => true, 'message' => ticketReference($row) . ' scheduled for ' . $result['when_text'], 'conflicts' => $result['conflicts']]);
         exit;

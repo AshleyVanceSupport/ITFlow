@@ -75,7 +75,8 @@ if (isset($_GET['ticket_id'])) {
         $ticket_scheduled_for = escapeHtml($ticket['ticket_schedule']);
         $ticket_onsite = intval($ticket['ticket_onsite']);
         if ($ticket_scheduled_for) {
-            $ticket_scheduled_wording = date('M d, Y • g:i A', strtotime($ticket_scheduled_for));
+            // Mountaineer IT: with when it ends
+            $ticket_scheduled_wording = mitScheduleShortText($ticket['ticket_schedule'], $ticket['ticket_schedule_end'] ?? null);
         } else {
             $ticket_scheduled_wording = "Not scheduled";
         }

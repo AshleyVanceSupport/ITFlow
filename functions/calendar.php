@@ -564,7 +564,7 @@ function calendarSourceItems($key, $from, $to, array $opts = []) {
 
     if ($key === 'tickets') {
         $can_move = calendarCanScheduleTickets();
-        $sql = mysqli_query($mysqli, "SELECT tickets.ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_schedule, ticket_onsite, ticket_client_id,
+        $sql = mysqli_query($mysqli, "SELECT tickets.ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_schedule, ticket_schedule_end, ticket_onsite, ticket_client_id,
                 ticket_resolved_at, ticket_closed_at, ticket_assigned_to, client_name, user_name, ticket_status_name
             FROM tickets
             LEFT JOIN clients ON client_id = ticket_client_id
@@ -580,10 +580,12 @@ function calendarSourceItems($key, $from, $to, array $opts = []) {
                 'id' => 'ticket-' . intval($row['ticket_id']),
                 'title' => calendarTicketTitle($row, !$client_id),
                 'start' => $row['ticket_schedule'],
-                'end' => date('Y-m-d H:i:s', strtotime($row['ticket_schedule']) + CALENDAR_TICKET_MINUTES * 60),
+                'end' => mitTicketScheduleEnd($row['ticket_schedule'], $row['ticket_schedule_end']),
                 'allDay' => false,
                 'editable' => $can_move && $open,
-                'durationEditable' => false,
+                'durationEditable' => $can_move && $open,
+                // Mountaineer IT: each tech's booked work in their own colour
+                'color' => intval($row['ticket_assigned_to']) ? mitAgentColor($row['ticket_assigned_to']) : $source['color'],
                 'className' => $open ? '' : 'itflow-cal-done',
                 'extendedProps' => ['kind' => 'ticket', 'ticket_id' => intval($row['ticket_id']), 'client_id' => intval($row['ticket_client_id']),
                     'icon' => intval($row['ticket_onsite']) ? 'fa-car' : 'fa-headset',
@@ -1214,7 +1216,7 @@ function calendarUserFeedItems(array $feed, $from, $to) {
     $items = [];
 
     if (!empty($feed['feed_tickets']) && lookupUserPermission('module_support') >= 1) {
-        $sql = mysqli_query($mysqli, "SELECT tickets.ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_schedule, ticket_onsite, ticket_client_id,
+        $sql = mysqli_query($mysqli, "SELECT tickets.ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_schedule, ticket_schedule_end, ticket_onsite, ticket_client_id,
                 ticket_created_at, ticket_updated_at, ticket_resolved_at, ticket_closed_at, client_name, user_name,
                 contact_name, contact_phone, contact_phone_country_code, contact_extension, contact_mobile, contact_mobile_country_code,
                 location_name, location_address, location_city, location_state, location_zip
@@ -1234,7 +1236,7 @@ function calendarUserFeedItems(array $feed, $from, $to) {
             $items[] = [
                 'uid' => "itflow-ticket-$ticket_id@$host",
                 'start' => $row['ticket_schedule'],
-                'end' => date('Y-m-d H:i:s', strtotime($row['ticket_schedule']) + CALENDAR_TICKET_MINUTES * 60),
+                'end' => mitTicketScheduleEnd($row['ticket_schedule'], $row['ticket_schedule_end']),
                 'summary' => calendarTicketTitle($row) . ($everyone && $row['user_name'] ? ' (' . $row['user_name'] . ')' : '') . (ticketIsOpen($row) ? '' : ' [done]'),
                 'location' => implode(', ', array_filter([$row['location_address'], $row['location_city'], trim($row['location_state'] . ' ' . $row['location_zip'])])),
                 'description' => implode("\n", array_filter([
