@@ -41,8 +41,24 @@ const MIT_OUTLOOK_SCOPES = 'offline_access openid profile email https://graph.mi
 function mitOutlookLink($user_id) {
     global $mysqli;
     $user_id = intval($user_id);
-    $result = mysqli_query($mysqli, "SELECT * FROM mit_outlook_links WHERE user_id = $user_id LIMIT 1");
+    try {
+        $result = mysqli_query($mysqli, "SELECT * FROM mit_outlook_links WHERE user_id = $user_id LIMIT 1");
+    } catch (Throwable $e) {
+        return null;  // database update pending
+    }
     return $result ? mysqli_fetch_assoc($result) : null;
+}
+
+/** Is this agent's Outlook synced? (Then booking emails to them go without the calendar invite - functions/ticket.php.) */
+function mitOutlookSyncsEmail($email) {
+    global $mysqli;
+    try {
+        $email = mysqli_real_escape_string($mysqli, (string) $email);
+        $result = mysqli_query($mysqli, "SELECT 1 FROM mit_outlook_links JOIN users USING (user_id) WHERE user_email = '$email' AND user_archived_at IS NULL AND user_status = 1 LIMIT 1");
+        return $result && mysqli_num_rows($result) > 0 && mitOutlookAvailable();
+    } catch (Throwable $e) {
+        return false;  // our tables not there yet (database update pending) - ITFlow as usual
+    }
 }
 
 /** Can people connect Outlook here? Needs ITFlow's Microsoft 365 app (Admin > Settings > Mail). */
@@ -146,11 +162,15 @@ function mitOutlookToken(array $link) {
     if (!mitOutlookAvailable()) {
         throw new RuntimeException('ITFlow\'s Microsoft 365 app has been removed - ask an admin to set it up again under Admin > Settings > Mail.');
     }
+    $refresh = mitDecryptSecret($link['refresh_token']);
+    if ($refresh === '') {
+        throw new RuntimeException('This server cannot read your saved Outlook sign-in (ITFlow was restored onto another server, or config.php changed) - click Reconnect.');
+    }
     $response = mitHttp('POST', mitOutlookTokenUrl(), [], mitMicrosoftTokenFields(mitOutlookTokenUrl(), [
         'client_id' => mitM365App()['client_id'],
         'client_secret' => MIT_M365_CERT_SECRET,
         'grant_type' => 'refresh_token',
-        'refresh_token' => mitOutlookDecrypt($link['refresh_token']),
+        'refresh_token' => $refresh,
         'scope' => MIT_OUTLOOK_SCOPES,
     ]));
     if (empty($response['json']['access_token'])) {
@@ -426,7 +446,7 @@ function mitOutlookRefreshBusy($token, $user_id) {
     $to = gmdate('Y-m-d\TH:i:s\Z', strtotime('+' . MIT_OUTLOOK_BUSY_AHEAD_DAYS . ' days midnight'));
     $url = MIT_M365_GRAPH . '/me/calendarView?' . http_build_query([
         'startDateTime' => $from, 'endDateTime' => $to, '$top' => 250,
-        '$select' => 'id,subject,start,end,isAllDay,showAs,sensitivity,isCancelled,categories',
+        '$select' => 'id,iCalUId,subject,start,end,isAllDay,showAs,sensitivity,isCancelled,categories',
     ], '', '&', PHP_QUERY_RFC3986);
 
     $rows = [];
@@ -437,7 +457,9 @@ function mitOutlookRefreshBusy($token, $user_id) {
         }
         foreach ($response['json']['value'] ?? [] as $event) {
             $show_as = strtolower((string) ($event['showAs'] ?? 'busy'));
+            // Not busy time: ITFlow's own events, and invites ITFlow emailed for a ticket booking (ticket-<id>@...)
             if (isset($ours[$event['id'] ?? '']) || in_array(MIT_OUTLOOK_CATEGORY, $event['categories'] ?? [], true)
+                || preg_match('/^ticket-\d+@/', (string) ($event['iCalUId'] ?? ''))
                 || !empty($event['isCancelled']) || !in_array($show_as, ['busy', 'tentative', 'oof'], true)) {
                 continue;
             }
@@ -490,7 +512,11 @@ function mitOutlookCalendarSources() {
     if (!mitOutlookAvailable()) {
         return [];
     }
-    $result = mysqli_query($mysqli, "SELECT 1 FROM mit_outlook_links LIMIT 1");
+    try {
+        $result = mysqli_query($mysqli, "SELECT 1 FROM mit_outlook_links LIMIT 1");
+    } catch (Throwable $e) {
+        return [];  // database update pending
+    }
     if (!$result || !mysqli_num_rows($result)) {
         return [];
     }
@@ -534,7 +560,11 @@ function mitOutlookBusyConflicts($user_id, $start, $end) {
     $start = escapeSql($start);
     $end = escapeSql($end);
     $lines = [];
-    $result = mysqli_query($mysqli, "SELECT * FROM mit_outlook_busy WHERE user_id = $user_id AND starts_at < '$end' AND ends_at > '$start' ORDER BY starts_at");
+    try {
+        $result = mysqli_query($mysqli, "SELECT * FROM mit_outlook_busy WHERE user_id = $user_id AND starts_at < '$end' AND ends_at > '$start' ORDER BY starts_at");
+    } catch (Throwable $e) {
+        return [];  // database update pending
+    }
     while ($result && $row = mysqli_fetch_assoc($result)) {
         $lines[] = 'Outlook: ' . mitOutlookBusyTitle($row) . ' @ ' . (intval($row['is_all_day'])
             ? 'all day'

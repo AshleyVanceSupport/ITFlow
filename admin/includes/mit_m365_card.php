@@ -61,6 +61,15 @@ $mit_m365_needs_update = $mit_m365_app && intval($mit_m365_app['permissions_vers
                 </div>
             </div>
 
+            <?php if (mitM365KeyPem() === '') { ?>
+                <div class="alert alert-danger">
+                    <strong>This server cannot read the app's certificate</strong>, so it cannot sign in to Microsoft 365 - mail through it
+                    has stopped. That happens when ITFlow is restored onto a new server: the certificate is encrypted with a key from
+                    <code>config.php</code>. Either copy <code>$installation_id</code> from the old server's <code>config.php</code> into this
+                    one's, or click <strong>Remove</strong> and set it up again (then connect the mailbox, and staff reconnect Outlook).
+                </div>
+            <?php } ?>
+
             <?php if ($mit_m365_needs_update) { ?>
                 <div class="alert alert-warning">
                     <strong>Update the app's permissions</strong> so ITFlow sends and receives mail through Microsoft Graph -

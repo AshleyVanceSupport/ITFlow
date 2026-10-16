@@ -42,7 +42,8 @@ while ($mit_outlook_result && $mit_outlook_row = mysqli_fetch_assoc($mit_outlook
 }
 
 $mit_outlook_users = [];
-$mit_outlook_result = mysqli_query($mysqli, "SELECT user_id FROM mit_outlook_links JOIN users USING (user_id) WHERE user_archived_at IS NULL");
+// A disabled user (Admin > Users) is paused, not removed - they may be back
+$mit_outlook_result = mysqli_query($mysqli, "SELECT user_id FROM mit_outlook_links JOIN users USING (user_id) WHERE user_archived_at IS NULL AND user_status = 1");
 while ($mit_outlook_result && $mit_outlook_row = mysqli_fetch_assoc($mit_outlook_result)) {
     $mit_outlook_users[] = intval($mit_outlook_row['user_id']);
 }

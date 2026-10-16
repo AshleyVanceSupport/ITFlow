@@ -24,6 +24,11 @@ $mit_booked = $mit_link ? intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT 
             moved, changed, handed to someone else or closed. ITFlow is in charge of them: change a booking in ITFlow, not in
             Outlook, or Outlook will be put back. Your own appointments are never touched.
         </p>
+        <p class="small text-body-secondary">
+            While connected, booking emails to you come without the calendar invite (the booking is already in your calendar). If you
+            subscribed to ITFlow's calendar feed in Outlook (Calendar &gt; <em>Your schedule on your phone</em>), remove that subscription,
+            or your bookings show twice.
+        </p>
 
         <?php if (!$mit_link) { ?>
 

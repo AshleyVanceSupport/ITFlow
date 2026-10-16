@@ -61,7 +61,13 @@ const MIT_M365_RENEW_DAYS = 30;
 function mitSetting($name, $default = null) {
     global $mysqli;
     $name = mysqli_real_escape_string($mysqli, (string) $name);
-    $result = mysqli_query($mysqli, "SELECT setting_value FROM mit_settings WHERE setting_name = '$name' LIMIT 1");
+    try {
+        $result = mysqli_query($mysqli, "SELECT setting_value FROM mit_settings WHERE setting_name = '$name' LIMIT 1");
+    } catch (Throwable $e) {
+        // mit_settings not there yet (code updated, database update still to run): nothing is set up,
+        // so mail and everything else carry on exactly as stock ITFlow
+        return $default;
+    }
     $row = $result ? mysqli_fetch_assoc($result) : null;
     return $row ? $row['setting_value'] : $default;
 }

@@ -40,7 +40,11 @@ function mitAgentChosenColors($reload = false) {
     static $colors = null;
     if ($colors === null || $reload) {
         $colors = [];
-        $result = mysqli_query($mysqli, "SELECT user_id, value FROM mit_user_preferences WHERE preference = 'calendar.color'");
+        try {
+            $result = mysqli_query($mysqli, "SELECT user_id, value FROM mit_user_preferences WHERE preference = 'calendar.color'");
+        } catch (Throwable $e) {
+            $result = false;  // database update pending - automatic colours
+        }
         while ($result && $row = mysqli_fetch_assoc($result)) {
             if (mitIsHexColor($row['value'])) {
                 $colors[intval($row['user_id'])] = strtolower($row['value']);
@@ -164,7 +168,11 @@ function mitUserPreference($user_id, $preference, $default = null) {
     if (!$user_id) {
         return $default;
     }
-    $result = mysqli_query($mysqli, "SELECT value FROM mit_user_preferences WHERE user_id = $user_id AND preference = '$preference' LIMIT 1");
+    try {
+        $result = mysqli_query($mysqli, "SELECT value FROM mit_user_preferences WHERE user_id = $user_id AND preference = '$preference' LIMIT 1");
+    } catch (Throwable $e) {
+        return $default;  // database update pending
+    }
     $row = $result ? mysqli_fetch_assoc($result) : null;
     return $row ? $row['value'] : $default;
 }

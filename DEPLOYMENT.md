@@ -141,6 +141,15 @@ the `itflow` database and user and delete `/var/www/itflow` first).
    or those jobs run twice and outside the schedules set in Maintenance > Cron.
 6. Make sure cron is switched on (Maintenance > Cron), then update from Admin > Update.
 
+## Restoring this build onto a new server
+
+Backups hold the database and uploads, not `config.php`. Our Microsoft 365 certificate and each
+person's Outlook sign-in are encrypted with a key made from `$installation_id` in `config.php`, so
+after restoring onto a **new** server, copy `$installation_id` (and `$config_backup_key`) from the
+old server's `config.php` into the new one. Without it the Microsoft 365 card says the certificate
+cannot be read (Remove and set it up again, then reconnect the mailbox), and everyone's Outlook
+calendar page asks them to Reconnect. Restoring onto the same server needs nothing.
+
 ## Moving to stock ITFlow (backup portability)
 
 We keep this build so that a backup made here restores into ITFlow's own release and keeps

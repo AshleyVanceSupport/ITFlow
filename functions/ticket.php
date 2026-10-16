@@ -1136,7 +1136,9 @@ function ticketMailSchedule($row, $cal_str, $cancelled, $when_text) {
 
     // The agent doing the work
     if (filter_var($row['user_email'] ?? '', FILTER_VALIDATE_EMAIL)) {
-        $data[] = $from + ['recipient' => $sql($row['user_email']), 'recipient_name' => $sql($row['user_name']),
+        // Mountaineer IT: a tech whose Outlook is synced gets the booking there - no second copy from an invite
+        $agent_from = function_exists('mitOutlookSyncsEmail') && mitOutlookSyncsEmail($row['user_email']) ? ['cal_str' => ''] + $from : $from;
+        $data[] = $agent_from + ['recipient' => $sql($row['user_email']), 'recipient_name' => $sql($row['user_name']),
             'body' => $sql('Hello, ' . $html($row['user_name']) . "<br><br>$what<br><br>--------------------------------<br><a href=\"$agent_link\">" . $html($reference) . "</a><br>--------------------------------<br><br>Please do not reply to this email. <br><br>Ticket: " . $html($reference) . "<br>Subject: " . $html($subject) . "<br>Portal: $agent_link<br><br>~<br>" . $html($company_name) . "<br>Support Department<br>" . $html($from_email))];
     }
 

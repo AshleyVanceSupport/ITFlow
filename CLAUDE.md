@@ -90,6 +90,10 @@ model: see DEPLOYMENT.md.
   source - hooks in `functions/calendar.php` (calendarSources `+=`, calendarSourceItems early
   return), striped via `[data-kind="outlook_busy"]` CSS in `agent/calendar.php`; counted in
   `mitScheduleConflicts()`. Titles only for the owner; others see Busy/Tentative/Out of office.
+  Techs with Outlook synced get booking emails without the .ics (`functions/ticket.php`
+  ticketMailSchedule hook, `mitOutlookSyncsEmail`); busy copy skips ITFlow invites
+  (iCalUId `ticket-<id>@`). Disabled users (user_status 0) are paused, archived ones removed.
+  Reads of our tables fall back quietly when the database update has not run yet.
 - Ticket timers in the top bar (Oct 2026): `includes/mit_timers_nav.php` + `js/mit_timers.js` (ours)
   list the browser's ticket timers (ITFlow's localStorage keys `<id>-startTime`/`-pausedTime`
   from `agent/js/ticket_time_tracking.js` - re-check if upstream changes them) with pause /
