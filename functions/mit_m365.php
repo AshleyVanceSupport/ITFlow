@@ -93,18 +93,71 @@ function mitM365App() {
 }
 
 /*
+ * ---------- secrets at rest ----------
+ */
+
+/** The key secrets are encrypted with: from this server's config.php, so a copy of the database alone is not enough. */
+function mitSecretKey() {
+    global $installation_id, $dbpassword;
+    $seed = !empty($installation_id) ? $installation_id : (string) ($dbpassword ?? '');
+    return hash('sha256', 'mit-secret|' . $seed, true);
+}
+
+/** Keys secrets may still be encrypted with: the current one, then the first Outlook build's. */
+function mitSecretKeys() {
+    global $installation_id, $dbpassword;
+    return [mitSecretKey(), hash('sha256', 'mit-outlook|' . ($installation_id ?? '') . '|' . ($dbpassword ?? ''), true)];
+}
+
+function mitEncryptSecret($plain) {
+    $iv = random_bytes(12);
+    $cipher = openssl_encrypt((string) $plain, 'aes-256-gcm', mitSecretKey(), OPENSSL_RAW_DATA, $iv, $tag);
+    return 'v1:' . base64_encode($iv . $tag . $cipher);
+}
+
+/** The secret, or '' when it cannot be read. */
+function mitDecryptSecret($stored) {
+    if (strpos((string) $stored, 'v1:') !== 0) {
+        return '';
+    }
+    $raw = base64_decode(substr($stored, 3));
+    if (strlen($raw) <= 28) {
+        return '';
+    }
+    foreach (mitSecretKeys() as $key) {
+        $plain = openssl_decrypt(substr($raw, 28), 'aes-256-gcm', $key, OPENSSL_RAW_DATA, substr($raw, 0, 12), substr($raw, 12, 16));
+        if ($plain !== false) {
+            return $plain;
+        }
+    }
+    return '';
+}
+
+/** The app certificate's private key - kept encrypted (an older build kept it as it was; it is encrypted on first use). */
+function mitM365KeyPem() {
+    $stored = (string) mitSetting('m365_key_pem', '');
+    if ($stored !== '' && strpos($stored, 'v1:') !== 0) {
+        mitSetSetting('m365_key_pem', mitEncryptSecret($stored));
+        return $stored;
+    }
+    return mitDecryptSecret($stored);
+}
+
+/*
  * ---------- HTTP ----------
  */
 
-/** A request to Microsoft. $body: array = form fields, string = JSON. Returns [status, json, body, error]. */
-function mitHttp($method, $url, array $headers = [], $body = null) {
+/** A request to Microsoft. $body: array = form fields, string = JSON (or as its Content-Type header says). Returns [status, json, body, error]. */
+function mitHttp($method, $url, array $headers = [], $body = null, $timeout = 30) {
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
     if (is_array($body)) {
         curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($body, '', '&'));
         $headers[] = 'Content-Type: application/x-www-form-urlencoded';
+    } elseif ($body === null && in_array($method, ['POST', 'PUT', 'PATCH'], true)) {
+        curl_setopt($ch, CURLOPT_POSTFIELDS, '');  // Microsoft wants a Content-Length even with nothing to send
     } elseif (is_string($body)) {
         curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
         if (!preg_grep('/^Content-Type:/i', $headers)) {
@@ -178,7 +231,7 @@ function mitM365NewCertificate() {
 
 /** A JWT signed (RS256) with the app's current certificate key. */
 function mitM365SignedJwt(array $claims, $key_pem = null, $thumbprint = null) {
-    $key_pem = $key_pem ?? mitSetting('m365_key_pem', '');
+    $key_pem = $key_pem ?? mitM365KeyPem();
     $thumbprint = $thumbprint ?? mitSetting('m365_cert_thumbprint', '');
     $header = ['alg' => 'RS256', 'typ' => 'JWT', 'x5t' => $thumbprint];
     $input = mitBase64Url(json_encode($header)) . '.' . mitBase64Url(json_encode($claims));
@@ -221,9 +274,16 @@ function mitMicrosoftTokenFields($url, array $fields) {
     // While here: replace the certificate if it is close to running out
     mitM365MaybeRenewCertificate();
 
+    try {
+        $assertion = mitM365ClientAssertion((string) $url, $client_id);
+    } catch (Throwable $e) {
+        // Callers expect an answer from Microsoft, not an exception - it will refuse the marker as a secret
+        error_log('Mountaineer IT: could not sign with the Microsoft 365 certificate: ' . $e->getMessage());
+        return $fields;
+    }
     unset($fields['client_secret']);
     $fields['client_assertion_type'] = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
-    $fields['client_assertion'] = mitM365ClientAssertion((string) $url, $client_id);
+    $fields['client_assertion'] = $assertion;
     return $fields;
 }
 
@@ -461,7 +521,7 @@ function mitM365SaveApp($tenant_id, $client_id, $object_id, array $cert, $create
 
 function mitM365StoreCertificate(array $cert) {
     mitSetSetting('m365_cert_pem', $cert['cert_pem']);
-    mitSetSetting('m365_key_pem', $cert['key_pem']);
+    mitSetSetting('m365_key_pem', mitEncryptSecret($cert['key_pem']));
     mitSetSetting('m365_cert_thumbprint', $cert['thumbprint']);
     mitSetSetting('m365_cert_expires', $cert['expires']);
 }
@@ -472,10 +532,11 @@ function mitM365StoreCertificate(array $cert) {
 
 /** A certificate waiting to be uploaded to a hand-made app registration - made once, kept until used. */
 function mitM365PendingCertificate() {
-    $pending = json_decode((string) mitSetting('m365_pending_cert', ''), true);
+    $stored = (string) mitSetting('m365_pending_cert', '');
+    $pending = json_decode(strpos($stored, 'v1:') === 0 ? mitDecryptSecret($stored) : $stored, true);
     if (!is_array($pending) || empty($pending['cert_pem'])) {
         $pending = mitM365NewCertificate();
-        mitSetSetting('m365_pending_cert', json_encode($pending));
+        mitSetSetting('m365_pending_cert', mitEncryptSecret(json_encode($pending)));
     }
     return $pending;
 }
@@ -518,16 +579,24 @@ function mitM365MaybeRenewCertificate() {
     if ($expires === '' || strtotime($expires) - time() > MIT_M365_RENEW_DAYS * 86400) {
         return;
     }
-    $last_try = mitSetting('m365_renew_tried_at', '');
-    if ($last_try !== '' && time() - strtotime($last_try) < 6 * 3600) {
+    global $mysqli;
+    // One renewal at a time - two cron jobs in the same minute would each add a certificate
+    $got = mysqli_fetch_row(mysqli_query($mysqli, "SELECT GET_LOCK('mit_m365_renew', 0)"));
+    if (!$got || intval($got[0]) !== 1) {
         return;
     }
-    mitSetSetting('m365_renew_tried_at', date('Y-m-d H:i:s'));
     try {
+        $last_try = mitSetting('m365_renew_tried_at', '');
+        if ($last_try !== '' && time() - strtotime($last_try) < 6 * 3600) {
+            return;
+        }
+        mitSetSetting('m365_renew_tried_at', date('Y-m-d H:i:s'));
         mitM365RenewCertificate();
     } catch (Throwable $e) {
         mitSetSetting('m365_renew_error', $e->getMessage());
         error_log('Mountaineer IT: Microsoft 365 certificate renewal failed: ' . $e->getMessage());
+    } finally {
+        mysqli_query($mysqli, "DO RELEASE_LOCK('mit_m365_renew')");
     }
 }
 
@@ -646,27 +715,158 @@ function mitM365MailGraphScopes() {
     return $scopes;
 }
 
+/** A message bigger than this goes to Graph as a draft with its attachments uploaded, not in one request (Graph takes 4 MB). */
+const MIT_M365_MIME_LIMIT = 3000000;
+/** Upload-session chunk size - Microsoft wants a multiple of 320 KiB. */
+const MIT_M365_UPLOAD_CHUNK = 327680 * 12;
+
 /**
- * Hook in cron/mail_queue.php: send a message PHPMailer has put together through Graph. False when
- * mail is not on our app (PHPMailer then sends by SMTP as usual); throws PHPMailer's exception on failure.
+ * Hook in cron/mail_queue.php: does Graph send ITFlow's mail? (Then the SMTP sign-in is skipped.)
+ * Throws PHPMailer's exception when the mailbox is on our app but Microsoft refuses the sign-in,
+ * so the queue records why instead of quietly trying SMTP.
+ */
+function mitM365GraphSendReady() {
+    try {
+        return mitM365MailGraphToken('Mail.Send') !== null;
+    } catch (Throwable $e) {
+        throw new PHPMailer\PHPMailer\Exception($e->getMessage());
+    }
+}
+
+/**
+ * Hook in cron/mail_queue.php: send a message PHPMailer has put together through Graph - as its finished
+ * MIME (attachments and calendar invites as built), or, when too big for one request, as a draft with
+ * its attachments uploaded. Throws PHPMailer's exception on failure.
  */
 function mitM365GraphSendMail($mail) {
     try {
         $token = mitM365MailGraphToken('Mail.Send');
+        if (!$token) {
+            throw new RuntimeException('ITFlow\'s Microsoft 365 app cannot send for this mailbox (Mail.Send).');
+        }
+        $mail->preSend();
+        $mime = $mail->getSentMIMEMessage();
+        if (strlen($mime) > MIT_M365_MIME_LIMIT) {
+            mitM365GraphSendLarge($token, $mail);
+            return true;
+        }
+        $response = mitHttp('POST', MIT_M365_GRAPH . '/me/sendMail', ['Authorization: Bearer ' . $token, 'Content-Type: text/plain'],
+            base64_encode($mime), 120);
+        if ($response['status'] !== 202) {
+            throw new RuntimeException(mitM365Error($response, 'Sending through Microsoft 365'));
+        }
+        return true;
+    } catch (PHPMailer\PHPMailer\Exception $e) {
+        throw $e;
     } catch (Throwable $e) {
         throw new PHPMailer\PHPMailer\Exception($e->getMessage());
     }
-    if (!$token) {
-        return false;
+}
+
+/** A big message: a draft, its attachments (uploaded in chunks when large), then send. */
+function mitM365GraphSendLarge($token, $mail) {
+    $people = function (array $list) {
+        $out = [];
+        foreach ($list as $person) {
+            $out[] = ['emailAddress' => ['address' => $person[0], 'name' => $person[1] ?? '']];
+        }
+        return $out;
+    };
+    $draft = mitGraph('POST', '/me/messages', $token, [
+        'subject' => $mail->Subject,
+        'body' => ['contentType' => $mail->ContentType === 'text/plain' ? 'Text' : 'HTML', 'content' => $mail->Body],
+        'from' => ['emailAddress' => ['address' => $mail->From, 'name' => $mail->FromName]],
+        'toRecipients' => $people($mail->getToAddresses()),
+        'ccRecipients' => $people($mail->getCcAddresses()),
+        'replyTo' => $people(array_values($mail->getReplyToAddresses())),
+    ]);
+    if ($draft['status'] !== 201 || empty($draft['json']['id'])) {
+        throw new RuntimeException(mitM365Error($draft, 'Sending through Microsoft 365 (creating the message)'));
     }
-    $mail->preSend();
-    // Graph takes the finished message as base64 MIME - attachments and invites as built
-    $response = mitHttp('POST', MIT_M365_GRAPH . '/me/sendMail', ['Authorization: Bearer ' . $token, 'Content-Type: text/plain'],
-        base64_encode($mail->getSentMIMEMessage()));
-    if ($response['status'] !== 202) {
-        throw new PHPMailer\PHPMailer\Exception(mitM365Error($response, 'Sending through Microsoft 365'));
+    $message = '/me/messages/' . rawurlencode($draft['json']['id']);
+    $attachments = $mail->getAttachments();
+    if (!empty($mail->Ical)) {
+        $attachments[] = [$mail->Ical, 'invite.ics', 'invite.ics', 'base64', 'text/calendar', true, 'attachment', 'invite.ics'];
     }
-    return true;
+    try {
+        foreach ($attachments as $attachment) {
+            $content = $attachment[5] ? $attachment[0] : (string) @file_get_contents($attachment[0]);
+            $item = ['name' => $attachment[2], 'contentType' => $attachment[4] ?: 'application/octet-stream',
+                'isInline' => $attachment[6] === 'inline', 'contentId' => $attachment[7]];
+            if (strlen($content) < MIT_M365_MIME_LIMIT) {
+                $added = mitGraph('POST', "$message/attachments", $token, ['@odata.type' => '#microsoft.graph.fileAttachment',
+                    'contentBytes' => base64_encode($content)] + $item);
+                if ($added['status'] !== 201) {
+                    throw new RuntimeException(mitM365Error($added, 'Sending through Microsoft 365 (attaching ' . $attachment[2] . ')'));
+                }
+                continue;
+            }
+            $session = mitGraph('POST', "$message/attachments/createUploadSession", $token,
+                ['AttachmentItem' => ['attachmentType' => 'file', 'size' => strlen($content)] + $item]);
+            $upload_url = $session['json']['uploadUrl'] ?? '';
+            if ($session['status'] !== 201 || $upload_url === '') {
+                throw new RuntimeException(mitM365Error($session, 'Sending through Microsoft 365 (uploading ' . $attachment[2] . ')'));
+            }
+            $total = strlen($content);
+            for ($offset = 0; $offset < $total; $offset += MIT_M365_UPLOAD_CHUNK) {
+                $chunk = substr($content, $offset, MIT_M365_UPLOAD_CHUNK);
+                // The upload address carries its own authorisation - no bearer token
+                $put = mitHttp('PUT', $upload_url, ['Content-Type: application/octet-stream',
+                    'Content-Range: bytes ' . $offset . '-' . ($offset + strlen($chunk) - 1) . '/' . $total], $chunk, 300);
+                if ($put['status'] !== 200 && $put['status'] !== 201) {
+                    throw new RuntimeException(mitM365Error($put, 'Sending through Microsoft 365 (uploading ' . $attachment[2] . ')'));
+                }
+            }
+        }
+        $sent = mitGraph('POST', "$message/send", $token);
+        if ($sent['status'] !== 202) {
+            throw new RuntimeException(mitM365Error($sent, 'Sending through Microsoft 365'));
+        }
+    } catch (Throwable $e) {
+        mitGraph('DELETE', $message, $token);  // no half-built draft left in the mailbox
+        throw $e;
+    }
+}
+
+/**
+ * Hook for Admin > Settings > Mail > Tests "Test IMAP": when the parser reads the mailbox through
+ * Graph, test that instead. ['ok' => bool, 'message' => ...], or null to run ITFlow's IMAP test.
+ */
+function mitM365GraphMailboxTest($username) {
+    try {
+        $token = mitM365MailGraphToken('Mail.ReadWrite');
+        if (!$token) {
+            return null;
+        }
+        $base = trim((string) $username) !== '' ? '/users/' . rawurlencode(trim($username)) : '/me';
+        $inbox = mitGraph('GET', "$base/mailFolders/inbox?\$select=unreadItemCount,totalItemCount", $token);
+        if ($inbox['status'] !== 200) {
+            throw new RuntimeException(mitM365Error($inbox, 'Opening the Inbox of ' . ($username ?: 'the mailbox')));
+        }
+        return ['ok' => true, 'message' => 'Connected through Microsoft Graph to ' . ($username ?: 'the mailbox') . ' - '
+            . intval($inbox['json']['unreadItemCount'] ?? 0) . ' unread of ' . intval($inbox['json']['totalItemCount'] ?? 0) . ' in the Inbox.'];
+    } catch (Throwable $e) {
+        return ['ok' => false, 'message' => 'Microsoft Graph mailbox test failed: ' . $e->getMessage()];
+    }
+}
+
+/**
+ * Hook for the OAuth tab's save and Connect (admin/post/settings_mail.php): while the client is our
+ * app, its secret stays the certificate marker - a browser filling in an old saved secret, or someone
+ * pasting one, would otherwise quietly stop it signing in.
+ */
+function mitM365KeepCertificateSecret($client_id, $secret) {
+    $app = mitM365App();
+    return ($app && trim((string) $client_id) === $app['client_id']) ? MIT_M365_CERT_SECRET : (string) $secret;
+}
+
+/** Hook in cron/ticket_email_parser.php: will Graph read the mailbox? (Then the IMAP sign-in is skipped.) */
+function mitM365GraphMailboxReady() {
+    try {
+        return mitM365MailGraphToken('Mail.ReadWrite') !== null;
+    } catch (Throwable $e) {
+        return true;  // mitM365GraphMailbox() logs Microsoft's reason and stops the run
+    }
 }
 
 /**

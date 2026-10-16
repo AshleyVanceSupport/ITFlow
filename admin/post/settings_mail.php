@@ -19,7 +19,7 @@ if (isset($_POST['oauth_connect_microsoft_mail'])) {
 
     // Save the OAuth credential fields from this form so the auth flow uses the latest inputs
     $config_mail_oauth_client_id     = escapeSql($_POST['config_mail_oauth_client_id'] ?? '');
-    $config_mail_oauth_client_secret = escapeSql($_POST['config_mail_oauth_client_secret'] ?? '');
+    $config_mail_oauth_client_secret = escapeSql(mitM365KeepCertificateSecret($_POST['config_mail_oauth_client_id'] ?? '', $_POST['config_mail_oauth_client_secret'] ?? '')); // Mountaineer IT
     $config_mail_oauth_tenant_id     = escapeSql($_POST['config_mail_oauth_tenant_id'] ?? $config_mail_oauth_tenant_id);
     $config_mail_oauth_refresh_token = escapeSql($_POST['config_mail_oauth_refresh_token'] ?? '');
     $config_mail_oauth_access_token  = escapeSql($_POST['config_mail_oauth_access_token'] ?? '');
@@ -166,7 +166,7 @@ if (isset($_POST['edit_mail_oauth_settings'])) {
     validateCSRFToken();
 
     $config_mail_oauth_client_id     = escapeSql($_POST['config_mail_oauth_client_id'] ?? '');
-    $config_mail_oauth_client_secret = escapeSql($_POST['config_mail_oauth_client_secret'] ?? '');
+    $config_mail_oauth_client_secret = escapeSql(mitM365KeepCertificateSecret($_POST['config_mail_oauth_client_id'] ?? '', $_POST['config_mail_oauth_client_secret'] ?? '')); // Mountaineer IT
     $config_mail_oauth_tenant_id     = escapeSql($_POST['config_mail_oauth_tenant_id'] ?? $config_mail_oauth_tenant_id);
     $config_mail_oauth_refresh_token = escapeSql($_POST['config_mail_oauth_refresh_token'] ?? '');
     $config_mail_oauth_access_token  = escapeSql($_POST['config_mail_oauth_access_token'] ?? '');
@@ -263,6 +263,12 @@ if (isset($_POST['test_email_imap'])) {
     validateCSRFToken();
 
     $provider = escapeSql($config_imap_provider ?? '');
+
+    // Mountaineer IT: test the mailbox the way the email parser reads it - through Microsoft Graph when that is in use
+    if ($provider === 'microsoft_oauth' && ($mit_test = mitM365GraphMailboxTest($config_imap_username ?? '')) !== null) {
+        flashAlert(escapeHtml($mit_test['message']), $mit_test['ok'] ? 'success' : 'error');
+        redirect($mail_tab_redirect);
+    }
 
     $host       = $config_imap_host;
     $port       = (int) $config_imap_port;

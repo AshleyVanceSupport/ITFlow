@@ -37,7 +37,12 @@ if (isset($_POST['mit_outlook_disconnect'])) {
 
     validateCSRFToken();
 
-    $left = mitOutlookDisconnect($session_user_id);
+    try {
+        $left = mitOutlookDisconnect($session_user_id);
+    } catch (Throwable $e) {
+        flashAlert(escapeHtml($e->getMessage()), 'error');
+        redirect('mit_outlook.php');
+    }
     logAudit("User Account", "Edit", "$session_name disconnected their Outlook calendar");
     flashAlert($left ? "Outlook disconnected. $left booking" . ($left === 1 ? '' : 's') . " could not be taken out of Outlook - delete them there (they have the ITFlow category)." : "Outlook disconnected and ITFlow's bookings taken out of it.", $left ? 'warning' : 'success');
     redirect('mit_outlook.php');

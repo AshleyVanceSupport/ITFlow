@@ -30,6 +30,17 @@ if (!mitOutlookAvailable()) {
     cronJobStop();
 }
 
+// Someone archived keeps nothing in Outlook - take ITFlow's events out and forget the link
+$mit_outlook_result = mysqli_query($mysqli, "SELECT user_id FROM mit_outlook_links JOIN users USING (user_id) WHERE user_archived_at IS NOT NULL");
+while ($mit_outlook_result && $mit_outlook_row = mysqli_fetch_assoc($mit_outlook_result)) {
+    try {
+        mitOutlookDisconnect($mit_outlook_row['user_id']);
+        echo "Outlook disconnected for archived user {$mit_outlook_row['user_id']}\n";
+    } catch (Throwable $e) {
+        echo "Outlook disconnect for archived user {$mit_outlook_row['user_id']} failed: " . $e->getMessage() . "\n";
+    }
+}
+
 $mit_outlook_users = [];
 $mit_outlook_result = mysqli_query($mysqli, "SELECT user_id FROM mit_outlook_links JOIN users USING (user_id) WHERE user_archived_at IS NULL");
 while ($mit_outlook_result && $mit_outlook_row = mysqli_fetch_assoc($mit_outlook_result)) {
@@ -39,7 +50,7 @@ while ($mit_outlook_result && $mit_outlook_row = mysqli_fetch_assoc($mit_outlook
 foreach ($mit_outlook_users as $mit_outlook_user_id) {
     try {
         $mit_outlook_summary = mitOutlookSync($mit_outlook_user_id);
-        if ($mit_outlook_summary !== 'Up to date') {
+        if (!in_array($mit_outlook_summary, ['Up to date', 'Waiting to retry', 'Already syncing'], true)) {
             echo "Outlook sync user $mit_outlook_user_id: $mit_outlook_summary\n";
         }
     } catch (Throwable $e) {

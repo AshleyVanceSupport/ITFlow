@@ -239,7 +239,10 @@ function sendQueueEmail(
         $mail->SMTPSecure = $enc; // 'tls' | 'ssl'
     }
 
-    if ($provider === 'google_oauth' || $provider === 'microsoft_oauth') {
+    // Mountaineer IT: Microsoft Graph sends it (below) when ITFlow's own Microsoft 365 app has the mailbox - no SMTP sign-in needed
+    $mit_graph = $provider === 'microsoft_oauth' && function_exists('mitM365GraphSendReady') && mitM365GraphSendReady();
+
+    if (!$mit_graph && ($provider === 'google_oauth' || $provider === 'microsoft_oauth')) {
         // XOAUTH2
         $mail->SMTPAuth = true;
         $mail->AuthType = 'XOAUTH2';
@@ -316,7 +319,8 @@ function sendQueueEmail(
     }
 
     // Mountaineer IT: through Microsoft Graph when ITFlow's own Microsoft 365 app has the mailbox
-    if ($provider === 'microsoft_oauth' && function_exists('mitM365GraphSendMail') && mitM365GraphSendMail($mail)) {
+    if ($mit_graph) {
+        mitM365GraphSendMail($mail);
         return true;
     }
 

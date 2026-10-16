@@ -35,7 +35,7 @@ class MitGraphMailbox {
     /** The message's MIME source. */
     public function mime($message_id) {
         $response = mitHttp('GET', MIT_M365_GRAPH . $this->base . '/messages/' . rawurlencode($message_id) . '/$value',
-            ['Authorization: Bearer ' . $this->token]);
+            ['Authorization: Bearer ' . $this->token], null, 300);
         if ($response['status'] !== 200) {
             throw new RuntimeException(mitM365Error($response, 'Downloading a message from Microsoft 365'));
         }
@@ -180,9 +180,15 @@ class MitGraphMessageQuery {
     }
 
     public function get() {
-        $filter = rawurlencode('isRead eq false');
-        $list = $this->mailbox->call('GET', '/mailFolders/' . rawurlencode($this->folder_id)
-            . "/messages?\$filter=$filter&\$select=id,receivedDateTime,flag&\$top=" . min(1000, $this->limit * 4));
+        // A listing Microsoft refuses (throttled, a hiccup) is just no mail this run - the parser tries again next minute
+        try {
+            $filter = rawurlencode('isRead eq false');
+            $list = $this->mailbox->call('GET', '/mailFolders/' . rawurlencode($this->folder_id)
+                . "/messages?\$filter=$filter&\$select=id,receivedDateTime,flag&\$top=" . min(1000, $this->limit * 4));
+        } catch (Throwable $e) {
+            logApp("Cron-Email-Parser", "warning", "Microsoft 365: could not list new mail - " . $e->getMessage());
+            return [];
+        }
         $rows = array_values(array_filter($list['json']['value'] ?? [], function ($row) {
             return ($row['flag']['flagStatus'] ?? '') !== 'flagged';
         }));
@@ -191,7 +197,17 @@ class MitGraphMessageQuery {
         });
         $messages = [];
         foreach (array_slice($rows, 0, $this->limit) as $row) {
-            $messages[] = new MitGraphMessage($this->mailbox, $row['id'], $this->mailbox->mime($row['id']));
+            try {
+                $messages[] = new MitGraphMessage($this->mailbox, $row['id'], $this->mailbox->mime($row['id']));
+            } catch (Throwable $e) {
+                // One message that will not download must not hold up the rest - flag it, as the parser does
+                // with mail it cannot process, so it is not tried again every minute
+                logApp("Cron-Email-Parser", "warning", "Microsoft 365: skipped a message that could not be downloaded (flagged in the mailbox) - " . $e->getMessage());
+                try {
+                    $this->mailbox->call('PATCH', '/messages/' . rawurlencode($row['id']), ['flag' => ['flagStatus' => 'flagged']]);
+                } catch (Throwable $ignored) {
+                }
+            }
         }
         return $messages;
     }
@@ -207,6 +223,12 @@ class MitGraphMessage extends FileMessage {
         parent::__construct($mime);
         $this->mailbox = $mailbox;
         $this->graph_id = $graph_id;
+    }
+
+    /** The raw body (everything after the headers) - the parser's last resort for mail with no text or HTML part. */
+    public function body(): string {
+        $parts = preg_split("/\r?\n\r?\n/", $this->contents, 2);
+        return $parts[1] ?? '';
     }
 
     /** IMAP UIDs are numbers; Graph ids are not - a stable number for the logs. */

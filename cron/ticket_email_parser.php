@@ -535,7 +535,8 @@ if ($imap_provider === 'google_oauth') {
     $port = 993;
     $encr = 'ssl';
     $auth = 'oauth';
-    $pass = getMicrosoftAccessToken($user);
+    // Mountaineer IT: no IMAP sign-in needed when Microsoft Graph reads the mailbox (below)
+    $pass = (function_exists('mitM365GraphMailboxReady') && mitM365GraphMailboxReady()) ? 'graph' : getMicrosoftAccessToken($user);
     if (empty($pass)) {
         logApp("Cron-Email-Parser", "error", "Microsoft OAuth: no usable access token (check refresh token/client credentials/tenant).");
         cronJobStop('', 1);

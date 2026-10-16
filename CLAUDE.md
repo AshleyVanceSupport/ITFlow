@@ -59,11 +59,16 @@ model: see DEPLOYMENT.md.
   `admin/includes/mit_m365_card.php` required at the top of `admin/settings_mail.php`;
   handlers in `admin/post/mit_m365.php`. Re-apply the hooks if an upstream merge drops them.
   Mail goes through Microsoft Graph (not SMTP/IMAP) once the app has the Mail permissions
-  (`MIT_M365_PERMISSIONS_VERSION` 2; older apps get "Update permissions" on the card): one-line
-  hooks in `cron/mail_queue.php` (`mitM365GraphSendMail` before `$mail->send()`) and
-  `cron/ticket_email_parser.php` (`mitM365GraphMailbox(...) ?? new Mailbox(...)`); the Graph
-  stand-ins for ImapEngine are in `functions/mit_m365_mailbox.php`. Also `(string)$config_smtp_host`
-  in mail_queue's two sendQueueEmail calls (crashed when the SMTP host was never set).
+  (`MIT_M365_PERMISSIONS_VERSION` 2; older apps get "Update permissions" on the card). Hooks:
+  `cron/mail_queue.php` (`$mit_graph = ...mitM365GraphSendReady()` skips the XOAUTH2 block,
+  `mitM365GraphSendMail($mail)` before `$mail->send()`; >3 MB goes as draft + upload session),
+  `cron/ticket_email_parser.php` (microsoft_oauth `$pass` skips the IMAP token when
+  `mitM365GraphMailboxReady()`; `mitM365GraphMailbox(...) ?? new Mailbox(...)`), and
+  `admin/post/settings_mail.php` (Test IMAP via `mitM365GraphMailboxTest`; both OAuth saves keep
+  the marker via `mitM365KeepCertificateSecret`). Graph stand-ins for ImapEngine are in
+  `functions/mit_m365_mailbox.php`. Also `(string)$config_smtp_host` in mail_queue's two
+  sendQueueEmail calls (crashed when the SMTP host was never set). Secrets at rest (cert key,
+  Outlook tokens) use `mitEncryptSecret()` - key from `$installation_id` in config.php.
 - Outlook calendar per tech (Oct 2026, Phase 4 step 1): `functions/mit_outlook.php` (ours, required
   from mit_m365.php) - Account > Outlook calendar (`agent/user/mit_outlook.php`, handlers
   `agent/user/post/mit_outlook.php`, Microsoft returns to `agent/user/mit_outlook_callback.php`).
