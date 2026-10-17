@@ -48,15 +48,20 @@ function mitProcReady() {
     return $ready;
 }
 
-/** The signed-in agent's procurement level: 0 none, 1 view, 2 edit, 3 full (approves). */
+/** Is procurement in use: database update M009 run, and switched on (Admin > Settings > Modules, with invoicing on)? */
+function mitProcOn() {
+    return mitProcReady() && mitModuleOn('procurement');
+}
+
+/** The signed-in agent's procurement level: 0 none (or switched off), 1 view, 2 edit, 3 full (approves). */
 function mitProcLevel() {
-    if (!mitProcReady()) {
+    if (!mitProcOn()) {
         return 0;
     }
     return intval(lookupUserPermission('module_procurement'));
 }
 
-/** [prefix, approval_over (float, 0 = every PO), ship_to (our address, text)] */
+/** The PO settings: prefix, next (the lowest next number), approval_over (float, 0 = every PO), ship_to (our address, text). */
 function mitProcSettings() {
     static $settings = null;
     if ($settings === null) {
@@ -93,6 +98,12 @@ function mitTrackingUrl($carrier, $number) {
     return $pattern === '' ? '' : str_replace('{n}', rawurlencode(trim((string) $number)), $pattern);
 }
 
+/** A posted money / quantity value ("1,200", "$40"), rounded to cents, or null when blank or not a number. */
+function mitProcNumber($value) {
+    $value = trim(str_replace([',', '$'], '', (string) $value));
+    return $value === '' || !is_numeric($value) ? null : round((float) $value, 2);
+}
+
 /** Money in the company currency. */
 function mitMoney($amount) {
     global $currency_format, $session_company_currency;
@@ -115,7 +126,7 @@ function mitPoRow($po_id) {
     if (!$po_id || !mitProcReady()) {
         return null;
     }
-    return mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT mit_purchase_orders.*, vendor_name, vendor_email, vendor_contact_name, vendor_contact_email, vendor_phone, vendor_account_number,
+    return mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT mit_purchase_orders.po_id, mit_purchase_orders.po_prefix, mit_purchase_orders.po_number, mit_purchase_orders.vendor_id, mit_purchase_orders.status, mit_purchase_orders.order_date, mit_purchase_orders.vendor_order_number, mit_purchase_orders.ship_to, mit_purchase_orders.ship_to_address, mit_purchase_orders.note, mit_purchase_orders.shipping, mit_purchase_orders.total, mit_purchase_orders.created_by, mit_purchase_orders.submitted_at, mit_purchase_orders.approved_by, mit_purchase_orders.approved_at, mit_purchase_orders.approval_note, mit_purchase_orders.ordered_by, mit_purchase_orders.ordered_at, mit_purchase_orders.received_at, mit_purchase_orders.cancelled_at, mit_purchase_orders.expense_id, mit_purchase_orders.created_at, mit_purchase_orders.updated_at, vendor_name, vendor_email, vendor_contact_name, vendor_contact_email, vendor_phone, vendor_account_number,
             creator.user_name AS created_by_name, approver.user_name AS approved_by_name
         FROM mit_purchase_orders
         LEFT JOIN vendors ON vendors.vendor_id = mit_purchase_orders.vendor_id
@@ -128,7 +139,7 @@ function mitPoRow($po_id) {
 function mitPoLines($po_id) {
     global $mysqli;
     $po_id = intval($po_id);
-    $result = mysqli_query($mysqli, "SELECT mit_po_lines.*, client_name, project_prefix, project_number, project_name,
+    $result = mysqli_query($mysqli, "SELECT mit_po_lines.line_id, mit_po_lines.po_id, mit_po_lines.proc_item_id, mit_po_lines.client_id, mit_po_lines.project_id, mit_po_lines.name, mit_po_lines.description, mit_po_lines.quantity, mit_po_lines.unit_cost, mit_po_lines.received_qty, mit_po_lines.sort, client_name, project_prefix, project_number, project_name,
             proc.invoice_id, proc.ticket_id, invoice_prefix, invoice_number
         FROM mit_po_lines
         LEFT JOIN clients ON clients.client_id = mit_po_lines.client_id
@@ -226,7 +237,7 @@ function mitProcWaitingItems($vendor_id = 0, $client_id = 0) {
     } elseif ($client_id === -1) {
         $where .= " AND proc.client_id = 0";
     }
-    $result = mysqli_query($mysqli, "SELECT proc.*, client_name, vendor_name, project_prefix, project_number, project_name, invoice_prefix, invoice_number
+    $result = mysqli_query($mysqli, "SELECT proc.item_id, proc.source, proc.client_id, proc.project_id, proc.invoice_id, proc.invoice_item_id, proc.ticket_id, proc.product_id, proc.vendor_id, proc.name, proc.description, proc.quantity, proc.unit_cost, proc.status, proc.note, proc.created_by, proc.created_at, proc.updated_at, client_name, vendor_name, project_prefix, project_number, project_name, invoice_prefix, invoice_number
         FROM mit_procurement_items proc
         LEFT JOIN clients ON clients.client_id = proc.client_id
         LEFT JOIN vendors ON vendors.vendor_id = proc.vendor_id
@@ -244,7 +255,7 @@ function mitProcItemsByIds(array $ids) {
     if (!$ids) {
         return [];
     }
-    $result = mysqli_query($mysqli, "SELECT * FROM mit_procurement_items proc WHERE item_id IN (" . implode(',', $ids) . ") AND status = 'waiting'" . clientScopeSql('proc.client_id'));
+    $result = mysqli_query($mysqli, "SELECT proc.item_id, proc.source, proc.client_id, proc.project_id, proc.invoice_id, proc.invoice_item_id, proc.ticket_id, proc.product_id, proc.vendor_id, proc.name, proc.description, proc.quantity, proc.unit_cost, proc.status, proc.note, proc.created_by, proc.created_at, proc.updated_at FROM mit_procurement_items proc WHERE item_id IN (" . implode(',', $ids) . ") AND status = 'waiting'" . clientScopeSql('proc.client_id'));
     return mysqli_fetch_all($result, MYSQLI_ASSOC);
 }
 
@@ -279,13 +290,26 @@ function mitPoCreate(array $item_ids, $vendor_id) {
         return 0;
     }
     $settings = mitProcSettings();
-    $number = mitPoNextNumber();
     $clients = array_unique(array_filter(array_map('intval', array_column($items, 'client_id'))));
     $projects = array_unique(array_filter(array_map('intval', array_column($items, 'project_id'))));
-    mysqli_query($mysqli, "INSERT INTO mit_purchase_orders SET po_prefix = '" . escapeSql($settings['prefix']) . "', po_number = $number,
-        vendor_id = $vendor_id, status = 'draft', ship_to = 'office', ship_to_address = '" . escapeSql($settings['ship_to']) . "',
-        created_by = " . intval($session_user_id));
-    $po_id = mysqli_insert_id($mysqli);
+    // The number is unique (database update M015): two POs made at the same moment - the second takes the next one
+    $po_id = 0;
+    for ($attempt = 0; $attempt < 5 && !$po_id; $attempt++) {
+        $number = mitPoNextNumber();
+        try {
+            mysqli_query($mysqli, "INSERT INTO mit_purchase_orders SET po_prefix = '" . escapeSql($settings['prefix']) . "', po_number = $number,
+                vendor_id = $vendor_id, status = 'draft', ship_to = 'office', ship_to_address = '" . escapeSql($settings['ship_to']) . "',
+                created_by = " . intval($session_user_id));
+            $po_id = mysqli_insert_id($mysqli);
+        } catch (mysqli_sql_exception $e) {
+            if ($e->getCode() !== 1062) {  // anything but "duplicate number" is a real failure
+                throw $e;
+            }
+        }
+    }
+    if (!$po_id) {
+        return 0;
+    }
     mitSetSetting('procurement_po_next', $number + 1);
     $sort = 0;
     foreach ($items as $item) {
@@ -352,6 +376,21 @@ function mitPoNeedsApproval($total) {
     return $over <= 0 || (float) $total > $over;
 }
 
+/**
+ * May the signed-in agent approve this PO? Full Procurement access, and not their own PO - unless nobody else can
+ * approve it, so a PO is never stuck.
+ */
+function mitPoMayApprove(array $po) {
+    global $session_user_id;
+    if (mitProcLevel() < 3) {
+        return false;
+    }
+    if (intval($po['created_by']) !== intval($session_user_id)) {
+        return true;
+    }
+    return !array_diff(array_keys(mitPoApprovers()), [intval($session_user_id)]);
+}
+
 /** Agents who can approve POs: Full on Procurement, or admins. user_id => row */
 function mitPoApprovers() {
     global $mysqli;
@@ -385,7 +424,7 @@ function mitPoNotifyApprovers(array $po) {
             $mails[] = ['from' => escapeSql($config_ticket_from_email), 'from_name' => escapeSql($config_ticket_from_name),
                 'recipient' => escapeSql($approver['user_email']), 'recipient_name' => escapeSql($approver['user_name']),
                 'subject' => escapeSql("PO $reference needs your approval"),
-                'body' => escapeSql('Hello ' . escapeHtml($approver['user_name']) . ',<br><br>' . escapeHtml($text) . ".<br><br><a href=\"$link\">Open $reference in ITFlow</a>")];
+                'body' => mitMailBody('Hello ' . escapeHtml($approver['user_name']) . ',<br><br>' . escapeHtml($text) . '.<br><br><a href="' . escapeHtml($link) . '">Open ' . escapeHtml($reference) . ' in ITFlow</a>')];
         }
     }
     if ($mails) {
@@ -393,15 +432,19 @@ function mitPoNotifyApprovers(array $po) {
     }
 }
 
-/** Submit a draft: straight to approved when it is small enough, else to the approvers. Returns the new status. */
+/**
+ * Submit a draft: straight to approved when it is under the approval amount and every line has a cost, else to the
+ * approvers (a line with no cost would make a PO look free and skip approval). Returns the new status.
+ */
 function mitPoSubmit(array $po) {
     global $mysqli, $session_user_id;
     $po_id = intval($po['po_id']);
     mitPoRecalc($po_id);
     $po = mitPoRow($po_id);
-    if (mitPoNeedsApproval($po['total'])) {
+    $uncosted = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COUNT(*) FROM mit_po_lines WHERE po_id = $po_id AND unit_cost <= 0"))[0]);
+    if (mitPoNeedsApproval($po['total']) || $uncosted) {
         mysqli_query($mysqli, "UPDATE mit_purchase_orders SET status = 'pending', submitted_at = NOW(), approved_by = 0, approved_at = NULL, approval_note = NULL WHERE po_id = $po_id");
-        mitPoLog($po_id, mitProcWho() . ' sent it for approval (' . mitMoney($po['total']) . ')');
+        mitPoLog($po_id, mitProcWho() . ' sent it for approval (' . mitMoney($po['total']) . ($uncosted ? ", $uncosted line(s) with no cost" : '') . ')');
         mitPoNotifyApprovers($po);
         return 'pending';
     }
@@ -458,7 +501,7 @@ function mitPoCancel(array $po) {
 function mitPoRemoveLine(array $po, $line_id) {
     global $mysqli;
     $po_id = intval($po['po_id']);
-    $line = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT * FROM mit_po_lines WHERE line_id = " . intval($line_id) . " AND po_id = $po_id"));
+    $line = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT line_id, po_id, proc_item_id, client_id, project_id, name, description, quantity, unit_cost, received_qty, sort FROM mit_po_lines WHERE line_id = " . intval($line_id) . " AND po_id = $po_id"));
     if (!$line) {
         return false;
     }
@@ -478,13 +521,13 @@ function mitPoReceive(array $received, array $options = []) {
     global $mysqli, $session_user_id;
     $count = 0;
     $touched = [];
-    $extras = ['assets' => 0, 'stock' => 0, 'notes' => 0];
+    $extras = ['assets' => 0, 'stock' => 0, 'notes' => 0, 'capped' => 0];
     foreach ($received as $line_id => $in) {
         $qty = round((float) ($in['qty'] ?? 0), 2);
         if ($qty <= 0) {
             continue;
         }
-        $line = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT l.*, po.status, po.po_prefix, po.po_number FROM mit_po_lines l JOIN mit_purchase_orders po ON po.po_id = l.po_id WHERE l.line_id = " . intval($line_id)));
+        $line = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT l.line_id, l.po_id, l.proc_item_id, l.client_id, l.project_id, l.name, l.description, l.quantity, l.unit_cost, l.received_qty, l.sort, po.status, po.po_prefix, po.po_number FROM mit_po_lines l JOIN mit_purchase_orders po ON po.po_id = l.po_id WHERE l.line_id = " . intval($line_id)));
         if (!$line || !in_array($line['status'], ['ordered', 'partial'], true) || !mitPoAccessible($line['po_id'])) {
             continue;
         }
@@ -513,7 +556,7 @@ function mitPoReceive(array $received, array $options = []) {
 /** Lines still to arrive on ordered POs the agent can see, by PO. */
 function mitPoAwaitingLines() {
     global $mysqli;
-    $result = mysqli_query($mysqli, "SELECT l.*, po.po_prefix, po.po_number, po.vendor_order_number, po.status, po.order_date, vendor_name,
+    $result = mysqli_query($mysqli, "SELECT l.line_id, l.po_id, l.proc_item_id, l.client_id, l.project_id, l.name, l.description, l.quantity, l.unit_cost, l.received_qty, l.sort, po.po_prefix, po.po_number, po.vendor_order_number, po.status, po.order_date, vendor_name,
             client_name, project_prefix, project_number, project_name
         FROM mit_po_lines l
         JOIN mit_purchase_orders po ON po.po_id = l.po_id
@@ -532,7 +575,7 @@ function mitPoAwaitingLines() {
 /** The PO's tracking, newest first. */
 function mitPoTracking($po_id) {
     global $mysqli;
-    return mysqli_fetch_all(mysqli_query($mysqli, "SELECT * FROM mit_po_tracking WHERE po_id = " . intval($po_id) . " ORDER BY tracking_id DESC"), MYSQLI_ASSOC);
+    return mysqli_fetch_all(mysqli_query($mysqli, "SELECT tracking_id, po_id, carrier, tracking_number, note, eta, delivered, created_at FROM mit_po_tracking WHERE po_id = " . intval($po_id) . " ORDER BY tracking_id DESC"), MYSQLI_ASSOC);
 }
 
 /** The tracking numbers of several POs, po_id => [rows] (the receiving page). */
@@ -541,7 +584,7 @@ function mitPoTrackingFor(array $po_ids) {
     $po_ids = array_values(array_filter(array_map('intval', $po_ids)));
     $by_po = [];
     if ($po_ids) {
-        $result = mysqli_query($mysqli, "SELECT * FROM mit_po_tracking WHERE po_id IN (" . implode(',', $po_ids) . ") ORDER BY tracking_id DESC");
+        $result = mysqli_query($mysqli, "SELECT tracking_id, po_id, carrier, tracking_number, note, eta, delivered, created_at FROM mit_po_tracking WHERE po_id IN (" . implode(',', $po_ids) . ") ORDER BY tracking_id DESC");
         while ($row = mysqli_fetch_assoc($result)) {
             $by_po[intval($row['po_id'])][] = $row;
         }
@@ -577,7 +620,8 @@ function mitPoPdf(array $po, $dest = 'I') {
     };
     $logo = '';
     if (!empty($company['company_logo']) && is_file(__DIR__ . '/../uploads/settings/' . $company['company_logo'])) {
-        $logo = '<img src="' . $h(realpath(__DIR__ . '/../uploads/settings/' . $company['company_logo'])) . '" width="110">';
+        // A web-root path, as ITFlow's own PDFs use (agent/post/quote.php) - TCPDF puts the document root in front
+        $logo = '<img src="/uploads/settings/' . $h($company['company_logo']) . '" width="110">';
     }
     $approved = in_array($po['status'], ['approved', 'ordered', 'partial', 'received'], true);
     $html = '<table width="100%" cellpadding="2"><tr><td width="50%">' . $logo . '<br><strong>' . $h($company['company_name']) . '</strong><br>'
@@ -622,8 +666,15 @@ function mitPoEmail(array $po, $to) {
         return 'That is not an email address.';
     }
     $dir = __DIR__ . '/../uploads/mit_po';
-    if (!is_dir($dir)) {
-        mkdir($dir, 0750, true);
+    if (!is_dir($dir) && !@mkdir($dir, 0750, true)) {
+        return 'The PDF folder (uploads/mit_po) could not be made - check the folder permissions.';
+    }
+    // PDFs from earlier emails have long been sent (the mail queue retries for hours, not weeks) - clear them out,
+    // so vendor pricing does not sit in uploads/ for good
+    foreach (glob("$dir/*.pdf") ?: [] as $old_pdf) {
+        if (filemtime($old_pdf) < time() - 30 * 86400) {
+            @unlink($old_pdf);
+        }
     }
     // An unguessable name - uploads are served as files
     $name = bin2hex(random_bytes(16)) . '.pdf';
@@ -631,14 +682,14 @@ function mitPoEmail(array $po, $to) {
         return 'The PDF could not be made.';
     }
     $reference = mitPoReference($po);
-    $company = stripslashes((string) $session_company_name);
+    $company = (string) $session_company_name;
     $body = 'Hello,<br><br>Please find attached purchase order <strong>' . escapeHtml($reference) . '</strong> from ' . escapeHtml($company) . '.<br><br>'
         . 'Please quote ' . escapeHtml($reference) . ' on your invoice and packing slip, and reply with your order number and tracking when it ships.<br><br>Thank you,<br>'
         . escapeHtml(mitProcWho()) . '<br>' . escapeHtml($company);
     addToMailQueue([[
         'from' => escapeSql($config_ticket_from_email), 'from_name' => escapeSql($config_ticket_from_name),
         'recipient' => escapeSql($to), 'recipient_name' => escapeSql($po['vendor_name']),
-        'subject' => escapeSql("Purchase order $reference - $company"), 'body' => escapeSql($body),
+        'subject' => escapeSql("Purchase order $reference - $company"), 'body' => mitMailBody($body),
         'attachments' => [['path' => "uploads/mit_po/$name", 'name' => "$reference.pdf"]],
     ]]);
     mitPoLog($po['po_id'], mitProcWho() . " emailed the PO to $to");

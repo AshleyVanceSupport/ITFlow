@@ -26,9 +26,21 @@ if (intval($row['config_enable_cron']) === 0) {
     cronJobStop("Cron: is not enabled -- Quitting..");
 }
 
+mitSettingsCacheRef(true);  // settings as they are now - an earlier job in this cycle may have read them
+
 if (!mitOutlookAvailable()) {
     cronJobStop();
 }
+
+try {
+    mysqli_query($mysqli, "SELECT 1 FROM mit_outlook_links LIMIT 1");
+} catch (Throwable $e) {
+    cronJobStop("Outlook sync waits for the database update (M004)");
+}
+
+// The app's certificate is replaced 30 days before it expires; secrets under the old derived key move to config.php's key
+mitM365MaybeRenewCertificate();
+mitUpgradeSecrets();
 
 // Someone archived keeps nothing in Outlook - take ITFlow's events out and forget the link
 $mit_outlook_result = mysqli_query($mysqli, "SELECT user_id FROM mit_outlook_links JOIN users USING (user_id) WHERE user_archived_at IS NOT NULL");
@@ -49,13 +61,18 @@ while ($mit_outlook_result && $mit_outlook_row = mysqli_fetch_assoc($mit_outlook
 }
 
 foreach ($mit_outlook_users as $mit_outlook_user_id) {
+    $mit_outlook_before = (string) (mitOutlookLink($mit_outlook_user_id)['last_error'] ?? '');
     try {
         $mit_outlook_summary = mitOutlookSync($mit_outlook_user_id);
         if (!in_array($mit_outlook_summary, ['Up to date', 'Waiting to retry', 'Already syncing'], true)) {
             echo "Outlook sync user $mit_outlook_user_id: $mit_outlook_summary\n";
         }
     } catch (Throwable $e) {
-        // Kept on the person's link and shown on their Outlook calendar page; logged once, not every minute
+        // Kept on the person's link and shown on their Outlook calendar page; written to App Logs only when the
+        // problem is new (a failing sync is retried every 15 minutes, which would otherwise fill the log)
+        if ($e->getMessage() !== $mit_outlook_before) {
+            logApp('Outlook', 'warning', "Outlook sync for user $mit_outlook_user_id failed: " . $e->getMessage());
+        }
         echo "Outlook sync user $mit_outlook_user_id failed: " . $e->getMessage() . "\n";
     }
 }

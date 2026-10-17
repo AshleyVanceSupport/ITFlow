@@ -74,6 +74,7 @@ if (intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COUNT(*) FROM mit_leav
         }
         return $ids ? "'" . implode(',', $ids) . "'" : 'NULL';
     };
-    mysqli_query($mysqli, "INSERT INTO mit_leave_banks SET bank_name = 'PTO', bank_codes = " . $mit_m014_codes(['PTO', 'Vacation']) . ", bank_sort = 1");
-    mysqli_query($mysqli, "INSERT INTO mit_leave_banks SET bank_name = 'Sick', bank_codes = " . $mit_m014_codes(['Sick leave']) . ", bank_sort = 2");
+    // One INSERT, so a run that stops part way never leaves one bank without the other
+    mysqli_query($mysqli, "INSERT INTO mit_leave_banks (bank_name, bank_codes, bank_sort) VALUES
+        ('PTO', " . $mit_m014_codes(['PTO', 'Vacation']) . ", 1), ('Sick', " . $mit_m014_codes(['Sick leave']) . ", 2)");
 }

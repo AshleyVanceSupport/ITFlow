@@ -1,16 +1,17 @@
 <?php
 
 /*
- * Mountaineer IT - a customisable ticket page layout: which column each box sits in, their order,
- * and which start collapsed. An admin can save a company default; each tech can save their own on
- * top of it. Stored as JSON - the default in mit_settings (ticket_layout), a tech's own in
+ * Mountaineer IT - a customizable ticket page layout: which column each box sits in, their order,
+ * and which start collapsed. An admin can save a company default; each agent can save their own on
+ * top of it. Stored as JSON - the default in mit_settings (ticket_layout), an agent's own in
  * mit_user_preferences (ticket.layout) - and applied in the browser by agent/js/mit_ticket_layout.js,
  * which moves ITFlow's own boxes, so the page's markup stays upstream's.
  *
  * Layout: {"columns": '' | even | side | single | three, "left": [box ids] (the third column),
  * "main": [...], "side": [...], "collapsed": [...], "half": [...] (half width - two sit side by side)}.
  * Box ids are the script's names for the boxes (description, reply, conversation, details, contact,
- * also_open, site, tasks, linked, history). A box a layout does not mention stays where ITFlow puts it.
+ * also_open, site, tasks, parts - our Parts box, procurement -, linked, history). A box a layout does
+ * not mention stays where ITFlow puts it.
  */
 
 /** A layout as posted or stored, made safe - or null when it is not one. */

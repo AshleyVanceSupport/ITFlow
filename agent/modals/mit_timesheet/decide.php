@@ -6,15 +6,20 @@
 
 require_once '../../../includes/modal_header.php';
 
+mitModuleRequire('timesheets', true);
+
 $user_id = intval($_GET['user_id'] ?? 0);
-if (!mitTsReady() || !mitTsMayApprove($user_id) || ($user_id === intval($session_user_id) && mitTsLevel() < 3)) {
-    exit('<div class="modal-body">You cannot approve that timesheet.</div>');
+if (!mitTsReady() || !mitTsSettings()['approval']) {
+    exit(json_encode(['error' => 'Timesheets are not approved here (Admin > Timesheets).']));
+}
+if (!mitTsMayApprove($user_id) || ($user_id === intval($session_user_id) && mitTsLevel() < 3)) {
+    exit(json_encode(['error' => 'You cannot approve that timesheet.']));
 }
 $period = mitTsPeriodFromRequest($_GET['start'] ?? '');
 $decision = ($_GET['decision'] ?? '') === 'return' ? 'return' : 'approve';
 $person = mitTsUsers([$user_id])[$user_id] ?? null;
 if (!$person) {
-    exit('<div class="modal-body">That person does not keep a timesheet.</div>');
+    exit(json_encode(['error' => 'That person does not keep a timesheet.']));
 }
 $sheet = mitTsSheet($user_id, $period);
 $t = mitTsTotals([$user_id], $period['start'], $period['end'])[$user_id];
@@ -36,7 +41,7 @@ ob_start();
         <p class="mb-2"><?= escapeHtml($period['label']) ?> · <?= mitTsBadge($sheet['status']) ?></p>
         <p class="small text-muted">
             <?= mitTsHours($t['total'], false) ?> hours: <?= mitTsHours($t['billable'], false) ?> billable, <?= mitTsHours($t['other'], false) ?> other ticket time,
-            <?= mitTsHours($t['work'], false) ?> admin &amp; other work, <?= mitTsHours($t['lost'], false) ?> lost, <?= mitTsHours($t['leave_paid'], false) ?> paid leave<?= $t['unpaid'] ? ', ' . mitTsHours($t['unpaid']) . ' unpaid' : '' ?><?= $t['overtime'] ? ', ' . mitTsHours($t['overtime']) . ' overtime' : '' ?>.
+            <?= mitTsHours($t['work'], false) ?> admin &amp; other work, <?= mitTsHours($t['lost'], false) ?> lost, <?= mitTsHours($t['leave_paid'], false) ?> paid leave<?= $t['unpaid'] ? ', ' . mitTsHours($t['unpaid']) . ' unpaid (leave and codes' . ($t['auto_lost'] && !mitTsSettings()['auto_lost_paid'] ? ', unaccounted time' : '') . ')' : '' ?><?= $t['overtime'] ? ', ' . mitTsHours($t['overtime']) . ' overtime' : '' ?>.
         </p>
         <?php if ($decision === 'approve' && $sheet['status'] !== 'submitted') { ?>
             <div class="alert alert-warning py-2 small">It has not been submitted - approving locks it as it is now.</div>
@@ -44,7 +49,7 @@ ob_start();
         <label class="form-label"><?= $decision === 'approve' ? 'Note (optional)' : 'Why - they see this on the timesheet' ?></label>
         <input type="text" class="form-control" name="note" maxlength="255" <?= $decision === 'return' ? 'required' : '' ?>>
         <?php if ($decision === 'approve') { ?>
-            <div class="form-text">Approving locks the period and keeps its ticket time as it is now.</div>
+            <div class="form-text">Approving locks the period and keeps its ticket time and unaccounted time as they are now.</div>
         <?php } ?>
     </div>
     <div class="modal-footer">

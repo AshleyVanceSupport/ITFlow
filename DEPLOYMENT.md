@@ -143,12 +143,25 @@ the `itflow` database and user and delete `/var/www/itflow` first).
 
 ## Restoring this build onto a new server
 
-Backups hold the database and uploads, not `config.php`. Our Microsoft 365 certificate and each
-person's Outlook sign-in are encrypted with a key made from `$installation_id` in `config.php`, so
-after restoring onto a **new** server, copy `$installation_id` (and `$config_backup_key`) from the
-old server's `config.php` into the new one. Without it the Microsoft 365 card says the certificate
+Backups hold the database and uploads, not `config.php`. Our Microsoft 365 certificate, the mail
+mailbox's Graph token and each person's Outlook sign-in are encrypted (AES-256-GCM) with
+`$config_mit_secret_key`, a random key ITFlow appends to `config.php` the first time it needs one
+(older values made with a key from `$installation_id` are still read, and re-encrypted with the new
+key by the Outlook cron job). So after restoring onto a **new** server, copy `$config_mit_secret_key`
+(plus `$installation_id` and `$config_backup_key`) from the old server's `config.php` into the new
+one - **keep it with the backup key**. Without it the Microsoft 365 card says the certificate
 cannot be read (Remove and set it up again, then reconnect the mailbox), and everyone's Outlook
 calendar page asks them to Reconnect. Restoring onto the same server needs nothing.
+
+A backup restored with `scripts/restore_cli.php` or the setup wizard gets our database updates
+straight after (a stock ITFlow backup, or one from an older build of ours, needs them).
+
+**What the stored Microsoft tokens can do.** The mailbox token (Settings > Mail) can read and send
+mail as that mailbox; each person's Outlook token can read their calendar's free/busy and write the
+events ITFlow puts there. Anyone with the database *and* `$config_mit_secret_key` could use them, so
+treat a backup plus `config.php` like a password. To cut access, remove the app in Settings > Mail
+(Microsoft 365 card > Remove) or the person's connection in Account > Outlook calendar - or delete
+the app registration in Entra.
 
 ## Moving to stock ITFlow (backup portability)
 
@@ -195,20 +208,24 @@ break stock ITFlow, and lists what stops working after a move.
   `mit_leave_rates`, settings in `mit_settings` (ts_*); export the Timesheets & Payroll
   report (both CSVs) before moving. Ticket time is ITFlow's own (ticket replies) and stays. Admin >
   Roles keeps an unused "Timesheets" permission (`module_timesheets` row) – harmless.
-- **Dispatch** – the page goes away; it keeps nothing of its own (bookings and assignments it made are
+- **Dispatch** – the page goes away; it keeps nothing of its own (schedules and assignments it made are
   ordinary ITFlow ticket fields and stay). Use Calendar and each ticket's Schedule instead.
+- **Module switches** for Procurement, Timesheets and Dispatch (Settings > Modules) – stored in
+  `mit_settings` (`module_*`), unused by stock ITFlow.
 - **Ticket parts** – the Parts box is ours (`mit_ticket_parts`); parts already billed are ordinary
   invoice lines and stay. Products' "Order from" vendor (`products.product_vendor_id`) is ignored.
-- **Additional techs on tickets** – stock ITFlow keeps only the lead (the assigned tech). Helpers,
-  their own booking times and their calendar / Outlook entries are not shown (the rows sit unused
+- **Additional agents on tickets** – stock ITFlow keeps only the assigned agent. The others, their
+  own scheduled times and their calendar / Outlook entries are not shown (the rows sit unused
   in `mit_ticket_techs`); reassign or note them on the tickets that need it.
 - **Quote pricing and item images** – stock ITFlow keeps every quote's customer prices, but our
   cost, the markup / margin and the line and product images are not shown (they sit unused in
   the `item_cost` / `item_price_*` / `item_image` and `product_cost` / `product_price_*` /
-  `product_image` columns, the files in `uploads/mit_images/`).
+  `product_image` columns, the files in `uploads/mit_images/`). Our API leaves product cost and
+  markup out of `api/v1/products/read.php`; stock ITFlow's API returns every column, so after a move
+  an API key with Sales access can read them – clear them first if that matters.
 - **Ticket page layout** (column widths, three columns, box order, half-width and collapsed boxes) – stock ITFlow shows its own layout;
   the saved layouts sit unused in `mit_settings` / `mit_user_preferences`.
-- **Booking lengths, tech colours, per-person calendar settings, Outlook busy times, the ticket
+- **Schedule lengths, agent colors, per-person calendar settings, Outlook busy times, the ticket
   timers dropdown** – not in stock ITFlow; their data sits unused in `mit_` tables and the
   `tickets.ticket_schedule_end` column.
 

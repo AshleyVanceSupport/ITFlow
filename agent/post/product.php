@@ -23,7 +23,7 @@ if (isset($_POST['add_product'])) {
     logAudit("Product", "Create", "$session_name created product $name", 0, $product_id);
 
     flashAlert("Product <strong>$name</strong> created");
-    mitImageErrorFlash();
+    mitImageErrorFlash(); // Mountaineer IT
 
     redirect();
 
@@ -45,7 +45,7 @@ if (isset($_POST['edit_product'])) {
     logAudit("Product", "Edit", "$session_name edited product $name", 0, $product_id);
 
     flashAlert("Product <strong>$name</strong> edited");
-    mitImageErrorFlash();
+    mitImageErrorFlash(); // Mountaineer IT
 
     redirect();
 

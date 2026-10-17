@@ -64,7 +64,7 @@ $mit_booked = $mit_link ? intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT 
                     <?php } ?>
                     <button type="submit" name="mit_outlook_disconnect" class="btn btn-sm btn-outline-danger confirm-link"
                         data-confirm-title="Disconnect Outlook?" data-confirm-button="Disconnect"
-                        data-confirm-text="ITFlow takes its bookings out of your Outlook calendar and stops syncing.">Disconnect</button>
+                        data-confirm-text="ITFlow takes its scheduled tickets out of your Outlook calendar and stops syncing.">Disconnect</button>
                 </form>
             </div>
 

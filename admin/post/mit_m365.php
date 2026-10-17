@@ -7,15 +7,6 @@
 
 defined('FROM_POST_HANDLER') || die("Direct file access is not allowed");
 
-/** Answer a setup step in JSON and stop. */
-function mitM365Json(array $data, $status = 200) {
-    http_response_code($status);
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store');
-    echo json_encode($data);
-    exit();
-}
-
 // Step 1 - start the admin's sign-in: a code to enter at microsoft.com/devicelogin
 if (isset($_POST['mit_m365_start'])) {
 
@@ -50,7 +41,7 @@ if (isset($_POST['mit_m365_poll'])) {
 
     $poll = mitM365DeviceCodePoll($device_code);
     if (!empty($poll['pending'])) {
-        mitM365Json(['pending' => true]);
+        mitM365Json(['pending' => true, 'slow_down' => !empty($poll['slow_down'])]);
     }
     $purpose = $_SESSION['mit_m365_device_purpose'] ?? 'create';
     unset($_SESSION['mit_m365_device_code'], $_SESSION['mit_m365_device_expires'], $_SESSION['mit_m365_device_purpose']);
@@ -73,7 +64,7 @@ if (isset($_POST['mit_m365_poll'])) {
     // Creating the app can take a little while - Microsoft needs a moment to see it
     @set_time_limit(120);
     try {
-        $app = mitM365Provision($poll['token'], $session_name);
+        $app = mitM365Provision($poll['token'], stripslashes($session_name));  // $session_name is kept SQL-escaped
     } catch (Throwable $e) {
         logApp("Microsoft 365", "error", "App setup failed: " . $e->getMessage());
         mitM365Json(['error' => $e->getMessage()], 400);
@@ -130,7 +121,7 @@ if (isset($_POST['mit_m365_manual'])) {
     validateCSRFToken();
 
     try {
-        $app = mitM365UseManualApp(trim($_POST['tenant_id'] ?? ''), trim($_POST['client_id'] ?? ''), trim($_POST['object_id'] ?? ''), $session_name);
+        $app = mitM365UseManualApp(trim($_POST['tenant_id'] ?? ''), trim($_POST['client_id'] ?? ''), trim($_POST['object_id'] ?? ''), stripslashes($session_name));
         logAudit("Settings", "Edit", "$session_name connected a hand-made Microsoft 365 app (" . escapeSql($app['client_id']) . ")");
         flashAlert("Microsoft 365 app connected. Now connect the mailbox ITFlow should use.");
     } catch (Throwable $e) {

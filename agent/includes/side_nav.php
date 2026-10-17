@@ -86,8 +86,6 @@
                         <p>Calendar</p>
                     </a>
                 </li>
-                <?php require __DIR__ . '/mit_dispatch_nav.php'; // Mountaineer IT ?>
-                <?php require __DIR__ . '/mit_timesheet_nav.php'; // Mountaineer IT ?>
 
                 <?php if (lookupUserPermission("module_support") >= 1) { ?>
                     <?php if ($config_module_enable_ticketing == 1) { ?>
@@ -114,6 +112,7 @@
                                 </p>
                             </a>
                         </li>
+                        <?php require __DIR__ . '/mit_dispatch_nav.php'; // Mountaineer IT ?>
                         <li class="nav-item">
                             <a href="/agent/projects.php" class="nav-link <?php if (basename($_SERVER["PHP_SELF"]) == "projects.php" || basename($_SERVER["PHP_SELF"]) == "project.php") { echo "active"; } ?>">
                                 <i class="nav-icon fas fa-project-diagram"></i>
@@ -225,6 +224,8 @@
                         </li>
                     <?php } ?>
                 <?php } ?>
+
+                <?php require __DIR__ . '/mit_timesheet_nav.php'; // Mountaineer IT ?>
 
                 <?php if (lookupUserPermission("module_reporting") >= 1) { ?>
                     <li class="nav-header mt-3">TOOLS</li>

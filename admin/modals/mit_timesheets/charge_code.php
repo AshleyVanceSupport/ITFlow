@@ -9,7 +9,7 @@ require_once '../../includes/modal_header.php';
 $code_id = intval($_GET['id'] ?? 0);
 $code = $code_id ? (mitTsCodes(true)[$code_id] ?? null) : null;
 if ($code_id && !$code) {
-    exit('<div class="modal-body">That charge code does not exist.</div>');
+    exit(json_encode(['error' => 'That charge code does not exist.']));
 }
 $code = $code ?: ['code_name' => '', 'code_kind' => 'work', 'code_paid' => 1, 'code_color' => '#0d6efd', 'code_roles' => '', 'code_note_required' => 0, 'code_daily_max' => null, 'code_closure_fill' => 0];
 $code_roles = array_filter(array_map('intval', explode(',', (string) ($code['code_roles'] ?? ''))));
@@ -42,7 +42,7 @@ ob_start();
                 <div class="form-text">Work and Lost time count as hours worked; Leave is time off.</div>
             </div>
             <div class="col-sm-3">
-                <label class="form-label">Colour</label>
+                <label class="form-label">Color</label>
                 <input type="color" class="form-control form-control-color" name="color" value="<?= escapeHtml(preg_match('/^#[0-9a-f]{6}$/i', (string) $code['code_color']) ? $code['code_color'] : '#6c757d') ?>">
             </div>
         </div>

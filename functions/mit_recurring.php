@@ -6,7 +6,7 @@
  *
  * A rule is stored the way calendars write it (RFC 5545 BYDAY): an ordinal and a weekday -
  * 1 to 4 for the first to fourth, -1 for the last - so "3WE" is the third Wednesday and "-1FR"
- * the last Friday. No rule means ITFlow's own behaviour: the same date each month.
+ * the last Friday. No rule means ITFlow's own behavior: the same date each month.
  * The choices offered always come from the date picked, so a rule always matches its first run.
  */
 
@@ -155,6 +155,20 @@ function mitEventHasByDay() {
         }
     }
     return $has_column;
+}
+
+/** ", recurring_ticket_by_day" for a recurring tickets column list once database update M006 has added it, else ''. */
+function mitRecurringTicketByDayColumn() {
+    global $mysqli;
+    static $has = null;
+    if ($has === null) {
+        try {
+            $has = mysqli_num_rows(mysqli_query($mysqli, "SHOW COLUMNS FROM recurring_tickets LIKE 'recurring_ticket_by_day'")) === 1;
+        } catch (Throwable $e) {
+            $has = false;
+        }
+    }
+    return $has ? ', recurring_ticket_by_day' : '';
 }
 
 /** For ITFlow's event queries that list their columns: " event_repeat_by_day," once M006 has run. */

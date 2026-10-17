@@ -54,7 +54,7 @@ ob_start();
 
         <div class="row g-2 mb-3">
             <div class="col-sm-7">
-                <label>Tech</label>
+                <label>Agent</label>
                 <div class="input-group">
                     <span class="input-group-text"><i class="fa fa-fw fa-user-cog"></i></span>
                     <select class="form-select select2" name="schedule_tech" id="scheduleTech">
@@ -92,7 +92,7 @@ ob_start();
         </div>
 
         <?php if ($schedule_agents) { ?>
-            <!-- What else the chosen tech has that day, so it is not booked on top of something (agent/js/ticket_schedule_modal.js) -->
+            <!-- What else the chosen agent has that day, so it is not booked on top of something (agent/js/ticket_schedule_modal.js) -->
             <div class="border rounded p-2 small" id="scheduleAgentDay" data-user="<?= $schedule_tech ?>" data-ticket="<?= $ticket_id ?>" data-name="<?= escapeHtml($row['user_name']) ?>" hidden>
                 <div class="d-flex align-items-center mb-1">
                     <span class="fw-semibold"><i class="far fa-calendar-alt fa-fw text-secondary me-1"></i><span class="js-day-title"></span></span>

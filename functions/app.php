@@ -751,6 +751,7 @@ function getTicketCalendarUid($ticket_id) {
  * an organiser people should be accepting invitations from, and an "Accepted:"
  * reply would arrive there as a new ticket. Rescheduling sends it again with the
  * same UID and a higher SEQUENCE, which moves the one already added.
+ * Mountaineer IT: $end ('Y-m-d H:i:s') is when the work ends - an hour after the start when not given.
  */
 function createiCalStr($datetime, $title, $description, $location, $uid = null, $end = null) {
     global $config_timezone;

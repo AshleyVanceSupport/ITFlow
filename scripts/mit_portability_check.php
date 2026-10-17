@@ -28,14 +28,20 @@ $problems = [];
 $warnings = [];
 $notes = [];
 
-/** ITFlow's tables and columns from db.sql: table => [column => definition], plus foreign keys. */
-function mitStockSchema($file) {
+/**
+ * ITFlow's tables and columns from db.sql: table => [column => definition]. Its unique keys go in
+ * $unique_keys: table => [key name => true].
+ */
+function mitStockSchema($file, &$unique_keys = []) {
     $tables = [];
+    $unique_keys = [];
     $table = null;
     foreach (file($file) as $line) {
         if (preg_match('/^CREATE TABLE `([^`]+)`/', $line, $m)) {
             $table = $m[1];
             $tables[$table] = [];
+        } elseif ($table && preg_match('/^\s+UNIQUE KEY `([^`]+)`/', $line, $m)) {
+            $unique_keys[$table][$m[1]] = true;
         } elseif ($table && preg_match('/^\s+`([^`]+)`\s+(.+?),?\s*$/', $line, $m)) {
             $tables[$table][$m[1]] = $m[2];
         } elseif ($table && preg_match('/^\)/', $line)) {
@@ -45,7 +51,8 @@ function mitStockSchema($file) {
     return $tables;
 }
 
-$stock = mitStockSchema(dirname(__DIR__) . '/db.sql');
+$stock_unique = [];
+$stock = mitStockSchema(dirname(__DIR__) . '/db.sql', $stock_unique);
 if (count($stock) < 50) {
     fwrite(STDERR, "Could not read ITFlow's schema from db.sql.\n");
     exit(1);
@@ -53,7 +60,7 @@ if (count($stock) < 50) {
 
 $db = mysqli_real_escape_string($mysqli, $database);
 $live = [];
-$result = mysqli_query($mysqli, "SELECT TABLE_NAME, COLUMN_NAME, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, GENERATION_EXPRESSION
+$result = mysqli_query($mysqli, "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, GENERATION_EXPRESSION
     FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = '$db' ORDER BY TABLE_NAME, ORDINAL_POSITION");
 while ($row = mysqli_fetch_assoc($result)) {
     $live[$row['TABLE_NAME']][$row['COLUMN_NAME']] = $row;
@@ -75,6 +82,14 @@ foreach ($stock as $table => $columns) {
     foreach ($columns as $column => $definition) {
         if (!isset($live[$table][$column])) {
             $problems[] = "ITFlow's column `$table`.`$column` is missing.";
+            continue;
+        }
+        // Same type as db.sql ("int(11)", "varchar(200)" ...). A WARN, not a FAIL: ITFlow's own updates have not always
+        // matched db.sql exactly, but we never change ITFlow's columns, so a difference needs a look
+        $stock_type = preg_match('/^([a-z]+(\([^)]*\))?( unsigned)?( zerofill)?)/i', $definition, $m) ? strtolower($m[1]) : '';
+        $live_type = strtolower((string) $live[$table][$column]['COLUMN_TYPE']);
+        if ($stock_type !== $live_type && preg_replace('/\(\d+\)/', '', $stock_type) !== preg_replace('/\(\d+\)/', '', $live_type)) {
+            $warnings[] = "ITFlow's column `$table`.`$column` is $live_type here, $stock_type in db.sql.";
         }
     }
 }
@@ -102,6 +117,21 @@ foreach (array_keys($live) as $table) {
     }
 }
 
+// 3b. No unique keys or triggers of ours on ITFlow's tables - either could refuse rows stock ITFlow writes
+$result = mysqli_query($mysqli, "SELECT DISTINCT TABLE_NAME, INDEX_NAME FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = '$db' AND NON_UNIQUE = 0 AND INDEX_NAME <> 'PRIMARY'");
+while ($row = mysqli_fetch_assoc($result)) {
+    if (isset($stock[$row['TABLE_NAME']]) && !isset($stock_unique[$row['TABLE_NAME']][$row['INDEX_NAME']])) {
+        $problems[] = "Unique key `{$row['INDEX_NAME']}` on ITFlow's table `{$row['TABLE_NAME']}` is not ITFlow's - stock ITFlow could hit it.";
+    }
+}
+$result = mysqli_query($mysqli, "SELECT TRIGGER_NAME, EVENT_OBJECT_TABLE FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = '$db'");
+while ($row = mysqli_fetch_assoc($result)) {
+    if (isset($stock[$row['EVENT_OBJECT_TABLE']])) {
+        $problems[] = "Trigger `{$row['TRIGGER_NAME']}` on ITFlow's table `{$row['EVENT_OBJECT_TABLE']}` - ITFlow uses none.";
+    }
+}
+
 // 4. ITFlow's tables must not depend on ours (a foreign key into mit_ would block stock ITFlow's deletes/inserts)
 $result = mysqli_query($mysqli, "SELECT TABLE_NAME, CONSTRAINT_NAME, REFERENCED_TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE
     WHERE TABLE_SCHEMA = '$db' AND REFERENCED_TABLE_NAME LIKE 'mit\\_%'");
@@ -111,21 +141,59 @@ while ($row = mysqli_fetch_assoc($result)) {
     }
 }
 
+// 4b. Our tables may point at ITFlow's, but only so that ITFlow's deletes carry on (CASCADE / SET NULL) - a
+// RESTRICT key would stop stock ITFlow deleting a ticket or user that one of our rows mentions
+$result = mysqli_query($mysqli, "SELECT TABLE_NAME, CONSTRAINT_NAME, REFERENCED_TABLE_NAME, DELETE_RULE FROM information_schema.REFERENTIAL_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = '$db' AND TABLE_NAME LIKE 'mit\\_%'");
+while ($row = mysqli_fetch_assoc($result)) {
+    if (!isset($stock[$row['REFERENCED_TABLE_NAME']])) {
+        continue;
+    }
+    if (in_array($row['DELETE_RULE'], ['CASCADE', 'SET NULL'], true)) {
+        $notes[] = "Our `{$row['TABLE_NAME']}` follows ITFlow's `{$row['REFERENCED_TABLE_NAME']}` ({$row['DELETE_RULE']} on delete).";
+    } else {
+        $problems[] = "Our `{$row['TABLE_NAME']}` has a {$row['DELETE_RULE']} foreign key ({$row['CONSTRAINT_NAME']}) into ITFlow's `{$row['REFERENCED_TABLE_NAME']}` - stock ITFlow's deletes would fail.";
+    }
+}
+
+// 5. Our database updates all applied (a pending one means the comparison is with a half-updated database)
+$mit_files = array_map(function ($file) {
+    return basename($file, '.php');
+}, glob(dirname(__DIR__) . '/admin/database_updates/mountaineerit/M[0-9][0-9][0-9].php') ?: []);
+$mit_done = [];
+try {
+    $result = mysqli_query($mysqli, "SELECT mit_update_name FROM mit_database_updates");
+    while ($row = mysqli_fetch_row($result)) {
+        $mit_done[] = $row[0];
+    }
+} catch (Throwable $e) {
+    // the table comes with the first of our updates
+}
+if ($pending = array_diff($mit_files, $mit_done)) {
+    $warnings[] = "Our database update" . (count($pending) === 1 ? ' ' : 's ') . implode(', ', $pending) . " not applied yet - run php scripts/update_cli.php --update_db, then check again.";
+}
+
 // What stops working after a move (works again on moving back) - see DEPLOYMENT.md
 $settings = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT config_mail_oauth_client_secret, config_smtp_provider, config_imap_provider FROM settings WHERE company_id = 1"));
 $after = [];
 if (($settings['config_mail_oauth_client_secret'] ?? '') === 'mit-m365-certificate') {
+    $warnings[] = "Mail signs in to Microsoft 365 with our certificate: on stock ITFlow mail stops until a client secret is set (see the list below).";
     $after[] = "Microsoft 365 email: signs in with our certificate and sends/receives through Graph. On stock ITFlow add a client secret to the app in Entra and paste it under Settings > Mail > OAuth (and SMTP AUTH / IMAP must be enabled for the mailbox).";
 }
+// A table or column that is not there yet (an update not run) counts as none - mysqli throws on it in PHP 8.1+
 $count = function ($sql) use ($mysqli) {
-    $r = @mysqli_query($mysqli, $sql);
-    return $r ? intval(mysqli_fetch_row($r)[0]) : 0;
+    try {
+        $r = mysqli_query($mysqli, $sql);
+        return $r ? intval(mysqli_fetch_row($r)[0]) : 0;
+    } catch (Throwable $e) {
+        return 0;
+    }
 };
 if ($n = $count("SELECT COUNT(*) FROM mit_outlook_links")) {
     $after[] = "Outlook calendars: $n connected - sync stops; ITFlow's events already in Outlook stay until deleted (they have the ITFlow category).";
 }
 if ($n = $count("SELECT COUNT(*) FROM tickets WHERE ticket_schedule_end IS NOT NULL")) {
-    $after[] = "Booking lengths: $n bookings have an end time - stock ITFlow shows its default length instead.";
+    $after[] = "Schedule lengths: $n scheduled tickets have an end time - stock ITFlow shows its default length instead.";
 }
 $n = $count("SELECT COUNT(*) FROM recurring_tickets WHERE recurring_ticket_by_day IS NOT NULL") + $count("SELECT COUNT(*) FROM calendar_events WHERE event_repeat_by_day IS NOT NULL");
 if ($n) {
@@ -143,14 +211,14 @@ if ($n = $count("SELECT COUNT(*) FROM mit_ticket_parts")) {
     $after[] = "Ticket parts: $n part" . ($n === 1 ? '' : 's') . " on tickets are not shown by stock ITFlow (billed ones are ordinary invoice lines and stay). Products' \"Order from\" vendor is not shown either.";
 }
 if ($n = $count("SELECT COUNT(*) FROM mit_ticket_techs tt JOIN tickets t ON t.ticket_id = tt.ticket_id WHERE t.ticket_resolved_at IS NULL AND t.ticket_closed_at IS NULL")) {
-    $after[] = "Additional techs: $n helpers on open tickets - stock ITFlow keeps only the lead (assigned) tech; helpers and their own bookings are not shown.";
+    $after[] = "Additional agents: $n on open tickets - stock ITFlow keeps only the assigned agent; the others and their own scheduled times are not shown.";
 }
 $n = $count("SELECT COUNT(*) FROM quote_items WHERE item_cost IS NOT NULL OR item_image IS NOT NULL") + $count("SELECT COUNT(*) FROM products WHERE product_cost IS NOT NULL OR product_image IS NOT NULL");
 if ($n) {
     $after[] = "Quote pricing and images: $n quote lines / products have our cost or an image - stock ITFlow shows the customer prices only, without the images (the files stay in uploads/mit_images).";
 }
 if ($n = $count("SELECT COUNT(*) FROM mit_user_preferences")) {
-    $after[] = "Per-person settings - calendar view, tech colours, ticket page layout ($n saved) - are not used by stock ITFlow.";
+    $after[] = "Per-person settings - calendar view, agent colors, ticket page layout, timesheet choices ($n saved) - are not used by stock ITFlow.";
 }
 
 echo "Stock ITFlow portability check - database $version, ITFlow schema " . LATEST_DATABASE_VERSION . " (db.sql)\n\n";

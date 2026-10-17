@@ -7,10 +7,12 @@
 
 require_once '../../../includes/modal_header.php';
 
+mitModuleRequire('timesheets', true);
+
 $user_id = intval($_GET['user_id'] ?? 0);
 $bank = mitLeaveBanks(true)[intval($_GET['bank_id'] ?? 0)] ?? null;
 if (!mitTsReady() || !$bank || !mitTsMaySee($user_id)) {
-    exit('<div class="modal-body">You cannot see that.</div>');
+    exit(json_encode(['error' => 'You cannot see that.']));
 }
 $person = mitTsUsers([$user_id])[$user_id] ?? ['user_name' => ''];
 $balance = mitLeaveBalance($user_id, $bank);

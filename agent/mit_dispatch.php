@@ -12,6 +12,9 @@ require_once "includes/inc_all.php";
 
 if (!mitDispatchCan()) {
     enforceUserPermission('module_support', 2);
+    // Support edit but ticketing or Dispatch is switched off
+    flashAlert('Dispatch is switched off (Admin > Settings > Modules).', 'error');
+    redirect('/agent/calendar.php');
 }
 
 $techs = mitDispatchTechs();
@@ -50,12 +53,14 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
     data-state="<?= escapeHtml(json_encode($state)) ?>"
     data-first-day="<?= $first_day ?>"
     data-default-minutes="<?= CALENDAR_TICKET_MINUTES ?>"
+    data-lengths="<?= escapeHtml(json_encode(MIT_DISPATCH_LENGTHS)) ?>"
+    data-business-hours="<?= escapeHtml(json_encode(mitDispatchBusinessHours())) ?>"
     data-contact-default="<?= intval($config_ticket_client_general_notifications ?? 0) === 1 ? 1 : 0 ?>"
     data-initial-date="<?= calendarIsDate($_GET['date'] ?? '') ? escapeHtml($_GET['date']) : date('Y-m-d') ?>">
 
     <div class="card mb-3">
         <div class="card-header bg-dark py-2 d-flex flex-wrap align-items-center gap-2">
-            <h3 class="card-title mt-2 me-auto"><i class="fas fa-fw fa-route me-2"></i>Dispatch <span class="fw-normal opacity-75 ms-2 small" data-md-title></span></h3>
+            <h3 class="card-title mt-2 me-auto"><i class="fas fa-fw fa-people-arrows me-2"></i>Dispatch <span class="fw-normal opacity-75 ms-2 small" data-md-title></span></h3>
             <div class="btn-group btn-group-sm" role="group" aria-label="View">
                 <button type="button" class="btn btn-light" data-md-view="day">Day</button>
                 <button type="button" class="btn btn-light" data-md-view="week">Week</button>
@@ -67,7 +72,7 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
             </div>
             <input type="date" class="form-control form-control-sm w-auto" data-md-date aria-label="Go to date">
             <div class="dropdown">
-                <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside"><i class="fas fa-users me-2"></i>Techs <span data-md-tech-count></span></button>
+                <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside"><i class="fas fa-users me-2"></i>Agents <span data-md-tech-count></span></button>
                 <div class="dropdown-menu dropdown-menu-end p-2" style="max-height: 60vh; overflow-y: auto; min-width: 220px">
                     <?php foreach ($techs as $tech) { ?>
                         <div class="form-check">
@@ -90,8 +95,8 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
             <div class="card mb-0">
                 <div class="card-header p-2">
                     <ul class="nav nav-pills nav-fill small" role="tablist">
-                        <li class="nav-item"><a class="nav-link py-1" href="#" data-md-tab="unassigned">No tech <span class="badge text-bg-danger ms-1" data-md-count="unassigned"></span></a></li>
-                        <li class="nav-item"><a class="nav-link py-1" href="#" data-md-tab="unbooked">Not booked <span class="badge text-bg-warning ms-1" data-md-count="unbooked"></span></a></li>
+                        <li class="nav-item"><a class="nav-link py-1" href="#" data-md-tab="unassigned">No agent <span class="badge text-bg-danger ms-1" data-md-count="unassigned"></span></a></li>
+                        <li class="nav-item"><a class="nav-link py-1" href="#" data-md-tab="unbooked">Not scheduled <span class="badge text-bg-warning ms-1" data-md-count="unbooked"></span></a></li>
                     </ul>
                     <div class="mt-2 d-flex flex-column gap-1">
                         <input type="search" class="form-control form-control-sm" placeholder="Search tickets" data-md-filter="q" aria-label="Search">
@@ -112,7 +117,7 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
                     </div>
                 </div>
                 <div class="card-body p-2 mit-dispatch-queue" data-md-queue></div>
-                <div class="card-footer small text-muted py-2">Drag a ticket onto a tech and time. Drag a booking back here to take it off the schedule.</div>
+                <div class="card-footer small text-muted py-2">Drag a ticket onto an agent and time. Drag scheduled work back here to take it off the schedule.</div>
             </div>
         </div>
         <div class="col-lg-9">

@@ -28,7 +28,7 @@ ob_start();
     <h5 class="modal-title"><i class="fas fa-fw fa-edit me-2"></i>Editing Line Item: <strong><?= $item_name ?></strong></h5>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
 </div>
-<form action="post.php" method="post" autocomplete="off" enctype="multipart/form-data">
+<form action="post.php" method="post" autocomplete="off" enctype="multipart/form-data"><?php // Mountaineer IT: multipart for the image ?>
     <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
     <input type="hidden" name="item_id" value="<?= $item_id ?>">
     <input type="hidden" name="product_id" value="<?= $product_id ?>">
@@ -65,7 +65,7 @@ ob_start();
         </div>
 
         <?php $mit_extra = mitQuoteColumnsReady() ? mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT item_cost, item_price_method, item_price_percent, item_image FROM quote_items WHERE item_id = $item_id")) : null; // Mountaineer IT ?>
-        <?php if ($mit_extra !== null) { ?>
+        <?php if ($mit_extra !== null) { // Mountaineer IT: our cost, pricing, image ?>
             <?= mitPricingFields(['item_cost', 'item_price_method', 'item_price_percent'], $mit_extra['item_cost'], $mit_extra['item_price_method'], $mit_extra['item_price_percent']) ?>
             <?= mitQuoteSettings()['show_images'] ? mitImageField('item_image', $mit_extra['item_image']) : '' ?>
         <?php } ?>

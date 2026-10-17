@@ -397,7 +397,7 @@ if (isset($_GET['quote_id'])) {
                                     <tr class="d-print-none" <?php if ($quote_status == "Invoiced" || $quote_status == "Accepted" || $quote_status == "Declined" || lookupUserPermission("module_sales") <= 1) {
                                                                     echo "hidden";
                                                                 } ?>>
-                                        <form action="post.php" method="post" autocomplete="off" enctype="multipart/form-data">
+                                        <form action="post.php" method="post" autocomplete="off" enctype="multipart/form-data"><?php // Mountaineer IT: multipart for the image ?>
                                             <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
                                             <input type="hidden" name="quote_id" value="<?= $quote_id ?>">
                                             <input type="hidden" id="product_id" name="product_id" value="0">

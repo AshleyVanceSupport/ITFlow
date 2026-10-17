@@ -8,6 +8,8 @@
 
 require_once "includes/inc_all.php";
 
+mitModuleRequire('procurement');
+
 enforceUserPermission('module_procurement');
 $can_edit = mitProcLevel() >= 2;
 
@@ -15,9 +17,9 @@ $vendor_filter = intval($_GET['vendor'] ?? 0);
 $client_filter = intval($_GET['client'] ?? 0);
 $items = mitProcWaitingItems($vendor_filter, $client_filter);
 
-$vendors = mysqli_fetch_all(mysqli_query($mysqli, "SELECT vendor_id, vendor_name FROM vendors WHERE vendor_client_id = 0 AND vendor_archived_at IS NULL ORDER BY vendor_name"), MYSQLI_ASSOC);
+$vendors = mitProcVendorRows();
 $drafts = mysqli_fetch_all(mysqli_query($mysqli, "SELECT po_id, po_prefix, po_number, vendor_name FROM mit_purchase_orders LEFT JOIN vendors ON vendors.vendor_id = mit_purchase_orders.vendor_id
-    WHERE status = 'draft' ORDER BY po_id DESC"), MYSQLI_ASSOC);
+    WHERE status = 'draft'" . mitPoScopeSql('mit_purchase_orders.po_id') . " ORDER BY po_id DESC"), MYSQLI_ASSOC);
 $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT DISTINCT clients.client_id, client_name FROM mit_procurement_items proc JOIN clients ON clients.client_id = proc.client_id
     WHERE proc.status = 'waiting'" . clientScopeSql('proc.client_id') . " ORDER BY client_name"), MYSQLI_ASSOC);
 
@@ -138,7 +140,7 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT DISTINCT clients.clien
                                 <button type="submit" name="mit_po_add_items" class="btn btn-outline-primary">Add to draft</button>
                             </div>
                         <?php } ?>
-                        <button type="submit" name="mit_proc_cancel_items" class="btn btn-outline-danger" onclick="return confirm('Take the selected items off the list? They will not be ordered.')">Not needed</button>
+                        <button type="submit" name="mit_proc_cancel_items" class="btn btn-outline-danger confirm-link" data-confirm-title="Take the ticked items off the list?" data-confirm-text="They will not be ordered." data-confirm-button="Not needed">Not needed</button>
                     </div>
                 <?php } ?>
             </form>

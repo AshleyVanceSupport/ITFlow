@@ -40,6 +40,15 @@ function mitProcVendors() {
     return $vendors;
 }
 
+/** Vendors to order from as rows (vendor_id, vendor_name), for the pages' selects. */
+function mitProcVendorRows() {
+    $rows = [];
+    foreach (mitProcVendors() as $vendor_id => $vendor_name) {
+        $rows[] = ['vendor_id' => $vendor_id, 'vendor_name' => $vendor_name];
+    }
+    return $rows;
+}
+
 function mitProcVendorOptions($selected) {
     $html = '<option value="0">- Later -</option>';
     foreach (mitProcVendors() as $vendor_id => $name) {
@@ -51,7 +60,7 @@ function mitProcVendorOptions($selected) {
 /** The product modals' "Order from" field (agent/modals/product/product_add.php / product_edit.php). */
 function mitProductVendorField($product_id) {
     global $mysqli;
-    if (!mitProductVendorReady()) {
+    if (!mitProductVendorReady() || !mitProcOn()) {
         return '';
     }
     $current = intval($product_id) ? intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT product_vendor_id FROM products WHERE product_id = " . intval($product_id)))[0] ?? 0) : 0;
@@ -197,7 +206,7 @@ function mitTicketParts($ticket_id) {
     if (!mitProcReady() || !mitTicketPartsReady()) {
         return [];
     }
-    $result = mysqli_query($mysqli, "SELECT parts.*, proc.status AS proc_status, po.po_id, po.po_prefix, po.po_number, po.status AS po_status, l.received_qty, l.quantity AS po_qty,
+    $result = mysqli_query($mysqli, "SELECT parts.part_id, parts.ticket_id, parts.client_id, parts.product_id, parts.asset_id, parts.name, parts.description, parts.quantity, parts.unit_cost, parts.unit_price, parts.tax_id, parts.source, parts.proc_item_id, parts.invoice_id, parts.invoice_item_id, parts.billed_at, parts.created_by, parts.created_at, proc.status AS proc_status, po.po_id, po.po_prefix, po.po_number, po.status AS po_status, l.received_qty, l.quantity AS po_qty,
             invoice_prefix, invoice_number, invoice_status, asset_name
         FROM mit_ticket_parts parts
         LEFT JOIN mit_procurement_items proc ON proc.item_id = parts.proc_item_id
@@ -253,7 +262,7 @@ function mitTicketPartStatus(array $part) {
 
 /** The ticket page's Parts box (agent/ticket.php, side column, above Linked). */
 function mitTicketPartsCard(array $ticket, $can_edit) {
-    if (!mitProcReady() || !mitTicketPartsReady()) {
+    if (!mitProcOn() || !mitTicketPartsReady()) {
         return '';
     }
     $ticket_id = intval($ticket['ticket_id']);
@@ -303,10 +312,30 @@ function mitTicketPartsCard(array $ticket, $can_edit) {
 function mitProductStockTake($product_id, $qty, $note) {
     global $mysqli;
     $product_id = intval($product_id);
-    if (!$product_id || getFieldById('products', $product_id, 'product_type') !== 'product') {
+    if (!mitProductIsTangible($product_id)) {
         return;
     }
+    // product_stock.stock_qty is whole units (ITFlow's column), so part quantities are rounded for it
     mysqli_query($mysqli, "INSERT INTO product_stock SET stock_qty = " . (0 - round((float) $qty)) . ", stock_note = '" . escapeSql(mb_substr($note, 0, 500)) . "', stock_product_id = $product_id");
+}
+
+/** May the signed-in agent see what we pay (costs on ticket parts)? Procurement or Sales access. */
+function mitPartsSeeCost() {
+    return mitProcLevel() >= 1 || lookupUserPermission('module_sales') >= 1;
+}
+
+/** Products' stock on the shelf, product_id => qty, in one query. */
+function mitProductStocks(array $product_ids) {
+    global $mysqli;
+    $product_ids = array_filter(array_map('intval', $product_ids));
+    $stocks = [];
+    if ($product_ids) {
+        $result = mysqli_query($mysqli, "SELECT stock_product_id, SUM(stock_qty) AS qty FROM product_stock WHERE stock_product_id IN (" . implode(',', $product_ids) . ") GROUP BY stock_product_id");
+        while ($row = mysqli_fetch_assoc($result)) {
+            $stocks[intval($row['stock_product_id'])] = (float) $row['qty'];
+        }
+    }
+    return $stocks;
 }
 
 /** A product's stock on the shelf. */
@@ -330,10 +359,16 @@ function mitTicketPartSave(array $ticket, array $post, $part_id = 0) {
         return [false, 'A part needs a name and a quantity.'];
     }
     $price = round((float) str_replace([',', '$'], '', (string) ($post['unit_price'] ?? '0')), 2);
-    $cost_raw = trim(str_replace([',', '$'], '', (string) ($post['unit_cost'] ?? '')));
-    $cost = $cost_raw === '' || !is_numeric($cost_raw) ? null : round((float) $cost_raw, 2);
     $source = isset(MIT_PART_SOURCES[$post['source'] ?? '']) ? $post['source'] : 'stock';
     $product_id = intval($post['product_id'] ?? 0);
+    if (isset($post['unit_cost'])) {
+        $cost_raw = trim(str_replace([',', '$'], '', (string) $post['unit_cost']));
+        $cost = $cost_raw === '' || !is_numeric($cost_raw) || (float) $cost_raw < 0 ? null : round((float) $cost_raw, 2);
+    } else {
+        // No cost field (the agent cannot see costs - mitPartsSeeCost): the part keeps its cost, or takes the product's
+        $old_cost = $part_id ? (mitTicketParts($ticket['ticket_id'])[intval($part_id)]['unit_cost'] ?? null) : null;
+        $cost = $old_cost !== null ? (float) $old_cost : (mitProductsInfo([$product_id])[$product_id]['cost'] ?? null);
+    }
     $tax_id = intval($post['tax_id'] ?? 0);
     $asset_id = intval($post['asset_id'] ?? 0);
     if ($asset_id && intval(getFieldById('assets', $asset_id, 'asset_client_id')) !== $client_id) {
@@ -367,8 +402,8 @@ function mitTicketPartSave(array $ticket, array $post, $part_id = 0) {
     }
 
     $warning = '';
-    if ($source === 'stock' && $product_id) {
-        $left = mitProductStock($product_id) - $qty;
+    if ($source === 'stock' && mitProductIsTangible($product_id)) {
+        $left = mitProductStock($product_id) - round($qty);
         mitProductStockTake($product_id, $qty, "Used on ticket $reference");
         if ($left < 0) {
             $warning = ' Stock for this product is now ' . mitQty($left) . ' - check the shelf count.';
@@ -377,7 +412,7 @@ function mitTicketPartSave(array $ticket, array $post, $part_id = 0) {
     if ($source === 'order') {
         $proc_status = $old['proc_status'] ?? null;
         if ($old && $old['source'] === 'order' && $proc_status === 'waiting') {
-            mysqli_query($mysqli, "UPDATE mit_procurement_items SET name = '" . escapeSql(mb_substr($name, 0, 255)) . "', quantity = $qty, unit_cost = " . ($cost === null ? 'NULL' : $cost) . ",
+            mysqli_query($mysqli, "UPDATE mit_procurement_items SET name = '" . escapeSql(mb_substr($name, 0, 255)) . "', description = " . ($description === '' ? 'NULL' : "'" . escapeSql($description) . "'") . ", quantity = $qty, unit_cost = " . ($cost === null ? 'NULL' : $cost) . ",
                 vendor_id = " . (isset(mitProcVendors()[$vendor_id]) ? $vendor_id : 0) . " WHERE item_id = " . intval($old['proc_item_id']));
         } elseif (!$old || $old['source'] !== 'order' || $proc_status === 'cancelled') {
             $proc_item_id = mitProcAddItem(['source' => 'ticket', 'ticket_id' => $ticket_id, 'client_id' => $client_id, 'project_id' => intval($ticket['ticket_project_id'] ?? 0),
@@ -390,6 +425,7 @@ function mitTicketPartSave(array $ticket, array $post, $part_id = 0) {
     mysqli_query($mysqli, "INSERT INTO ticket_replies SET ticket_reply = '" . escapeSql(($old ? 'Part changed: ' : 'Part added: ') . $what) . "', ticket_reply_type = 'Internal', ticket_reply_time_worked = '00:00:00',
         ticket_reply_by = " . intval($session_user_id) . ", ticket_reply_ticket_id = $ticket_id");
     logTicketHistory($ticket_id, escapeSql(mitProcWho() . ($old ? ' changed part ' : ' added part ') . $what));
+    logAudit('Ticket', 'Edit', escapeSql(mitProcWho() . ($old ? ' changed part ' : ' added part ') . "$what on ticket $reference"), $client_id, $ticket_id);
     return [true, ($old ? 'Part saved' : 'Part added') . ($source === 'order' ? ' - it is on the list to order' : '') . '.' . $warning];
 }
 
@@ -412,6 +448,7 @@ function mitTicketPartRemove(array $ticket, $part_id) {
     mysqli_query($mysqli, "DELETE FROM mit_ticket_parts WHERE part_id = " . intval($part_id));
     mysqli_query($mysqli, "INSERT INTO ticket_replies SET ticket_reply = '" . escapeSql('Part removed: ' . mitQty($part['quantity']) . ' × ' . $part['name']) . "', ticket_reply_type = 'Internal',
         ticket_reply_time_worked = '00:00:00', ticket_reply_by = " . intval($session_user_id) . ", ticket_reply_ticket_id = " . intval($ticket['ticket_id']));
+    logAudit('Ticket', 'Edit', escapeSql(mitProcWho() . ' removed part ' . mitQty($part['quantity']) . ' × ' . $part['name'] . ' from ticket ' . ticketReference($ticket)), intval($ticket['ticket_client_id']), intval($ticket['ticket_id']));
     return [true, 'Part removed'];
 }
 
@@ -467,8 +504,59 @@ function mitTicketPartsBill(array $ticket, array $part_ids, array $prices, $invo
     // The invoice's amount: its lines less its discount (as ITFlow's add-item does)
     mysqli_query($mysqli, "UPDATE invoices SET invoice_amount = (SELECT COALESCE(SUM(item_total), 0) FROM invoice_items WHERE item_invoice_id = $invoice_id) - invoice_discount_amount WHERE invoice_id = $invoice_id");
     $reference = $invoice['invoice_prefix'] . $invoice['invoice_number'];
-    mysqli_query($mysqli, "INSERT INTO ticket_replies SET ticket_reply = '" . escapeSql('Billed ' . count($parts) . ' part' . (count($parts) === 1 ? '' : 's') . ' on <a href="invoice.php?invoice_id=' . $invoice_id . '">' . escapeHtml($reference) . '</a>.') . "',
+    mysqli_query($mysqli, "INSERT INTO ticket_replies SET ticket_reply = '" . mitSqlHtml('Billed ' . count($parts) . ' part' . (count($parts) === 1 ? '' : 's') . ' on <a href="invoice.php?invoice_id=' . $invoice_id . '">' . escapeHtml($reference) . '</a>.') . "',
         ticket_reply_type = 'Internal', ticket_reply_time_worked = '00:00:00', ticket_reply_by = " . intval($session_user_id) . ", ticket_reply_ticket_id = $ticket_id");
     logAudit('Invoice', 'Edit', escapeSql(mitProcWho() . ' billed ' . count($parts) . ' part(s) from ticket ' . ticketReference($ticket) . " on $reference"), $client_id, $invoice_id);
     return [$invoice_id, count($parts) . ' part' . (count($parts) === 1 ? '' : 's') . ' billed on ' . escapeHtml($reference)];
+}
+
+/*
+ * ---------- tidying up after ITFlow deletes things (cron/mit_procurement_tidy.php) ----------
+ */
+
+/**
+ * Hook before ITFlow deletes a ticket (functions/ticket.php ticketDeleteForGood, and the client
+ * delete in agent/post/client.php): parts taken from stock and not yet billed go back on the shelf.
+ * The part rows themselves go with the ticket (ON DELETE CASCADE).
+ */
+function mitTicketPartsDeleting($ticket_id) {
+    global $mysqli;
+    $ticket_id = intval($ticket_id);
+    if (!$ticket_id || !mitTicketPartsReady()) {
+        return;
+    }
+    $result = mysqli_query($mysqli, "SELECT product_id, quantity FROM mit_ticket_parts
+        WHERE ticket_id = $ticket_id AND source = 'stock' AND invoice_id = 0 AND product_id > 0");
+    while ($part = mysqli_fetch_assoc($result)) {
+        mitProductStockTake($part['product_id'], -$part['quantity'], "Returned - ticket $ticket_id was deleted");
+    }
+}
+
+/**
+ * ITFlow deletes clients and invoice lines without knowing about our rows, so once a day:
+ *   - items still waiting to order for a ticket or client that is gone: cancelled (one already on a PO stays,
+ *     as the order is real);
+ *   - parts billed on an invoice line that is gone: free to bill again.
+ * Safe to run any number of times. Returns lines for the log.
+ */
+function mitProcTidy() {
+    global $mysqli;
+    $log = [];
+    if (!mitProcReady() || !mitTicketPartsReady()) {
+        return $log;
+    }
+    // A deleted ticket's parts go with it (foreign key, ON DELETE CASCADE) after mitTicketPartsDeleting
+    // has put their stock back - so only the items to order and invoice links are left to tidy here
+    mysqli_query($mysqli, "UPDATE mit_procurement_items proc SET status = 'cancelled', note = CONCAT_WS(' - ', NULLIF(note, ''), 'Its ticket or client was deleted')
+        WHERE status = 'waiting' AND ((ticket_id > 0 AND NOT EXISTS (SELECT 1 FROM tickets WHERE tickets.ticket_id = proc.ticket_id))
+            OR (client_id > 0 AND NOT EXISTS (SELECT 1 FROM clients WHERE clients.client_id = proc.client_id)))");
+    if (($n = mysqli_affected_rows($mysqli)) > 0) {
+        $log[] = "Cancelled $n item(s) to order for deleted tickets or clients";
+    }
+    mysqli_query($mysqli, "UPDATE mit_ticket_parts parts SET invoice_id = 0, invoice_item_id = 0, billed_at = NULL
+        WHERE invoice_item_id > 0 AND NOT EXISTS (SELECT 1 FROM invoice_items WHERE invoice_items.item_id = parts.invoice_item_id)");
+    if (($n = mysqli_affected_rows($mysqli)) > 0) {
+        $log[] = "Freed $n part(s) whose invoice line was deleted";
+    }
+    return $log;
 }

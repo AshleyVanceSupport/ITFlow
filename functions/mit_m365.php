@@ -11,7 +11,7 @@
  *     to sign in with yet). That sign-in is used only to create the app and is then dropped.
  *  2. The app is created with this server's sign-in addresses, the delegated permissions for
  *     the mailbox (IMAP/SMTP) and each person's Outlook calendar, admin consent for the whole
- *     organisation, and a certificate (no client secret).
+ *     organization, and a certificate (no client secret).
  *  3. ITFlow's own mail settings are pointed at it. The client secret field holds a marker
  *     (MIT_M365_CERT_SECRET) so ITFlow's checks pass; every token request to Microsoft goes
  *     through mitMicrosoftTokenFields(), which swaps the marker for a signed certificate
@@ -34,7 +34,7 @@ defined('MIT_M365_GRAPH') || define('MIT_M365_GRAPH', 'https://graph.microsoft.c
 
 /** Microsoft's public "Microsoft Graph Command Line Tools" client - used only for the one-time setup sign-in. */
 const MIT_M365_BOOTSTRAP_CLIENT = '14d82eec-204b-4c2f-b7e8-296a70dab67e';
-const MIT_M365_BOOTSTRAP_SCOPES = 'https://graph.microsoft.com/Application.ReadWrite.All https://graph.microsoft.com/DelegatedPermissionGrant.ReadWrite.All https://graph.microsoft.com/User.Read offline_access openid profile';
+const MIT_M365_BOOTSTRAP_SCOPES = 'https://graph.microsoft.com/Application.ReadWrite.All https://graph.microsoft.com/DelegatedPermissionGrant.ReadWrite.All https://graph.microsoft.com/User.Read';
 
 /** What the client secret field holds when the app signs in with its certificate. */
 const MIT_M365_CERT_SECRET = 'mit-m365-certificate';
@@ -58,31 +58,80 @@ const MIT_M365_RENEW_DAYS = 30;
  * ---------- our settings (mit_settings) ----------
  */
 
-function mitSetting($name, $default = null) {
+/** Every row of mit_settings - name => value ([] when the table is not there yet). Use mitSetting() for one. */
+function mitSettingsAll() {
     global $mysqli;
-    $name = mysqli_real_escape_string($mysqli, (string) $name);
+    $all = [];
     try {
-        $result = mysqli_query($mysqli, "SELECT setting_value FROM mit_settings WHERE setting_name = '$name' LIMIT 1");
+        $result = mysqli_query($mysqli, "SELECT setting_name, setting_value FROM mit_settings");
+        while ($result && $row = mysqli_fetch_assoc($result)) {
+            $all[$row['setting_name']] = $row['setting_value'];
+        }
     } catch (Throwable $e) {
         // mit_settings not there yet (code updated, database update still to run): nothing is set up,
         // so mail and everything else carry on exactly as stock ITFlow
-        return $default;
     }
-    $row = $result ? mysqli_fetch_assoc($result) : null;
-    return $row ? $row['setting_value'] : $default;
+    return $all;
 }
 
+/** Keep the request's copy of mit_settings in step with a write: $value null removes the name(s). */
+function mitSettingsRemember($name, $value, $prefix = false) {
+    $cache = &mitSettingsCacheRef();
+    if ($prefix) {
+        foreach (array_keys($cache) as $key) {
+            if (strpos($key, $name) === 0) {
+                unset($cache[$key]);
+            }
+        }
+    } elseif ($value === null) {
+        unset($cache[$name]);
+    } else {
+        $cache[$name] = (string) $value;
+    }
+}
+
+/**
+ * The request's copy of mit_settings, read once (the table is small) and kept in step by our setters.
+ * $reload reads it again - the cron dispatcher runs every job in one process, so each job starts with this.
+ */
+function &mitSettingsCacheRef($reload = false) {
+    static $ref = null;
+    if ($ref === null || $reload) {
+        $ref = mitSettingsAll();
+    }
+    return $ref;
+}
+
+/** One of our settings (mit_settings), or $default when it is not set. */
+function mitSetting($name, $default = null) {
+    $cache = &mitSettingsCacheRef();
+    return array_key_exists((string) $name, $cache) ? $cache[(string) $name] : $default;
+}
+
+/** Set one of our settings. */
 function mitSetSetting($name, $value) {
     global $mysqli;
-    $name = mysqli_real_escape_string($mysqli, (string) $name);
-    $value = mysqli_real_escape_string($mysqli, (string) $value);
-    mysqli_query($mysqli, "INSERT INTO mit_settings SET setting_name = '$name', setting_value = '$value' ON DUPLICATE KEY UPDATE setting_value = '$value'");
+    // Not escapeSql(): it strips tags and trims, and values here (certificates, encrypted tokens, addresses) must come back exactly
+    $name_sql = mysqli_real_escape_string($mysqli, (string) $name);
+    $value_sql = mysqli_real_escape_string($mysqli, (string) $value);
+    mysqli_query($mysqli, "INSERT INTO mit_settings SET setting_name = '$name_sql', setting_value = '$value_sql' ON DUPLICATE KEY UPDATE setting_value = '$value_sql'");
+    mitSettingsRemember((string) $name, $value);
 }
 
+/** Remove one of our settings, by its exact name. */
+function mitDeleteSetting($name) {
+    global $mysqli;
+    $name_sql = mysqli_real_escape_string($mysqli, (string) $name);
+    mysqli_query($mysqli, "DELETE FROM mit_settings WHERE setting_name = '$name_sql'");
+    mitSettingsRemember((string) $name, null);
+}
+
+/** Remove every one of our settings whose name STARTS WITH $prefix (e.g. 'm365_' - the whole app). For one name use mitDeleteSetting(). */
 function mitDeleteSettings($prefix) {
     global $mysqli;
-    $prefix = mysqli_real_escape_string($mysqli, addcslashes((string) $prefix, '%_\\'));
-    mysqli_query($mysqli, "DELETE FROM mit_settings WHERE setting_name LIKE '$prefix%'");
+    $prefix_sql = mysqli_real_escape_string($mysqli, addcslashes((string) $prefix, '%_\\'));
+    mysqli_query($mysqli, "DELETE FROM mit_settings WHERE setting_name LIKE '$prefix_sql%'");
+    mitSettingsRemember((string) $prefix, null, true);
 }
 
 /** The app as set up, or null: tenant_id, client_id, object_id, name, created_at, created_by, cert_expires, ... */
@@ -102,35 +151,74 @@ function mitM365App() {
  * ---------- secrets at rest ----------
  */
 
-/** The key secrets are encrypted with: from this server's config.php, so a copy of the database alone is not enough. */
+/**
+ * The key secrets are encrypted with: $config_mit_secret_key in config.php - random, made and appended on
+ * first use the way the backup key is (functions/backup.php backupEncryptionKey), never stored in the
+ * database, so a copy of the database alone opens nothing. Returns '' when config.php cannot be written;
+ * mitEncryptSecret then falls back to the older derived key so nothing breaks, and the card says so.
+ */
 function mitSecretKey() {
+    global $config_mit_secret_key;
+    if (!empty($config_mit_secret_key)) {
+        return hash('sha256', 'mit-secret-v2|' . $config_mit_secret_key, true);
+    }
+    $config_file = dirname(__DIR__) . '/config.php';
+    if (!is_writable($config_file)) {
+        return '';
+    }
+    // Re-read rather than trust the global: another request may have just made one, and two keys would orphan the first
+    $existing = @file_get_contents($config_file);
+    if ($existing !== false && preg_match('/\$config_mit_secret_key\s*=\s*[\'"]([^\'"]+)[\'"]/', $existing, $match)) {
+        $config_mit_secret_key = $match[1];
+    } else {
+        $key = randomString(48);
+        $line = "\n// Mountaineer IT: key for the Microsoft 365 certificate and Outlook sign-ins - keep it with the backup key\n"
+            . "\$config_mit_secret_key = '" . $key . "';\n";
+        if (@file_put_contents($config_file, $line, FILE_APPEND | LOCK_EX) === false) {
+            return '';
+        }
+        $config_mit_secret_key = $key;
+    }
+    return hash('sha256', 'mit-secret-v2|' . $config_mit_secret_key, true);
+}
+
+/**
+ * The older keys, for reading what was encrypted before $config_mit_secret_key existed: derived from
+ * $installation_id (which is not secret - it is shown in Admin > Telemetry), and the first Outlook build's.
+ * Values found under them are re-encrypted by mitUpgradeSecrets().
+ */
+function mitSecretLegacyKeys() {
     global $installation_id, $dbpassword;
     $seed = !empty($installation_id) ? $installation_id : (string) ($dbpassword ?? '');
-    return hash('sha256', 'mit-secret|' . $seed, true);
+    return [hash('sha256', 'mit-secret|' . $seed, true), hash('sha256', 'mit-outlook|' . ($installation_id ?? '') . '|' . ($dbpassword ?? ''), true)];
 }
 
-/** Keys secrets may still be encrypted with: the current one, then the first Outlook build's. */
-function mitSecretKeys() {
-    global $installation_id, $dbpassword;
-    return [mitSecretKey(), hash('sha256', 'mit-outlook|' . ($installation_id ?? '') . '|' . ($dbpassword ?? ''), true)];
-}
-
+/**
+ * Encrypt a secret for the database: AES-256-GCM with a random 96-bit nonce. "v2:" + base64(nonce, tag,
+ * ciphertext) under $config_mit_secret_key - or "v1:" under the legacy key if config.php could not be written.
+ */
 function mitEncryptSecret($plain) {
+    $key = mitSecretKey();
+    $version = $key === '' ? 'v1' : 'v2';
+    $key = $key === '' ? mitSecretLegacyKeys()[0] : $key;
     $iv = random_bytes(12);
-    $cipher = openssl_encrypt((string) $plain, 'aes-256-gcm', mitSecretKey(), OPENSSL_RAW_DATA, $iv, $tag);
-    return 'v1:' . base64_encode($iv . $tag . $cipher);
+    $cipher = openssl_encrypt((string) $plain, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag);
+    return "$version:" . base64_encode($iv . $tag . $cipher);
 }
 
-/** The secret, or '' when it cannot be read. */
+/** The secret, or '' when it cannot be read (wrong key, damaged, or not encrypted by mitEncryptSecret). */
 function mitDecryptSecret($stored) {
-    if (strpos((string) $stored, 'v1:') !== 0) {
+    $stored = (string) $stored;
+    $version = substr($stored, 0, 3);
+    if ($version !== 'v1:' && $version !== 'v2:') {
         return '';
     }
     $raw = base64_decode(substr($stored, 3));
     if (strlen($raw) <= 28) {
         return '';
     }
-    foreach (mitSecretKeys() as $key) {
+    $keys = $version === 'v2:' ? [mitSecretKey()] : mitSecretLegacyKeys();
+    foreach (array_filter($keys) as $key) {
         $plain = openssl_decrypt(substr($raw, 28), 'aes-256-gcm', $key, OPENSSL_RAW_DATA, substr($raw, 0, 12), substr($raw, 12, 16));
         if ($plain !== false) {
             return $plain;
@@ -139,10 +227,53 @@ function mitDecryptSecret($stored) {
     return '';
 }
 
+/** Is this an encrypted value (either version)? */
+function mitIsEncrypted($stored) {
+    return in_array(substr((string) $stored, 0, 3), ['v1:', 'v2:'], true);
+}
+
+/**
+ * Re-encrypt what is still under a legacy key with $config_mit_secret_key: the app certificate, a pending
+ * one, the cached mail token and every Outlook sign-in. Cheap when there is nothing to do; run from the
+ * Outlook cron job and the mail settings page. Returns how many values were upgraded.
+ */
+function mitUpgradeSecrets() {
+    global $mysqli;
+    if (mitSecretKey() === '') {
+        return 0;
+    }
+    $done = 0;
+    foreach (['m365_key_pem', 'm365_pending_cert', 'm365_mail_graph_token'] as $name) {
+        $stored = (string) mitSetting($name, '');
+        if (strpos($stored, 'v1:') === 0 && ($plain = mitDecryptSecret($stored)) !== '') {
+            mitSetSetting($name, mitEncryptSecret($plain));
+            $done++;
+        }
+    }
+    try {
+        $result = mysqli_query($mysqli, "SELECT user_id, refresh_token, access_token FROM mit_outlook_links WHERE refresh_token LIKE 'v1:%' OR access_token LIKE 'v1:%'");
+        while ($result && $row = mysqli_fetch_assoc($result)) {
+            $set = [];
+            foreach (['refresh_token', 'access_token'] as $column) {
+                if (strpos((string) $row[$column], 'v1:') === 0 && ($plain = mitDecryptSecret($row[$column])) !== '') {
+                    $set[] = "$column = '" . mysqli_real_escape_string($mysqli, mitEncryptSecret($plain)) . "'";
+                }
+            }
+            if ($set) {
+                mysqli_query($mysqli, "UPDATE mit_outlook_links SET " . implode(', ', $set) . " WHERE user_id = " . intval($row['user_id']));
+                $done++;
+            }
+        }
+    } catch (Throwable $e) {
+        // Database update M004 not run yet - no Outlook sign-ins to upgrade
+    }
+    return $done;
+}
+
 /** The app certificate's private key - kept encrypted (an older build kept it as it was; it is encrypted on first use). */
 function mitM365KeyPem() {
     $stored = (string) mitSetting('m365_key_pem', '');
-    if ($stored !== '' && strpos($stored, 'v1:') !== 0) {
+    if ($stored !== '' && !mitIsEncrypted($stored)) {
         mitSetSetting('m365_key_pem', mitEncryptSecret($stored));
         return $stored;
     }
@@ -296,7 +427,7 @@ function mitMicrosoftTokenFields($url, array $fields) {
 /**
  * Hook for ITFlow's mailbox Connect (admin/post/settings_mail.php): it always asks Microsoft for the
  * consent screen, which only an admin may accept - so a plain mailbox like service@ gets "Need admin
- * approval". Our app is already approved for the whole organisation, so just let them pick the account.
+ * approval". Our app is already approved for the whole organization, so just let them pick the account.
  */
 function mitM365ConnectPrompt($client_id) {
     $app = mitM365App();
@@ -328,7 +459,7 @@ function mitM365DeviceCodePoll($device_code) {
     ]);
     $error = $response['json']['error'] ?? '';
     if ($error === 'authorization_pending' || $error === 'slow_down') {
-        return ['pending' => true];
+        return ['pending' => true, 'slow_down' => $error === 'slow_down'];
     }
     if (!empty($response['json']['access_token'])) {
         return ['token' => $response['json']['access_token']];
@@ -337,6 +468,15 @@ function mitM365DeviceCodePoll($device_code) {
     // AADSTS53003: blocked by Conditional Access (Microsoft's "block device code flow" policy among others)
     $blocked = strpos($description, 'AADSTS53003') !== false || strpos($description, 'AADSTS50199') !== false;
     return ['error' => mitM365Error($response, 'Signing in'), 'blocked' => $blocked];
+}
+
+/** Answer an Admin > Settings > Mail setup step in JSON and stop (admin/post/mit_m365.php). */
+function mitM365Json(array $data, $status = 200) {
+    http_response_code($status);
+    header('Content-Type: application/json');
+    header('Cache-Control: no-store');
+    echo json_encode($data);
+    exit();
 }
 
 /** The tenant id from an access token. */
@@ -380,11 +520,9 @@ function mitM365ResourceScopes($token, $app_id) {
  * at it. Returns the app (mitM365App()) or throws with what went wrong.
  */
 function mitM365Provision($token, $created_by) {
-    global $mysqli;
-
     $tenant_id = mitM365TokenTenant($token);
     if ($tenant_id === '') {
-        throw new RuntimeException('Could not tell which Microsoft 365 organisation that sign-in belongs to.');
+        throw new RuntimeException('Could not tell which Microsoft 365 organization that sign-in belongs to.');
     }
 
     [$access, $graph, $exchange] = mitM365RequiredAccess($token);
@@ -411,22 +549,28 @@ function mitM365Provision($token, $created_by) {
     $client_id = $created['json']['appId'];
     $object_id = $created['json']['id'];
 
-    // Its service principal - a newly created app can take a moment to be visible
-    $sp = null;
-    for ($attempt = 0; $attempt < 5 && !$sp; $attempt++) {
-        if ($attempt) {
-            sleep(3);
+    try {
+        // Its service principal - a newly created app can take a moment to be visible
+        $sp = null;
+        for ($attempt = 0; $attempt < 5 && !$sp; $attempt++) {
+            if ($attempt) {
+                sleep(3);
+            }
+            $response = mitGraph('POST', '/servicePrincipals', $token, ['appId' => $client_id]);
+            if ($response['status'] === 201) {
+                $sp = $response['json']['id'];
+            }
         }
-        $response = mitGraph('POST', '/servicePrincipals', $token, ['appId' => $client_id]);
-        if ($response['status'] === 201) {
-            $sp = $response['json']['id'];
+        if (!$sp) {
+            throw new RuntimeException(mitM365Error($response, 'Creating the app\'s service principal'));
         }
-    }
-    if (!$sp) {
-        throw new RuntimeException(mitM365Error($response, 'Creating the app\'s service principal'));
-    }
 
-    mitM365GrantConsent($token, $sp, $graph, $exchange);
+        mitM365GrantConsent($token, $sp, $graph, $exchange);
+    } catch (Throwable $e) {
+        // Nothing was saved here, so take the half-made app back out rather than leave one behind on every retry
+        mitGraph('DELETE', '/applications/' . rawurlencode($object_id), $token);
+        throw $e;
+    }
 
     mitM365SaveApp($tenant_id, $client_id, $object_id, $cert, $created_by, 'automatic');
     mitSetSetting('m365_permissions_version', MIT_M365_PERMISSIONS_VERSION);
@@ -442,7 +586,7 @@ function mitM365RequiredAccess($token) {
         $entries = [];
         foreach ($wanted as $scope) {
             if (empty($resource['scopes'][$scope])) {
-                throw new RuntimeException("Microsoft did not list the $scope permission in this organisation.");
+                throw new RuntimeException("Microsoft did not list the $scope permission in this organization.");
             }
             $entries[] = ['id' => $resource['scopes'][$scope], 'type' => 'Scope'];
         }
@@ -451,7 +595,7 @@ function mitM365RequiredAccess($token) {
     return [$access, $graph, $exchange];
 }
 
-/** Admin consent for the whole organisation, so nobody is asked to approve it - adds to or replaces earlier consent. */
+/** Admin consent for the whole organization, so nobody is asked to approve it - adds to or replaces earlier consent. */
 function mitM365GrantConsent($token, $sp, array $graph, array $exchange) {
     foreach ([[$graph['id'], MIT_M365_GRAPH_SCOPES], [$exchange['id'], MIT_M365_EXCHANGE_SCOPES]] as [$resource_id, $scopes]) {
         $existing = mitGraph('GET', '/oauth2PermissionGrants?$filter=' . rawurlencode("clientId eq '$sp' and resourceId eq '$resource_id' and consentType eq 'AllPrincipals'"), $token);
@@ -476,7 +620,7 @@ function mitM365GrantConsent($token, $sp, array $graph, array $exchange) {
 
 /**
  * Bring an app set up earlier up to today's permissions (MIT_M365_PERMISSIONS_VERSION), with an
- * admin's sign-in token: the app's permission list and the organisation-wide consent.
+ * admin's sign-in token: the app's permission list and the organization-wide consent.
  */
 function mitM365UpdatePermissions($token) {
     $app = mitM365App();
@@ -484,27 +628,32 @@ function mitM365UpdatePermissions($token) {
         throw new RuntimeException('There is no Microsoft 365 app to update.');
     }
     if (mitM365TokenTenant($token) !== $app['tenant_id']) {
-        throw new RuntimeException('That sign-in belongs to a different Microsoft 365 organisation than the app.');
+        throw new RuntimeException('That sign-in belongs to a different Microsoft 365 organization than the app.');
     }
     [$access, $graph, $exchange] = mitM365RequiredAccess($token);
 
-    $patched = mitGraph('PATCH', '/applications/' . rawurlencode($app['object_id']), $token, ['requiredResourceAccess' => $access]);
+    // The sign-in addresses too, in case ITFlow's address has changed since the app was made
+    $patched = mitGraph('PATCH', '/applications/' . rawurlencode($app['object_id']), $token, ['requiredResourceAccess' => $access, 'web' => ['redirectUris' => mitM365RedirectUris()]]);
     if ($patched['status'] !== 204 && $patched['status'] !== 200) {
         throw new RuntimeException(mitM365Error($patched, 'Updating the app\'s permissions'));
     }
     $found = mitGraph('GET', '/servicePrincipals?$filter=' . rawurlencode("appId eq '{$app['client_id']}'") . '&$select=id', $token);
     $sp = $found['json']['value'][0]['id'] ?? '';
     if ($sp === '') {
-        throw new RuntimeException(mitM365Error($found, 'Finding the app in your organisation'));
+        throw new RuntimeException(mitM365Error($found, 'Finding the app in your organization'));
     }
     mitM365GrantConsent($token, $sp, $graph, $exchange);
 
     mitSetSetting('m365_permissions_version', MIT_M365_PERMISSIONS_VERSION);
-    mitDeleteSettings('m365_mail_graph_');  // the next mail token picks up the new permissions
+    mitDeleteSettings('m365_mail_graph_');  // prefix: the token, its expiry and scopes - the next one picks up the new permissions
     return mitM365App();
 }
 
-/** Keep the app's details and point ITFlow's Microsoft mail settings at it. */
+/**
+ * Keep the app's details and point ITFlow's Microsoft mail settings at it: the client and tenant, and the
+ * certificate marker in place of a client secret. Clears the mailbox's refresh token - the mailbox is
+ * connected again under the new app.
+ */
 function mitM365SaveApp($tenant_id, $client_id, $object_id, array $cert, $created_by, $setup) {
     global $mysqli;
     mitSetSetting('m365_tenant_id', $tenant_id);
@@ -525,6 +674,7 @@ function mitM365SaveApp($tenant_id, $client_id, $object_id, array $cert, $create
         config_mail_oauth_access_token_expires_at = NULL WHERE company_id = 1");
 }
 
+/** Keep a new certificate: its private key encrypted (mitEncryptSecret), thumbprint and expiry. */
 function mitM365StoreCertificate(array $cert) {
     mitSetSetting('m365_cert_pem', $cert['cert_pem']);
     mitSetSetting('m365_key_pem', mitEncryptSecret($cert['key_pem']));
@@ -539,7 +689,7 @@ function mitM365StoreCertificate(array $cert) {
 /** A certificate waiting to be uploaded to a hand-made app registration - made once, kept until used. */
 function mitM365PendingCertificate() {
     $stored = (string) mitSetting('m365_pending_cert', '');
-    $pending = json_decode(strpos($stored, 'v1:') === 0 ? mitDecryptSecret($stored) : $stored, true);
+    $pending = json_decode(mitIsEncrypted($stored) ? mitDecryptSecret($stored) : $stored, true);
     if (!is_array($pending) || empty($pending['cert_pem'])) {
         $pending = mitM365NewCertificate();
         mitSetSetting('m365_pending_cert', mitEncryptSecret(json_encode($pending)));
@@ -569,9 +719,11 @@ function mitM365UseManualApp($tenant_id, $client_id, $object_id, $created_by) {
     if (empty($response['json']['access_token'])) {
         throw new RuntimeException(mitM365Error($response, 'Signing in with the certificate on that app'));
     }
+    // The object ID cannot be checked with this token (it has no Graph permissions of its own); a wrong one only shows
+    // when the certificate is renewed, as a renewal error on the card. The permissions version is not set here either:
+    // it is recorded once the mailbox's token shows the Mail permissions (mitM365MailGraphToken).
     mitM365SaveApp($tenant_id, $client_id, $object_id, $cert, $created_by, 'manual');
-    mitSetSetting('m365_permissions_version', MIT_M365_PERMISSIONS_VERSION);
-    mitDeleteSettings('m365_pending_cert');
+    mitDeleteSetting('m365_pending_cert');
     return mitM365App();
 }
 
@@ -638,10 +790,13 @@ function mitM365RenewCertificate() {
     }
     mitM365StoreCertificate($cert);
     mitSetSetting('m365_renewed_at', date('Y-m-d H:i:s'));
-    mitDeleteSettings('m365_renew_error');
+    mitDeleteSetting('m365_renew_error');
 }
 
-/** Forget the app here, and stop ITFlow's mail using it. The app registration itself stays in the tenant. */
+/**
+ * Forget the app here, stop ITFlow's mail using it, and drop every Outlook calendar connection made through it
+ * (their events stay in Outlook until people delete them). The app registration itself stays in the tenant.
+ */
 function mitM365Forget() {
     global $mysqli;
     $client_id = mysqli_real_escape_string($mysqli, (string) mitSetting('m365_client_id', ''));
@@ -649,6 +804,14 @@ function mitM365Forget() {
         config_mail_oauth_access_token = NULL, config_mail_oauth_access_token_expires_at = NULL
         WHERE company_id = 1 AND config_mail_oauth_client_id = '$client_id'");
     mitDeleteSettings('m365_');
+    // Outlook sign-ins were for this app - they are no use without it
+    try {
+        mysqli_query($mysqli, "DELETE FROM mit_outlook_links");
+        mysqli_query($mysqli, "DELETE FROM mit_outlook_events");
+        mysqli_query($mysqli, "DELETE FROM mit_outlook_busy");
+    } catch (Throwable $e) {
+        // Outlook tables not there yet (database updates M004/M005)
+    }
 }
 
 /*
@@ -673,7 +836,7 @@ function mitM365MailGraphToken($permission) {
         return null;
     }
 
-    $token = mitSetting('m365_mail_graph_token', '');
+    $token = mitDecryptSecret(mitSetting('m365_mail_graph_token', ''));  // '' for an older, unencrypted copy - a new one is fetched
     $expires = mitSetting('m365_mail_graph_expires', '');
     // A token for the refresh token on file - a newly connected mailbox gets a new one
     $for = sha1($row['config_mail_oauth_refresh_token']);
@@ -691,7 +854,7 @@ function mitM365MailGraphToken($permission) {
             throw new RuntimeException(mitM365Error($response, 'Signing in to Microsoft 365 as the mailbox'));
         }
         $token = $response['json']['access_token'];
-        mitSetSetting('m365_mail_graph_token', $token);
+        mitSetSetting('m365_mail_graph_token', mitEncryptSecret($token));
         mitSetSetting('m365_mail_graph_expires', date('Y-m-d H:i:s', time() + intval($response['json']['expires_in'] ?? 3600)));
         mitSetSetting('m365_mail_graph_scopes', (string) ($response['json']['scope'] ?? ''));
         if (!empty($response['json']['refresh_token'])) {
@@ -703,7 +866,7 @@ function mitM365MailGraphToken($permission) {
     }
 
     $scopes = mitM365MailGraphScopes();
-    if (in_array('Mail.Send', $scopes, true) && in_array('Mail.ReadWrite', $scopes, true)) {
+    if (in_array('Mail.Send', $scopes, true) && in_array('Mail.ReadWrite', $scopes, true) && intval($app['permissions_version']) !== MIT_M365_PERMISSIONS_VERSION) {
         // Permissions added by hand in Entra count as an update too
         mitSetSetting('m365_permissions_version', MIT_M365_PERMISSIONS_VERSION);
     }

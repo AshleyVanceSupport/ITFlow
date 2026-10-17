@@ -6,13 +6,15 @@
 
 require_once '../../../includes/modal_header.php';
 
+mitModuleRequire('procurement', true);
+
 $ticket = ticketForModal($_GET['ticket_id'] ?? 0, 2);
 $ticket_id = intval($ticket['ticket_id']);
 $client_id = intval($ticket['ticket_client_id']);
 $part_id = intval($_GET['part_id'] ?? 0);
 $part = $part_id ? (mitTicketParts($ticket_id)[$part_id] ?? null) : null;
 if ($part_id && (!$part || intval($part['invoice_id']))) {
-    exit('<div class="modal-body">That part is billed, or no longer on this ticket.</div>');
+    exit(json_encode(['error' => 'That part is billed, or no longer on this ticket.']));
 }
 $on_po = $part && $part['source'] === 'order' && !in_array($part['proc_status'], [null, 'waiting', 'cancelled'], true);
 $value = function ($key, $default = '') use ($part) {
@@ -22,6 +24,10 @@ $value = function ($key, $default = '') use ($part) {
 $products = mysqli_fetch_all(mysqli_query($mysqli, "SELECT product_id, product_name, product_description, product_price, product_tax_id, product_type"
     . (mitQuoteColumnsReady() ? ', product_cost' : ', NULL AS product_cost') . (mitProductVendorReady() ? ', product_vendor_id' : ', NULL AS product_vendor_id') . "
     FROM products WHERE product_archived_at IS NULL ORDER BY product_name"), MYSQLI_ASSOC);
+$see_cost = mitPartsSeeCost();
+$stocks = mitProductStocks(array_column(array_filter($products, function ($product) {
+    return $product['product_type'] === 'product';
+}), 'product_id'));
 $taxes = mysqli_fetch_all(mysqli_query($mysqli, "SELECT tax_id, tax_name, tax_percent FROM taxes WHERE tax_archived_at IS NULL ORDER BY tax_name"), MYSQLI_ASSOC);
 $assets = $client_id ? mysqli_fetch_all(mysqli_query($mysqli, "SELECT asset_id, asset_name, asset_type FROM assets WHERE asset_client_id = $client_id AND asset_archived_at IS NULL ORDER BY asset_name"), MYSQLI_ASSOC) : [];
 $source = $part['source'] ?? 'stock';
@@ -51,9 +57,9 @@ ob_start();
                 <?php foreach ($products as $product) { ?>
                     <option value="<?= intval($product['product_id']) ?>" <?= intval($part['product_id'] ?? 0) === intval($product['product_id']) ? 'selected' : '' ?>
                         data-name="<?= escapeHtml($product['product_name']) ?>" data-price="<?= number_format((float) $product['product_price'], 2, '.', '') ?>"
-                        data-cost="<?= $product['product_cost'] === null ? '' : number_format((float) $product['product_cost'], 2, '.', '') ?>"
+                        data-cost="<?= !$see_cost || $product['product_cost'] === null ? '' : number_format((float) $product['product_cost'], 2, '.', '') ?>"
                         data-tax="<?= intval($product['product_tax_id']) ?>" data-vendor="<?= intval($product['product_vendor_id']) ?>"
-                        data-stock="<?= $product['product_type'] === 'product' ? mitQty(mitProductStock($product['product_id'])) : '' ?>"><?= escapeHtml($product['product_name']) ?></option>
+                        data-stock="<?= $product['product_type'] === 'product' ? mitQty($stocks[intval($product['product_id'])] ?? 0) : '' ?>"><?= escapeHtml($product['product_name']) ?></option>
                 <?php } ?>
             </select>
             <div class="form-text" data-mit-part-stock></div>
@@ -80,10 +86,12 @@ ob_start();
                 <label class="form-label">Qty <strong class="text-danger">*</strong></label>
                 <input type="text" inputmode="decimal" class="form-control" name="quantity" required value="<?= $part ? mitQty($part['quantity']) : '1' ?>" <?= $on_po ? 'readonly' : '' ?>>
             </div>
-            <div class="col-sm-3">
-                <label class="form-label">Our cost</label>
-                <input type="text" inputmode="decimal" class="form-control" name="unit_cost" placeholder="0.00" value="<?= $part && $part['unit_cost'] !== null ? number_format((float) $part['unit_cost'], 2, '.', '') : '' ?>" data-mit-part-cost>
-            </div>
+            <?php if ($see_cost) { ?>
+                <div class="col-sm-3">
+                    <label class="form-label">Our cost</label>
+                    <input type="text" inputmode="decimal" class="form-control" name="unit_cost" placeholder="0.00" value="<?= $part && $part['unit_cost'] !== null ? number_format((float) $part['unit_cost'], 2, '.', '') : '' ?>" data-mit-part-cost>
+                </div>
+            <?php } ?>
             <div class="col-sm-3">
                 <label class="form-label">Price (each)</label>
                 <input type="text" inputmode="decimal" class="form-control" name="unit_price" placeholder="0.00" value="<?= $part ? number_format((float) $part['unit_price'], 2, '.', '') : '' ?>" data-mit-part-price>
@@ -145,7 +153,7 @@ ob_start();
                 if (o && o.value !== '0') {
                     form.querySelector('[data-mit-part-name]').value = o.dataset.name || '';
                     form.querySelector('[data-mit-part-price]').value = o.dataset.price || '';
-                    if (o.dataset.cost) {
+                    if (o.dataset.cost && form.querySelector('[data-mit-part-cost]')) {
                         form.querySelector('[data-mit-part-cost]').value = o.dataset.cost;
                     }
                     form.querySelector('[data-mit-part-tax]').value = o.dataset.tax || '0';

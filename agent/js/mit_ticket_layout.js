@@ -1,12 +1,14 @@
 /*
- * Mountaineer IT - the ticket page's customisable layout (functions/mit_ticket_layout.php).
+ * Mountaineer IT - the ticket page's customizable layout (functions/mit_ticket_layout.php).
  *
  * Finds ITFlow's boxes on the page, names them, and puts them where the saved layout says: how the
  * columns share the page (main wide, even, side wider, one column, or three columns - an extra one
  * on the left), which column each box is in and in what order, full or half width (two half boxes
- * sit side by side), collapsed or not. "Customise layout" (in the ticket's menu, or under the right
- * column) lets you drag them about, then save it for yourself or, as an admin, as the company default. The page's markup is ITFlow's own; nothing here changes it
- * server-side, so a box this script does not know simply stays where ITFlow put it.
+ * sit side by side), collapsed or not. "Customize layout" (in the ticket's menu, or under the right
+ * column) lets you drag them about, then save it for yourself or, as an admin, as the company default.
+ * The page's markup is ITFlow's own; nothing here changes it server-side, so a box this script does
+ * not know simply stays where ITFlow put it. Boxes are found by their title icon (ICONS below) -
+ * ITFlow's, plus our Parts box (fa-microchip, functions/mit_procurement_parts.php).
  */
 (function () {
     'use strict';
@@ -38,14 +40,16 @@
         + ' .ticket-layout.mit-cols-single { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; grid-template-areas: "header" "main" "side"; }'
         + ' .ticket-layout.mit-cols-three { grid-template-columns: 300px minmax(0, 1fr) 300px; grid-template-areas: "left header side" "left main side"; }'
         + ' .mit-layout-left { display: block; grid-area: left; min-width: 0; }'
-        + ' .ticket-layout.mit-layout-on > .ticket-layout-main, .ticket-layout.mit-layout-on > .ticket-layout-side, .ticket-layout.mit-layout-on.mit-cols-three > .mit-layout-left { display: flex; flex-wrap: wrap; align-content: flex-start; column-gap: 1rem; }'
+        + ' .ticket-layout.mit-layout-on > .ticket-layout-main, .ticket-layout.mit-layout-on > .ticket-layout-side,'
+        + ' .ticket-layout.mit-layout-on.mit-cols-three > .mit-layout-left { display: flex; flex-wrap: wrap; align-content: flex-start; column-gap: 1rem; }'
         + ' .ticket-layout.mit-layout-on > :is(.ticket-layout-main, .ticket-layout-side, .mit-layout-left) > * { width: 100%; }'
         + ' .ticket-layout.mit-layout-on > :is(.ticket-layout-main, .ticket-layout-side, .mit-layout-left) > .mit-half { width: calc(50% - .5rem); }'
         + '}'
         + '@media (min-width: 1400px) { .ticket-layout.mit-cols-three { grid-template-columns: 340px minmax(0, 1fr) 340px; } }'
         + '.mit-layout-editing [data-mit-box] { outline: 2px dashed var(--bs-primary-border-subtle); outline-offset: 2px; border-radius: .375rem; margin-bottom: 1rem; }'
         + '.mit-layout-editing .ticket-layout-main, .mit-layout-editing .ticket-layout-side, .mit-layout-editing .mit-layout-left { min-height: 8rem; }'
-        + '.mit-layout-editing.mit-cols-three .mit-layout-left:empty::before { content: "Drag boxes here"; display: block; width: 100%; padding: 2rem 1rem; text-align: center; color: var(--bs-secondary-color); border: 2px dashed var(--bs-border-color); border-radius: .375rem; }'
+        + '.mit-layout-editing.mit-cols-three .mit-layout-left:empty::before { content: "Drag boxes here"; display: block; width: 100%;'
+        + ' padding: 2rem 1rem; text-align: center; color: var(--bs-secondary-color); border: 2px dashed var(--bs-border-color); border-radius: .375rem; }'
         + '.mit-box-bar { background: var(--bs-primary-bg-subtle); color: var(--bs-primary-text-emphasis); border-radius: .375rem .375rem 0 0; }'
         + '.mit-box-bar { flex-wrap: wrap; row-gap: 0 !important; } .mit-box-bar .form-check { white-space: nowrap; }'
         + '.mit-box-handle { cursor: grab; font-weight: 600; white-space: nowrap; flex: 1 0 auto; }'
@@ -205,7 +209,7 @@
 
     apply(cfg.layout);
 
-    // ---------- customising ----------
+    // ---------- customizing ----------
 
     /*
      * The layout as the page now shows it. Boxes this ticket does not have (Site, Also open...) keep
@@ -310,7 +314,7 @@
 
         const bar = document.createElement('div');
         bar.className = 'mit-layout-toolbar card card-body py-2 mb-3 d-flex flex-row flex-wrap align-items-center gap-2';
-        bar.innerHTML = '<span class="me-auto"><i class="fas fa-th-large me-2 text-primary"></i><strong>Customise layout</strong>'
+        bar.innerHTML = '<span class="me-auto"><i class="fas fa-th-large me-2 text-primary"></i><strong>Customize layout</strong>'
             + '<span class="text-body-secondary small ms-2">Drag boxes by their bar - between the columns too. Half-width boxes sit side by side.</span></span>';
         const columnsLabel = document.createElement('label');
         columnsLabel.className = 'd-flex align-items-center gap-2 small mb-0';
@@ -390,7 +394,7 @@
     const link = document.createElement('a');
     link.href = '#';
     link.className = 'dropdown-item';
-    link.innerHTML = '<i class="fas fa-fw fa-th-large me-2"></i>Customise layout';
+    link.innerHTML = '<i class="fas fa-fw fa-th-large me-2"></i>Customize layout';
     link.addEventListener('click', function (e) {
         e.preventDefault();
         customise();

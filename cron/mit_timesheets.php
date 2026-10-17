@@ -28,10 +28,10 @@ if (intval($row['config_enable_cron']) === 0) {
     cronJobStop("Cron: is not enabled -- Quitting..");
 }
 
-if (!mitTsReady()) {
+if (!mitTsOn()) {
     cronJobStop();
 }
 
-foreach (array_merge(mitTsSendReminders(), mitLeaveAccrueEnded(), mitLeaveReady() ? mitLeaveYearEnds() : []) as $mit_ts_line) {
+foreach (array_merge(mitTsFillEndedClosures(), mitTsSendReminders(), mitLeaveAccrueEnded(), mitLeaveReady() ? mitLeaveYearEnds() : []) as $mit_ts_line) {
     echo "$mit_ts_line\n";
 }

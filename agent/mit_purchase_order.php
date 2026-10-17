@@ -8,6 +8,8 @@
 
 require_once "includes/inc_all.php";
 
+mitModuleRequire('procurement');
+
 enforceUserPermission('module_procurement');
 $po = mitPoRow($_GET['po_id'] ?? 0);
 if (!$po || !mitPoAccessible($po['po_id'])) {
@@ -23,7 +25,7 @@ $expense = mitPoExpense($po);
 $status = $po['status'];
 $lines = mitPoLines($po_id);
 $tracking = mitPoTracking($po_id);
-$history = mysqli_fetch_all(mysqli_query($mysqli, "SELECT h.*, user_name FROM mit_po_history h LEFT JOIN users ON users.user_id = h.user_id WHERE po_id = $po_id ORDER BY history_id DESC LIMIT 50"), MYSQLI_ASSOC);
+$history = mysqli_fetch_all(mysqli_query($mysqli, "SELECT h.history_id, h.po_id, h.user_id, h.description, h.created_at, user_name FROM mit_po_history h LEFT JOIN users ON users.user_id = h.user_id WHERE po_id = $po_id ORDER BY history_id DESC LIMIT 50"), MYSQLI_ASSOC);
 $received_any = array_sum(array_map(function ($line) {
     return (float) $line['received_qty'];
 }, $lines)) > 0;
@@ -66,7 +68,7 @@ $at = $order[$status] ?? 0;
                         <i class="fas fa-paper-plane me-2"></i><?= $needs_approval ? 'Send for approval' : 'Submit' ?>
                     </a>
                 <?php } ?>
-                <?php if ($level >= 3 && $status === 'pending') { ?>
+                <?php if ($status === 'pending' && mitPoMayApprove($po)) { ?>
                     <a href="#" <?= $modal('approve') ?> class="btn btn-success"><i class="fas fa-check me-2"></i>Approve</a>
                     <a href="#" <?= $modal('reject') ?> class="btn btn-outline-danger">Send back</a>
                 <?php } ?>
@@ -129,8 +131,8 @@ $at = $order[$status] ?? 0;
 
         <?php if ($status === 'pending') { ?>
             <div class="alert alert-warning mt-3 mb-0">
-                <i class="fas fa-hourglass-half me-2"></i>Waiting for approval - the total is over <?= mitMoney($approval_over) ?>.
-                <?= $level >= 3 ? 'You can approve it.' : 'Someone with Full Procurement access approves it.' ?>
+                <i class="fas fa-hourglass-half me-2"></i>Waiting for approval - the total is over <?= mitMoney($approval_over) ?>, or a line has no cost.
+                <?= mitPoMayApprove($po) ? 'You can approve it.' : ($level >= 3 ? 'Someone else approves a PO you made.' : 'Someone with Full Procurement access approves it.') ?>
             </div>
         <?php } elseif ($po['approval_note'] && $is_draft) { ?>
             <div class="alert alert-danger mt-3 mb-0"><i class="fas fa-undo me-2"></i>Sent back: <?= escapeHtml($po['approval_note']) ?></div>
@@ -281,10 +283,10 @@ $at = $order[$status] ?? 0;
                         <dt class="col-5 fw-normal text-muted">Approved</dt>
                         <dd class="col-7"><?= escapeHtml($po['approved_by_name'] ?: '-') ?> <span class="text-muted"><?= escapeHtml(date('M j', strtotime($po['approved_at']))) ?><?= $po['approval_note'] ? ' - ' . escapeHtml($po['approval_note']) : '' ?></span></dd>
                     <?php } ?>
-                    <?php if ($expense) { ?>
+                    <?php if ($expense && $can_see_expense) { ?>
                         <dt class="col-5 fw-normal text-muted">Vendor bill</dt>
                         <dd class="col-7">
-                            <?= $can_see_expense ? '<a href="expenses.php?q=' . urlencode(mitPoReference($po)) . '">' . mitMoney($expense['expense_amount']) . '</a>' : mitMoney($expense['expense_amount']) ?>
+                            <a href="expenses.php?q=<?= urlencode(mitPoReference($po)) ?>"><?= mitMoney($expense['expense_amount']) ?></a>
                             <span class="text-muted"><?= escapeHtml($expense['expense_date']) ?><?= $expense['expense_reference'] ? ' · ' . escapeHtml($expense['expense_reference']) : '' ?></span>
                         </dd>
                     <?php } ?>

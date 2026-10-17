@@ -19,10 +19,15 @@ model: see DEPLOYMENT.md.
   (agreed scheme). Never add files to ITFlow's numbered `admin/database_updates/*.php` and
   never edit `db.sql`. Our updates are tracked by name in `mit_database_updates`, run by
   `admin/database_updates_mountaineerit.php` after ITFlow's (update_cli) and at the end of
-  both installers. Each file must be safe to run twice (use `mitColumnExists()` etc.).
+  both installers and restores. Each file must be safe to run twice (use `mitColumnExists()`,
+  `mitIndexExists()` etc.).
 - **Stay portable to stock ITFlow** (the user may want to move back to itflow-org's `master`): DB
   changes only add – `mit_` tables, or columns on ITFlow tables that are NULL-able/defaulted; never
-  rename/drop/alter ITFlow columns, change ITFlow data's meaning, or FK ITFlow tables into ours.
+  rename/drop/alter ITFlow columns, change ITFlow data's meaning, add unique keys or triggers to
+  ITFlow tables, or FK ITFlow tables into ours. Our tables may FK ITFlow's (tickets, users) only with
+  ON DELETE CASCADE / SET NULL, so ITFlow's deletes carry on. Our columns on ITFlow tables are named
+  like theirs (`ticket_schedule_end`, `item_cost`, `product_vendor_id`) rather than with a `mit_`
+  prefix - the portability check and this file are how they are told apart.
   After every feature that touches the DB or settings, and after every upstream merge, run
   `php scripts/mit_portability_check.php` on the test install and report the result to the user.
   Before every "Promote to production", also do the full test: backup on the test install ->
@@ -42,24 +47,29 @@ model: see DEPLOYMENT.md.
 - Bug and security fixes made here ahead of upstream (Oct 2026, "Phase 1" – see `git log`):
   portal contacts, saved-card charging, income/transactions XSS, API client checks, recurring
   invoices/expenses, payments, autopay, contract templates, ticket time rounding, time
-  reports, quote due date, invoice stock, task rows, Admin > Modules, setup_cli/restore_cli.
+  reports, quote due date (`agent/post/quote.php` add_quote_to_invoice due from the invoice date),
+  invoice stock, task rows, Admin > Modules, setup_cli/restore_cli. Also removed
+  `agent/client_autopay.php` (unlinked, broken queries) and the `agent/custom/post.php` require of a
+  missing `post/ai.php` (commit 2985b652) - if an upstream merge brings them back, check they work first.
+  These fixes carry no "Mountaineer IT" marker (they are plain bug fixes, meant to match upstream's
+  eventual fix) - find them with `git log`.
   When an upstream release fixes the same thing, resolve conflicts in favour of upstream.
-- Calendar (Oct 2026): `functions/mit_calendar.php` (ours) - tech colours, booking end
+- Calendar (Oct 2026): `functions/mit_calendar.php` (ours) - agent colors, booking end
   times (`tickets.ticket_schedule_end`, M001), overlap conflicts. Hooks in
   `functions/ticket.php` (ticketSetSchedule/ticketCancelSchedule), `functions/app.php`
   (createiCalStr `$end`), `functions/calendar.php` (ticket items + feeds), `agent/ajax.php`
-  (calendar_move), `agent/calendar.php` + `agent/js/calendar.js` (colour dots in Whose, opens on me),
+  (calendar_move), `agent/calendar.php` + `agent/js/calendar.js` (color dots in Whose, opens on me),
   `agent/modals/ticket/ticket_edit_schedule.php` + `agent/js/ticket_schedule_modal.js`
   (Tech + How long), `agent/post/ticket.php` (edit_ticket_schedule), `agent/ticket.php`
   (start - end wording), `functions.php` (require), `scripts/update_cli.php`, `setup/index.php`,
   `scripts/setup_cli.php` (run our DB updates). Re-apply them if an upstream merge drops them.
   Calendar settings (view, whose, ticked) are also saved per user in `mit_user_preferences`
   (M002) via `ajax.php?mit_calendar_state` and loaded by `agent/calendar.php` (data-saved-state).
-  Each tech picks their calendar colour under Account > Preferences (`agent/user/user_preferences.php`
+  Each tech picks their calendar color under Account > Preferences (`agent/user/user_preferences.php`
   + `agent/user/post/profile.php`); admins can set anyone's in Admin > Users > Edit
   (`admin/modals/user/user_form.php` + `admin/post/users.php` edit_user) - one-line hooks,
   `mitCalendarColorField()` / `mitSaveAgentColor()`, saved as the `calendar.color` preference;
-  `mitAgentColor()` falls back to the automatic colour.
+  `mitAgentColor()` falls back to the automatic color.
 - Microsoft 365 app (Oct 2026): `functions/mit_m365.php` (ours) creates ITFlow's own app in the
   tenant (device-code sign-in as Global Admin, Graph CLI client) or takes a hand-made one, with a
   certificate instead of a secret, renewed 30 days before expiry via Graph `addKey`. Settings in
@@ -144,7 +154,7 @@ model: see DEPLOYMENT.md.
   fa-tasks, fa-link, fa-history), the reply form by `#replyComposer`, the rest of the main column
   wrapped as "conversation" - re-check those if upstream reworks `agent/ticket.php`. Hooks: one line
   after the layout in `agent/ticket.php` (`mitTicketLayoutHtml`), `agent/ajax.php?mit_ticket_layout`,
-  `functions.php` (require). "Customise layout" is added to the ticket's ⋮ menu by the script.
+  `functions.php` (require). "Customize layout" is added to the ticket's ⋮ menu by the script.
 - Procurement (Oct 2026, part 1 of 3): `functions/mit_procurement.php` (ours) - items to order
   (`mit_procurement_items`), purchase orders (`mit_purchase_orders`, `mit_po_lines`, `mit_po_tracking`,
   `mit_po_receipts`, `mit_po_history`; M009), approval when over `procurement_approval_over`
@@ -154,8 +164,16 @@ model: see DEPLOYMENT.md.
   `mit_purchase_orders.php`, `mit_purchase_order.php`, `mit_receiving.php`; modals
   `agent/modals/mit_procurement/`; handlers `agent/post/mit_procurement.php`. Hooks: one require of
   `agent/includes/mit_procurement_nav.php` in `agent/includes/side_nav.php` (before FINANCE),
-  settings card `admin/includes/mit_procurement_card.php` at the end of `admin/settings_invoice.php`
-  (handler `admin/post/mit_procurement_settings.php`), `functions.php` (require).
+  Admin > Settings > Procurement page `admin/mit_procurement_settings.php` (card
+  `admin/includes/mit_procurement_card.php`, handler `admin/post/mit_procurement_settings.php`; menu via
+  `admin/includes/mit_admin_nav.php`), `functions.php` (require). PO numbers are unique (M015); a PO
+  needs approval when over the limit or when a line has no cost, and nobody approves their own PO unless
+  they are the only approver (`mitPoMayApprove`). Draft POs can be deleted at Edit (level 2) on purpose -
+  nothing was ordered yet. Daily cron job `mit_procurement_tidy` (`cron/mit_procurement_tidy.php`,
+  `mitProcTidy`) cancels waiting items of deleted tickets/clients and frees parts whose invoice line went;
+  a deleted ticket's unbilled stock parts go back on the shelf through `mitTicketPartsDeleting` (one line in
+  `functions/ticket.php` ticketDeleteForGood and in `agent/post/client.php` client delete) before the
+  `mit_ticket_parts` FK cascade removes them.
   Part 2: `functions/mit_procurement_parts.php` (ours, required from mit_procurement.php), M010
   (`mit_ticket_parts`, `products.product_vendor_id`). Quote -> invoice ticks: `mitProcQuoteConvertFields`
   in `agent/modals/quote/quote_to_invoice.php` (+ data-modal-size="lg" on the Invoice button in
@@ -175,23 +193,32 @@ model: see DEPLOYMENT.md.
   expense (`mitPoRecordBill`, PO `expense_id`). Hooks: `mitProcInvoiceSummary` + `mitProcInvoiceLineStatus`
   in `agent/invoice.php` (above the items / under each line name), `mitProcProjectCard` in
   `agent/project.php` (left column, under the tabs card).
+  Products API: `api/v1/products/read.php` selects `mitProductApiColumns()` (every column but our cost /
+  markup) instead of `*` - two lines.
 - Timesheets (Oct 2026): `functions/mit_timesheets.php` (ours) - per pay period (semi-monthly default;
   `mit_settings` timesheet_period / timesheet_anchor; weekly follows the week start), ticket time auto from ticket replies (billable by
   `ticket_billable`), hours on charge codes (`mit_charge_codes`: work / lost / leave, paid or not),
   `mit_time_entries`, `mit_timesheets` (open / submitted / returned / approved; approving copies ticket
-  time in as source ticket_billable/ticket_other, code 0) - M012, plus module row `module_timesheets`
+  time and unaccounted time in as source ticket_billable/ticket_other/auto_lost, code 0 - a 0 auto_lost row on
+  the first day marks a period stored this way) - M012, plus module row `module_timesheets`
   (everyone keeps their own; View 1 sees all + report, Edit 2 corrects, Full 3 approves). Pages
   `agent/mit_timesheet.php`, `agent/mit_timesheets.php`, modals `agent/modals/mit_timesheet/`, handlers
   `agent/post/mit_timesheets.php`, report `agent/reports/mit_payroll.php` (CSV summary + detail).
   Admin > Timesheets `admin/mit_timesheets.php` (tabs Settings / Charge codes / People), modals
   `admin/modals/mit_timesheets/`, handlers `admin/post/mit_timesheets.php`. Options (M013): company settings
   `mit_settings` ts_* (`mitTsSettings` - week start, approval on/off, future days, auto-lock, reminders, h:mm,
-  rounding, ticket time / internal notes / billable rule, normal week, overtime day/week, auto lost time);
+  rounding, ticket time / internal notes / billable rule, normal week, overtime day/week (weekly overtime
+  falls on the day it is worked), auto lost time - unpaid unless ts_auto_lost_paid, never before the hire
+  date or the login's creation);
   codes `code_roles` / `code_note_required` / `code_daily_max` / `code_closure_fill`; `mit_timesheet_people`
   (schedule, approver - who can then see, correct and approve them -, employee_id, pay_type: salaried = no
-  overtime); personal `mit_user_preferences` timesheet.format / .view / .hidden_codes / .reminders.
-  Cron job `mit_timesheets` (`cron/mit_timesheets.php`, entry in `includes/cron_jobs.php`, hourly: reminders -
-  `mit_timesheets.reminded_due_at` / `reminded_late_at` -, leave earned when approval is off, leave year ends).
+  overtime, keeps_timesheet - M015); personal `mit_user_preferences` timesheet.format / .view / .hidden_codes / .reminders.
+  Closure days fill in the closure code on save / submit / approve / cron; a filled day cleared by hand keeps a
+  0 row so it is not filled again. Grid script `agent/js/mit_timesheet.js`.
+  Cron job `mit_timesheets` (`cron/mit_timesheets.php`, entry in `includes/cron_jobs.php`, hourly: closure days
+  of the period just ended, reminders - `mit_timesheets.reminded_due_at` / `reminded_late_at` -, leave earned
+  when approval is off (once the period has settled: auto-lock days, else 7), leave year ends - carry-over
+  worked out again for the first 60 days). A charge code belongs to one leave bank at most.
   Leave balances (M014): `functions/mit_leave.php` (ours, required from mit_timesheets.php) - banks
   (`mit_leave_banks`: codes that use it up, earned per period / per hour worked / yearly / not, max, carry-over
   keep all / cap / lose, year from 1 Jan or hire anniversary, waiting days, below 0 allowed), ledger
@@ -202,8 +229,9 @@ model: see DEPLOYMENT.md.
   `agent/modals/mit_timesheet/leave.php`), Admin > Timesheets > Leave tab (`admin/modals/mit_timesheets/leave_bank.php`)
   and People tab (`person_leave.php`: rates, adjustments, history); "<bank> left" columns in the payroll report. Hooks: one line in `functions/reports.php`
   reportCatalog (`'mit_payroll' => mitTsReportEntry()` after time_by_tech), require of
-  `agent/includes/mit_timesheet_nav.php` in `agent/includes/side_nav.php` (under Calendar), require of
-  `admin/includes/mit_admin_nav.php` in `admin/includes/side_nav.php` (after Categories), Account > Preferences
+  `agent/includes/mit_timesheet_nav.php` in `agent/includes/side_nav.php` (its own TIME section, before TOOLS),
+  require of `admin/includes/mit_admin_nav.php` in `admin/includes/side_nav.php` (inside SETTINGS after Ticket,
+  plus `array_merge(..., mitAdminSettingsPages())` on the SETTINGS menu-open line), Account > Preferences
   (`mitTsPreferenceFields` in `agent/user/user_preferences.php`, `mitTsSavePreferences` in
   `agent/user/post/profile.php`), `functions.php` (require).
 - Dispatch (Oct 2026): `functions/mit_dispatch.php` (ours) - page `agent/mit_dispatch.php`, script
@@ -212,9 +240,29 @@ model: see DEPLOYMENT.md.
   `agent/mit_dispatch_ajax.php` (queue, items, book, unbook, state). Queue: open tickets with no tech / with a tech
   and nothing booked. Book = `ticketChangeAssignee` + `ticketSetSchedule`; unbook = `ticketCancelSchedule`.
   Needs Support edit (`calendarCanScheduleTickets`). Settings per agent in `mit_user_preferences` dispatch.state.
-  Hooks: require of `agent/includes/mit_dispatch_nav.php` in `agent/includes/side_nav.php` (under Calendar),
-  `functions.php` (require), and one condition in `functions/ticket.php` ticketMailSchedule
-  (`empty($GLOBALS['mit_schedule_skip_contact'])` - the "Email the contact" tick).
+  Hooks: require of `agent/includes/mit_dispatch_nav.php` in `agent/includes/side_nav.php` (SUPPORT, after
+  Recurring Tickets), `functions.php` (require), and one condition in `functions/ticket.php` ticketMailSchedule
+  (`empty($GLOBALS['mit_schedule_skip_contact'])` - the "Email the contact" tick; a global rather than a new
+  parameter so ITFlow's function signature stays as it is). Working hours on the board come from Admin > SLA
+  (`mitDispatchBusinessHours`). Needs ticketing on and the Dispatch switch on.
+- Review fixes (Oct 2026): `functions/mit_common.php` (ours, required first in `functions.php`) - shared
+  helpers: `mitMailBody` / `mitSqlHtml` (HTML for SQL without escapeSql's strip_tags), `mitProductIsTangible`,
+  module switches (`mitModuleOn`, `mitModuleRequire` for pages/modals, `mitModuleGuard` for handler files,
+  `mitModulesSave`), `mitAdminSettingsPages`. Module switches on Admin > Settings > Modules: require of
+  `admin/includes/mit_modules_fields.php` in `admin/settings_module.php` (inside ITFlow's form) and
+  `mitModulesSave($_POST)` in `admin/post/settings_module.php`; saved as `mit_settings` module_procurement /
+  module_timesheets / module_dispatch (default on). Procurement also needs invoicing on, Dispatch ticketing.
+  Secrets: `$config_mit_secret_key` (appended to config.php on first use, like the backup key) - `mitEncryptSecret`
+  writes v2 (AES-256-GCM), v1 values (key from `$installation_id`) still read and upgraded by `mitUpgradeSecrets`.
+  Calendar: when the schedule modal or Dispatch gives a scheduled ticket a new lead, `mitScheduleLeadChanging`
+  (one line in `agent/post/ticket.php` edit_ticket_schedule) cancels the old lead's invite; `dashboardSchedule`
+  in `functions/dashboard.php` adds `mitTicketTechDashboardItems` (tickets you help on); helpers must have access
+  to the ticket's client (`mitAgentCanSeeClient`). `cron/nightly_tasks.php` keeps upstream's column list plus
+  `mitRecurringTicketByDayColumn()`. Restores (`setup/index.php` restore, `scripts/restore_cli.php`) run our
+  database updates afterwards, so a stock ITFlow backup gets `ticket_schedule_end` etc.; setup shows a failed
+  update. Our runner (`admin/database_updates_mountaineerit.php`) has `mitColumnExists` / `mitIndexExists`.
+  Our features check their own update with a `...Ready()` function (one cached query per request) and fall back
+  quietly; `function_exists()` guards in ITFlow files are kept on purpose so a half-merged checkout still loads.
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files
   upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
   SSRF, broken tag links, Clients/Tickets/dashboard/search performance.

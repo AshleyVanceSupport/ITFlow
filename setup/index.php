@@ -270,6 +270,9 @@ if (isset($_POST['restore'])) {
         exit;
     }
 
+    // Mountaineer IT: a backup from stock ITFlow (or an older build of ours) gets our database updates
+    require_once "../admin/database_updates_mountaineerit.php";
+
     // Close setup behind us. The gate above would now do this on its own because the
     // restored database has users, but the flag is what stops the wizard being reachable
     // at all.
@@ -436,7 +439,7 @@ if (isset($_POST['add_company_settings'])) {
     // Mountaineer IT's own database updates, so a new install starts with them
     require_once "../admin/database_updates_mountaineerit.php";
 
-    $_SESSION['alert_message'] = "Company <strong>$name</strong> created";
+    $_SESSION['alert_message'] = "Company <strong>$name</strong> created" . ($mit_updates_error ? " - but a Mountaineer IT database update failed (" . htmlspecialchars($mit_updates_error) . "); run php scripts/update_cli.php --update_db to retry" : '');
 
     header("Location: ?localization");
 

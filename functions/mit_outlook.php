@@ -4,7 +4,7 @@
  * Mountaineer IT - each person's Outlook calendar (Account > Outlook calendar).
  *
  * A tech connects their own Microsoft 365 account to ITFlow's Microsoft 365 app
- * (functions/mit_m365.php - already approved for the organisation, so nobody is asked to approve
+ * (functions/mit_m365.php - already approved for the organization, so nobody is asked to approve
  * anything). From then on every open ticket booked for them is an event in their Outlook calendar,
  * and ITFlow keeps it that way:
  *
@@ -42,19 +42,23 @@ function mitOutlookLink($user_id) {
     global $mysqli;
     $user_id = intval($user_id);
     try {
-        $result = mysqli_query($mysqli, "SELECT * FROM mit_outlook_links WHERE user_id = $user_id LIMIT 1");
+        $result = mysqli_query($mysqli, "SELECT user_id, account_email, account_name, refresh_token, access_token, access_expires_at, connected_at,
+            last_sync_at, last_check_at, sync_signature, last_error, busy_refreshed_at FROM mit_outlook_links WHERE user_id = $user_id LIMIT 1");
     } catch (Throwable $e) {
         return null;  // database update pending
     }
     return $result ? mysqli_fetch_assoc($result) : null;
 }
 
-/** Is this agent's Outlook synced? (Then booking emails to them go without the calendar invite - functions/ticket.php.) */
+/**
+ * Is this agent's Outlook synced and working? Then booking emails to them go without the calendar invite
+ * (functions/ticket.php) - a link with a sync error still gets the invite, so nothing is missed.
+ */
 function mitOutlookSyncsEmail($email) {
     global $mysqli;
     try {
         $email = mysqli_real_escape_string($mysqli, (string) $email);
-        $result = mysqli_query($mysqli, "SELECT 1 FROM mit_outlook_links JOIN users USING (user_id) WHERE user_email = '$email' AND user_archived_at IS NULL AND user_status = 1 LIMIT 1");
+        $result = mysqli_query($mysqli, "SELECT 1 FROM mit_outlook_links JOIN users USING (user_id) WHERE user_email = '$email' AND user_archived_at IS NULL AND user_status = 1 AND last_error IS NULL LIMIT 1");
         return $result && mysqli_num_rows($result) > 0 && mitOutlookAvailable();
     } catch (Throwable $e) {
         return false;  // our tables not there yet (database update pending) - ITFlow as usual
@@ -64,15 +68,6 @@ function mitOutlookSyncsEmail($email) {
 /** Can people connect Outlook here? Needs ITFlow's Microsoft 365 app (Admin > Settings > Mail). */
 function mitOutlookAvailable() {
     return mitM365App() !== null;
-}
-
-/** Sign-ins are encrypted at rest - see mitEncryptSecret() in functions/mit_m365.php. */
-function mitOutlookEncrypt($plain) {
-    return mitEncryptSecret($plain);
-}
-
-function mitOutlookDecrypt($stored) {
-    return mitDecryptSecret($stored);
 }
 
 /** Remember a problem with the person's sync, shown on their Outlook calendar page. */
@@ -87,6 +82,7 @@ function mitOutlookSetError($user_id, $error) {
  * ---------- signing in ----------
  */
 
+/** The token address for the app's tenant (call only when mitOutlookAvailable()). */
 function mitOutlookTokenUrl() {
     return MIT_M365_LOGIN . '/' . rawurlencode(mitM365App()['tenant_id']) . '/oauth2/v2.0/token';
 }
@@ -108,6 +104,9 @@ function mitOutlookAuthorizeUrl($state) {
 /** Back from Microsoft with a code: save the person's link. Throws with what went wrong. */
 function mitOutlookConnect($user_id, $code) {
     global $mysqli;
+    if (!mitOutlookAvailable()) {
+        throw new RuntimeException('Microsoft 365 is no longer set up in ITFlow - ask an admin (Admin > Settings > Mail).');
+    }
     $app = mitM365App();
     $response = mitHttp('POST', mitOutlookTokenUrl(), [], mitMicrosoftTokenFields(mitOutlookTokenUrl(), [
         'client_id' => $app['client_id'],
@@ -130,8 +129,8 @@ function mitOutlookConnect($user_id, $code) {
     $user_id = intval($user_id);
     $email_sql = mysqli_real_escape_string($mysqli, $email);
     $name_sql = mysqli_real_escape_string($mysqli, (string) ($me['json']['displayName'] ?? ''));
-    $refresh_sql = mysqli_real_escape_string($mysqli, mitOutlookEncrypt($response['json']['refresh_token']));
-    $access_sql = mysqli_real_escape_string($mysqli, mitOutlookEncrypt($access));
+    $refresh_sql = mysqli_real_escape_string($mysqli, mitEncryptSecret($response['json']['refresh_token']));
+    $access_sql = mysqli_real_escape_string($mysqli, mitEncryptSecret($access));
     $expires_sql = date('Y-m-d H:i:s', time() + intval($response['json']['expires_in'] ?? 3600));
 
     return mitOutlookWithLock($user_id, function () use ($mysqli, $user_id, $email, $email_sql, $name_sql, $refresh_sql, $access_sql, $expires_sql) {
@@ -145,7 +144,7 @@ function mitOutlookConnect($user_id, $code) {
             refresh_token = '$refresh_sql', access_token = '$access_sql', access_expires_at = '$expires_sql', connected_at = NOW(), sync_signature = '', last_error = NULL
             ON DUPLICATE KEY UPDATE account_email = VALUES(account_email), account_name = VALUES(account_name), refresh_token = VALUES(refresh_token),
             access_token = VALUES(access_token), access_expires_at = VALUES(access_expires_at), connected_at = NOW(), sync_signature = '', last_error = NULL");
-        mitDeleteSettings("outlook_failed_at_$user_id");
+        mitDeleteSetting("outlook_failed_at_$user_id");
         return mitOutlookLink($user_id);
     });
 }
@@ -154,7 +153,7 @@ function mitOutlookConnect($user_id, $code) {
 function mitOutlookToken(array $link) {
     global $mysqli;
     if (!empty($link['access_expires_at']) && strtotime($link['access_expires_at']) - 120 > time()) {
-        $access = mitOutlookDecrypt($link['access_token']);
+        $access = mitDecryptSecret($link['access_token']);
         if ($access !== '') {
             return $access;
         }
@@ -181,11 +180,11 @@ function mitOutlookToken(array $link) {
         throw new RuntimeException($error);
     }
     $user_id = intval($link['user_id']);
-    $access_sql = mysqli_real_escape_string($mysqli, mitOutlookEncrypt($response['json']['access_token']));
+    $access_sql = mysqli_real_escape_string($mysqli, mitEncryptSecret($response['json']['access_token']));
     $expires_sql = date('Y-m-d H:i:s', time() + intval($response['json']['expires_in'] ?? 3600));
     $refresh_set = '';
     if (!empty($response['json']['refresh_token'])) {
-        $refresh_set = ", refresh_token = '" . mysqli_real_escape_string($mysqli, mitOutlookEncrypt($response['json']['refresh_token'])) . "'";
+        $refresh_set = ", refresh_token = '" . mysqli_real_escape_string($mysqli, mitEncryptSecret($response['json']['refresh_token'])) . "'";
     }
     mysqli_query($mysqli, "UPDATE mit_outlook_links SET access_token = '$access_sql', access_expires_at = '$expires_sql' $refresh_set WHERE user_id = $user_id");
     return $response['json']['access_token'];
@@ -240,7 +239,7 @@ function mitOutlookEvent(array $row) {
         $lines[] = 'Contact: ' . escapeHtml($row['contact_name']) . ($phone ? ' - ' . escapeHtml($phone) : '');
     }
     $lines[] = escapeHtml($where);
-    $lines[] = '<small>Booked in ITFlow - change it there; changes made here are put back.</small>';
+    $lines[] = '<small>Scheduled in ITFlow - change it there; changes made here are put back.</small>';
 
     return [
         'subject' => $reference . ' - ' . $row['ticket_subject'] . ($client !== '' ? " ($client)" : ''),
@@ -292,13 +291,17 @@ function mitOutlookSync($user_id, $check = false) {
     }
 }
 
+/**
+ * The sync itself, under the person's lock (mitOutlookSync): push new, changed and cancelled bookings,
+ * and when $check (or the 15-minute check is due) read back events changed in Outlook. Returns a summary.
+ */
 function mitOutlookSyncLocked($user_id, $check) {
     global $mysqli;
     $link = mitOutlookLink($user_id);
     if (!$link) {
         return 'Not connected';
     }
-    $forced = $check;
+    $forced = $check;  // asked for now (Sync now) - $check itself may be turned on below when the 15-minute check is due
 
     // After a failure, try again every MIT_OUTLOOK_CHECK_MINUTES rather than every minute (Sync now always tries)
     $failed_at = mitSetting("outlook_failed_at_$user_id", '');
@@ -391,7 +394,7 @@ function mitOutlookSyncLocked($user_id, $check) {
         mitSetSetting("outlook_failed_at_$user_id", date('Y-m-d H:i:s'));
         throw new RuntimeException(implode('; ', array_slice($problems, 0, 3)));
     }
-    mitDeleteSettings("outlook_failed_at_$user_id");
+    mitDeleteSetting("outlook_failed_at_$user_id");
 
     $signature_sql = mysqli_real_escape_string($mysqli, $signature);
     mysqli_query($mysqli, "UPDATE mit_outlook_links SET last_sync_at = NOW(), sync_signature = '$signature_sql', last_error = NULL"
@@ -480,20 +483,32 @@ function mitOutlookRefreshBusy($token, $user_id) {
             if (strtotime($ends) <= strtotime($starts)) {
                 continue;
             }
+            // A private or confidential event's subject is never kept, even for its owner
+            $private = in_array(strtolower((string) ($event['sensitivity'] ?? 'normal')), ['private', 'confidential'], true);
             $rows[] = "($user_id, '$starts', '$ends', " . (empty($event['isAllDay']) ? 0 : 1) . ", '"
-                . mysqli_real_escape_string($mysqli, mb_substr((string) ($event['subject'] ?? ''), 0, 255)) . "', "
-                . (in_array(strtolower((string) ($event['sensitivity'] ?? 'normal')), ['private', 'confidential'], true) ? 1 : 0) . ", '$show_as')";
+                . ($private ? '' : mysqli_real_escape_string($mysqli, mb_substr((string) ($event['subject'] ?? ''), 0, 255))) . "', "
+                . ($private ? 1 : 0) . ", '$show_as')";
         }
         $url = $response['json']['@odata.nextLink'] ?? null;
+        // Only ever follow Graph's own paging links with the token
+        if ($url !== null && strpos($url, MIT_M365_GRAPH . '/') !== 0) {
+            throw new RuntimeException('Outlook sent an unexpected paging address.');
+        }
     }
 
+    // Swap the old copy for the new one in one go; on any failure keep the old copy and pass the error on
     mysqli_begin_transaction($mysqli);
-    mysqli_query($mysqli, "DELETE FROM mit_outlook_busy WHERE user_id = $user_id");
-    foreach (array_chunk($rows, 200) as $chunk) {
-        mysqli_query($mysqli, "INSERT INTO mit_outlook_busy (user_id, starts_at, ends_at, is_all_day, subject, is_private, show_as) VALUES " . implode(', ', $chunk));
+    try {
+        mysqli_query($mysqli, "DELETE FROM mit_outlook_busy WHERE user_id = $user_id");
+        foreach (array_chunk($rows, 200) as $chunk) {
+            mysqli_query($mysqli, "INSERT INTO mit_outlook_busy (user_id, starts_at, ends_at, is_all_day, subject, is_private, show_as) VALUES " . implode(', ', $chunk));
+        }
+        mysqli_query($mysqli, "UPDATE mit_outlook_links SET busy_refreshed_at = NOW() WHERE user_id = $user_id");
+        mysqli_commit($mysqli);
+    } catch (Throwable $e) {
+        mysqli_rollback($mysqli);
+        throw $e;
     }
-    mysqli_query($mysqli, "UPDATE mit_outlook_links SET busy_refreshed_at = NOW() WHERE user_id = $user_id");
-    mysqli_commit($mysqli);
     return count($rows);
 }
 
@@ -522,7 +537,7 @@ function mitOutlookCalendarSources() {
         return [];
     }
     return ['outlook_busy' => ['label' => 'Outlook busy times', 'icon' => 'fa-calendar-alt', 'color' => '#6c757d', 'module' => 'module_support', 'default' => true,
-        'title' => 'Appointments in each tech\'s own Outlook calendar (connected under Account > Outlook calendar)']];
+        'title' => 'Appointments in each agent\'s own Outlook calendar (connected under Account > Outlook calendar)']];
 }
 
 /** Busy times between two datetimes, ready for FullCalendar. Not on a client's calendar. */
@@ -535,7 +550,7 @@ function mitOutlookBusyItems($from, $to, array $opts = []) {
     $to = escapeSql($to);
     $user_id = intval($opts['user_id'] ?? 0);
     $items = [];
-    $result = mysqli_query($mysqli, "SELECT mit_outlook_busy.*, user_name FROM mit_outlook_busy JOIN users USING (user_id)
+    $result = mysqli_query($mysqli, "SELECT busy_id, user_id, starts_at, ends_at, is_all_day, subject, is_private, show_as, user_name FROM mit_outlook_busy JOIN users USING (user_id)
         WHERE starts_at < '$to' AND ends_at > '$from' AND user_archived_at IS NULL" . ($user_id ? " AND user_id = $user_id" : '') . "
         ORDER BY starts_at");
     while ($result && $row = mysqli_fetch_assoc($result)) {
@@ -562,7 +577,7 @@ function mitOutlookBusyConflicts($user_id, $start, $end) {
     $end = escapeSql($end);
     $lines = [];
     try {
-        $result = mysqli_query($mysqli, "SELECT * FROM mit_outlook_busy WHERE user_id = $user_id AND starts_at < '$end' AND ends_at > '$start' ORDER BY starts_at");
+        $result = mysqli_query($mysqli, "SELECT user_id, starts_at, ends_at, is_all_day, subject, is_private, show_as FROM mit_outlook_busy WHERE user_id = $user_id AND starts_at < '$end' AND ends_at > '$start' ORDER BY starts_at");
     } catch (Throwable $e) {
         return [];  // database update pending
     }
@@ -601,6 +616,7 @@ function mitOutlookFetchEvents($token, array $event_ids) {
     return $found;
 }
 
+/** Remember which Outlook event is a person's copy of a booking, and what it last held ($hash). */
 function mitOutlookSaveEvent($user_id, $ticket_id, $event_id, $hash) {
     global $mysqli;
     $user_id = intval($user_id);
@@ -611,6 +627,7 @@ function mitOutlookSaveEvent($user_id, $ticket_id, $event_id, $hash) {
         ON DUPLICATE KEY UPDATE event_id = VALUES(event_id), event_hash = VALUES(event_hash)");
 }
 
+/** Create the Outlook event for a booking ($w from mitOutlookEvent) and remember it. Returns the event id. */
 function mitOutlookCreate($token, $user_id, $ticket_id, array $w) {
     // The same id for a retry within ten minutes: if Microsoft made the event but the answer was lost, it is not made twice
     $id = substr(sha1("$user_id|$ticket_id|{$w['hash']}|" . intdiv(time(), 600)), 0, 32);
@@ -636,6 +653,7 @@ function mitOutlookUpdate($token, $user_id, $ticket_id, $event_id, array $w) {
     return true;
 }
 
+/** Delete an Outlook event (already gone counts as done). */
 function mitOutlookDelete($token, $event_id) {
     $deleted = mitGraph('DELETE', '/me/events/' . rawurlencode($event_id), $token);
     if ($deleted['status'] !== 204 && $deleted['status'] !== 404) {
@@ -668,7 +686,7 @@ function mitOutlookDisconnect($user_id) {
         mysqli_query($mysqli, "DELETE FROM mit_outlook_events WHERE user_id = $user_id");
         mysqli_query($mysqli, "DELETE FROM mit_outlook_busy WHERE user_id = $user_id");
         mysqli_query($mysqli, "DELETE FROM mit_outlook_links WHERE user_id = $user_id");
-        mitDeleteSettings("outlook_failed_at_$user_id");
+        mitDeleteSetting("outlook_failed_at_$user_id");
         return $left;
     });
 }

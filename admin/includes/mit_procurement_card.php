@@ -1,7 +1,7 @@
 <?php
 /*
- * Mountaineer IT - Procurement settings, under Admin > Settings > Invoice
- * (functions/mit_procurement.php, handler admin/post/mit_procurement_settings.php).
+ * Mountaineer IT - Procurement settings, on Admin > Settings > Procurement (admin/mit_procurement_settings.php;
+ * functions/mit_procurement.php, handler admin/post/mit_procurement_settings.php).
  */
 
 if (function_exists('mitProcReady') && mitProcReady()) {
@@ -22,7 +22,8 @@ if (function_exists('mitProcReady') && mitProcReady()) {
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">Next PO number</label>
-                        <input type="number" min="1" class="form-control" name="mit_po_next" value="<?= intval(mitPoNextNumber()) ?>" required>
+                        <input type="number" min="<?= intval(mitPoNextNumber()) ?>" class="form-control" name="mit_po_next" value="<?= intval(mitPoNextNumber()) ?>" required>
+                        <div class="form-text">Only up - numbers already used are never given out again.</div>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">Needs approval when over</label>

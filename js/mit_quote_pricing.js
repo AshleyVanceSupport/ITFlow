@@ -15,8 +15,15 @@
         var n = parseFloat(String(value || '').replace(/[$,%\s]/g, ''));
         return isNaN(n) ? null : n;
     }
-    function money(n) {
-        return '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    /** n as money in the page's currency (data-mit-currency on the pricing block or cell, else USD). */
+    function money(n, el) {
+        var holder = el && el.closest('[data-mit-currency]');
+        var currency = (holder && holder.dataset.mitCurrency) || 'USD';
+        try {
+            return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency }).format(n);
+        } catch (e) {
+            return n.toFixed(2);
+        }
     }
 
     /** The pieces of one pricing group, keyed off its cost field. */
@@ -82,7 +89,7 @@
         var profit = p - cost;
         var markup = profit / cost * 100;
         var margin = profit / p * 100;
-        g.hint.textContent = 'Profit ' + money(profit) + ' each - ' + (method === 'margin' ? markup.toFixed(1) + '% markup' : (method === 'markup' ? margin.toFixed(1) + '% margin' : markup.toFixed(1) + '% markup, ' + margin.toFixed(1) + '% margin'));
+        g.hint.textContent = 'Profit ' + money(profit, g.hint) + ' each - ' + (method === 'margin' ? markup.toFixed(1) + '% markup' : (method === 'markup' ? margin.toFixed(1) + '% margin' : markup.toFixed(1) + '% markup, ' + margin.toFixed(1) + '% margin'));
         g.hint.classList.toggle('text-danger', profit < 0);
     }
 
@@ -122,10 +129,12 @@
         update(g, true);
 
         // The quote's add-item row: a product picked from the list brings its cost, pricing and picture
+        // js/product_autocomplete.js sets the hidden product_id without firing an event, so look at
+        // it just after each mouse or key press (js/autocomplete.js picks on mousedown or Enter)
         var productId = g.form.elements.product_id;
         if (productId && window.mitProductPricing && !costInput.closest('[data-mit-pricing]')) {
             var last = productId.value;
-            setInterval(function () {
+            var picked = function () {
                 if (productId.value === last) {
                     return;
                 }
@@ -154,7 +163,10 @@
                         }
                     }
                 }
-            }, 300);
+            };
+            ['mousedown', 'keydown'].forEach(function (type) {
+                document.addEventListener(type, function () { setTimeout(picked, 0); }, true);
+            });
         }
     }
 

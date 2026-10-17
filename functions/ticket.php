@@ -274,6 +274,7 @@ function ticketDeleteForGood($ticket_id) {
     if (!$ticket_id) {
         return;
     }
+    mitTicketPartsDeleting($ticket_id); // Mountaineer IT: put unbilled stock parts back
     mysqli_query($mysqli, "DELETE FROM task_approvals WHERE approval_task_id IN (SELECT task_id FROM tasks WHERE task_ticket_id = $ticket_id)");
     mysqli_query($mysqli, "DELETE FROM tasks WHERE task_ticket_id = $ticket_id");
     mysqli_query($mysqli, "DELETE FROM ticket_replies WHERE ticket_reply_ticket_id = $ticket_id");
@@ -798,6 +799,8 @@ function recurringTicketFrequency($frequency) {
  * in for a later one: one that started ($anchor) on the 31st runs on the last
  * day of shorter months and back on the 31st after, rather than drifting.
  * Missed runs are stepped over, not raised one by one.
+ * Mountaineer IT: $by_day, a weekday rule such as "3WE" (third Wednesday) or "-1FR" (last
+ * Friday) - functions/mit_recurring.php - puts month-based runs on that weekday instead.
  */
 function recurringTicketNextRun($due, $frequency, $anchor = '', $after = '', $by_day = '') {
     $frequency = recurringTicketFrequency($frequency) ?: 'Monthly';
@@ -839,7 +842,7 @@ function recurringTicketCadenceText($row) {
     }
     $step = RECURRING_TICKET_FREQUENCIES[$frequency];
     if (isset($step['months']) && function_exists('mitRecurringTicketByDay') && mitRecurringTicketByDay($row) !== '') {
-        return 'on ' . mitByDayText(mitRecurringTicketByDay($row));  // Mountaineer IT
+        return 'on ' . mitByDayText(mitRecurringTicketByDay($row)) . ($step['months'] === 12 ? ' of ' . $next->format('F') : '');  // Mountaineer IT
     }
     if (isset($step['days'])) {
         return $step['days'] === 7 ? 'on ' . $next->format('l') . 's' : ($step['days'] === 14 ? 'every other ' . $next->format('l') : 'every three days');

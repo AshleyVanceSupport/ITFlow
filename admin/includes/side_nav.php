@@ -53,7 +53,6 @@
                         <p>Categories</p>
                     </a>
                 </li>
-                <?php require __DIR__ . '/mit_admin_nav.php'; // Mountaineer IT ?>
                 <?php if ($config_module_enable_accounting) { ?>
                     <li class="nav-item">
                         <a href="/admin/tax_rates.php" class="nav-link <?= (basename($_SERVER['PHP_SELF']) == 'tax_rates.php' ? 'active' : '') ?>">
@@ -216,7 +215,7 @@
                 </li>
 
                 <!-- SETTINGS Section -->
-                <li class="nav-item mt-2 <?= (in_array(basename($_SERVER['PHP_SELF']), ['settings_company.php', 'settings_localization.php', 'settings_theme.php', 'settings_security.php', 'settings_mail.php', 'settings_notification.php', 'settings_default.php', 'settings_invoice.php', 'settings_quote.php', 'settings_online_payment.php', 'settings_online_payment_clients.php', 'settings_project.php', 'settings_ticket.php', 'settings_ai.php', 'identity_providers.php', 'settings_telemetry.php', 'settings_module.php']) ? 'menu-open' : '') ?>">
+                <li class="nav-item mt-2 <?= (in_array(basename($_SERVER['PHP_SELF']), array_merge(['settings_company.php', 'settings_localization.php', 'settings_theme.php', 'settings_security.php', 'settings_mail.php', 'settings_notification.php', 'settings_default.php', 'settings_invoice.php', 'settings_quote.php', 'settings_online_payment.php', 'settings_online_payment_clients.php', 'settings_project.php', 'settings_ticket.php', 'settings_ai.php', 'identity_providers.php', 'settings_telemetry.php', 'settings_module.php'], mitAdminSettingsPages())) ? 'menu-open' : '') ?>"><?php // Mountaineer IT: + our settings pages ?>
                     <a href="#" class="nav-link">
                         <p>
                             SETTINGS
@@ -294,6 +293,7 @@
                                 </a>
                             </li>
                         <?php } ?>
+                        <?php require __DIR__ . '/mit_admin_nav.php'; // Mountaineer IT ?>
                         <!-- Currently the only integration is the client portal SSO -->
                         <?php if ($config_client_portal_enable) { ?>
                             <li class="nav-item">

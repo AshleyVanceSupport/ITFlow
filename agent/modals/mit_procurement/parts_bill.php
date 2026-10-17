@@ -6,12 +6,14 @@
 
 require_once '../../../includes/modal_header.php';
 
+mitModuleRequire('procurement', true);
+
 enforceUserPermission('module_sales', 2);
 $ticket = ticketForModal($_GET['ticket_id'] ?? 0, 2);
 $ticket_id = intval($ticket['ticket_id']);
 $client_id = intval($ticket['ticket_client_id']);
 if (!$client_id) {
-    exit('<div class="modal-body">Move the ticket to a client before billing it.</div>');
+    exit(json_encode(['error' => 'Move the ticket to a client before billing it.']));
 }
 $parts = array_filter(mitTicketParts($ticket_id), function ($part) {
     return !intval($part['invoice_id']);

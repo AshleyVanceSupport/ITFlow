@@ -386,7 +386,7 @@ if (isset($_GET['invoice_id'])) {
             <?php $sql_invoice_items = mysqli_query($mysqli, "SELECT item_created_at, item_description, item_id, item_name, item_price, item_product_id,
                 item_quantity, item_tax, item_tax_id, item_total FROM invoice_items WHERE item_invoice_id = $invoice_id ORDER BY item_order ASC"); ?>
 
-            <?= mitProcInvoiceSummary($invoice_id) ?>
+            <?= mitProcInvoiceSummary($invoice_id) // Mountaineer IT: procurement status ?>
 
             <div class="row mb-3">
                 <div class="col-md-12">
@@ -450,7 +450,7 @@ if (isset($_GET['invoice_id'])) {
 
                                             <?php } ?>
                                         </td>
-                                        <td><?= $item_name ?><?= mitProcInvoiceLineStatus($invoice_id, $item_id) ?></td>
+                                        <td><?= $item_name ?><?= mitProcInvoiceLineStatus($invoice_id, $item_id) // Mountaineer IT ?></td>
                                         <td><?= nl2br($item_description) ?></td>
                                         <td class="text-center"><?= number_format($item_quantity, 2) ?></td>
                                         <td class="text-end"><?= numfmt_format_currency($currency_format, $item_price, $invoice_currency_code) ?></td>

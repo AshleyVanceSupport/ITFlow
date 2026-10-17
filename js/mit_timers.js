@@ -16,9 +16,19 @@
     if (!root) {
         return;
     }
+    // Styles here rather than in the nav markup, where only list items may sit
+    var style = document.createElement('style');
+    style.textContent = '#mitTimers.is-running > .nav-link { color: #ffc107; }'
+        + '#mitTimers.is-running .fa-stopwatch { animation: mit-timer-pulse 1.6s ease-in-out infinite; }'
+        + '@keyframes mit-timer-pulse { 50% { opacity: .45; } }'
+        + '.mit-timers-panel .mit-timer-row { padding: .6rem 1rem; border-bottom: 1px solid var(--bs-border-color); }'
+        + '.mit-timers-panel .mit-timer-row:last-child { border-bottom: 0; }'
+        + '.mit-timers-panel .mit-timer-time { font-variant-numeric: tabular-nums; font-weight: 600; }'
+        + '@media (prefers-reduced-motion: reduce) { #mitTimers.is-running .fa-stopwatch { animation: none; } }';
+    document.head.appendChild(style);
     var badge = root.querySelector('[data-timers-badge]');
     var list = root.querySelector('[data-timers-list]');
-    var tickets = {};       // ticket id -> {reference, subject, client, open}, or null when not found
+    var tickets = {};       // ticket id -> {reference, subject, client, client_id, open}, or null when not found
     var fetchedAt = 0;
     var ticking = null;
 
@@ -73,10 +83,14 @@
         return new URLSearchParams(window.location.search).get('ticket_id');
     }
 
+    // On the ticket's own page its Start/Stop button does it, so the page's fields follow - but only when the
+    // timer is in the state we expect (another tab may have changed it), as the button toggles
     function pause(id) {
         var ls = store();
         if (pageTicketId() === id && document.getElementById('startStopTimer')) {
-            document.getElementById('startStopTimer').click();
+            if (ls.getItem(id + '-startTime')) {
+                document.getElementById('startStopTimer').click();
+            }
             return;
         }
         var t = timers().filter(function (x) { return x.id === id; })[0];
@@ -88,7 +102,9 @@
     function resume(id) {
         var ls = store();
         if (pageTicketId() === id && document.getElementById('startStopTimer')) {
-            document.getElementById('startStopTimer').click();
+            if (!ls.getItem(id + '-startTime')) {
+                document.getElementById('startStopTimer').click();
+            }
             return;
         }
         ls.setItem(id + '-startTime', String(Date.now()));
@@ -158,7 +174,8 @@
             var text = document.createElement('div');
             text.className = 'flex-grow-1 min-w-0';
             var link = document.createElement('a');
-            link.href = '/agent/ticket.php?ticket_id=' + encodeURIComponent(t.id);
+            // Inside its client when it has one, as ITFlow's ticketUrl() does
+            link.href = '/agent/ticket.php?' + (info && info.client_id ? 'client_id=' + encodeURIComponent(info.client_id) + '&' : '') + 'ticket_id=' + encodeURIComponent(t.id);
             link.className = 'd-block text-truncate fw-semibold';
             link.textContent = info ? info.reference + ' - ' + info.subject : 'Ticket #' + t.id;
             text.appendChild(link);

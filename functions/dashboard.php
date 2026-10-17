@@ -389,6 +389,7 @@ function dashboardSchedule($days = 7, $limit = 30) {
             ])),
         ];
     }
+    $items = array_merge($items, mitTicketTechDashboardItems($from, $to)); // Mountaineer IT: tickets I am helping on
 
     // Projects I manage, starting or due - all day
     $sql = mysqli_query($mysqli, "

@@ -54,6 +54,7 @@ if (isset($_GET['mit_charge_code_move'])) {
         foreach ($ids as $i => $id) {
             mysqli_query($mysqli, "UPDATE mit_charge_codes SET code_sort = " . ($i + 1) . " WHERE code_id = " . intval($id));
         }
+        logAudit('Settings', 'Edit', "$session_name moved charge code $code_id " . (($_GET['dir'] ?? '') === 'up' ? 'up' : 'down'));
     }
     redirect();
 }
@@ -93,14 +94,20 @@ if (isset($_POST['mit_ts_settings_save'])) {
     $anchor = (string) ($_POST['anchor'] ?? '');
     $schedule = mitTsScheduleFromPost((array) ($_POST['schedule'] ?? []));
     $ot_day = mitTsParseHours($_POST['ot_day'] ?? '');
-    $ot_week = trim((string) ($_POST['ot_week'] ?? ''));
-    $ot_week = $ot_week === '' ? 0 : (is_numeric($ot_week) && $ot_week >= 0 && $ot_week <= 168 ? (int) round($ot_week * 60) : null);
-    if (!isset(MIT_TS_PERIODS[$type]) || ($type === 'biweekly' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $anchor)) || $schedule === null || $ot_day === null || $ot_week === null) {
+    $ot_week = mitTsParseHoursAny($_POST['ot_week'] ?? '');
+    if ($ot_week !== null && $ot_week > 168 * 60) {
+        $ot_week = null;
+    }
+    if (!isset(MIT_TS_PERIODS[$type]) || ($type === 'biweekly' && !calendarIsDate($anchor)) || $schedule === null || $ot_day === null || $ot_week === null) {
         flashAlert('Not saved - check the pay period (and its first day for every two weeks), the normal week and the overtime hours.', 'error');
         redirect();
     }
+    // Changing the pay period moves where periods start; timesheets already kept stay on their own dates
+    [$old_type, $old_anchor] = mitTsPeriodSettings();
+    $moved = $old_type !== $type || ($type === 'biweekly' && $old_anchor !== $anchor);
+    $kept = $moved && mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM mit_timesheets LIMIT 1")) > 0;
     mitSetSetting('timesheet_period', $type);
-    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $anchor)) {
+    if (calendarIsDate($anchor)) {
         mitSetSetting('timesheet_anchor', $anchor);
     }
     $values = [
@@ -119,12 +126,17 @@ if (isset($_POST['mit_ts_settings_save'])) {
         'ot_day' => $ot_day,
         'ot_week' => $ot_week,
         'auto_lost' => empty($_POST['auto_lost']) ? 0 : 1,
+        'auto_lost_paid' => empty($_POST['auto_lost_paid']) ? 0 : 1,
     ];
     foreach ($values as $key => $value) {
         mitSetSetting("ts_$key", $value);
     }
     logAudit('Settings', 'Edit', "$session_name edited timesheet settings");
-    flashAlert('Timesheet settings saved');
+    if ($kept) {
+        flashAlert('Timesheet settings saved. The pay period changed: timesheets already kept stay on their old dates, so finish (approve) the current one before the change takes hold.', 'warning');
+    } else {
+        flashAlert('Timesheet settings saved');
+    }
     redirect();
 }
 
@@ -148,7 +160,10 @@ if (isset($_POST['mit_ts_person_save'])) {
         employee_id = " . ($employee_id === '' ? 'NULL' : "'" . escapeSql(mb_substr($employee_id, 0, 50)) . "'") . ", pay_type = '$pay_type'";
     if (mitLeaveReady()) {
         $hire = (string) ($_POST['hire_date'] ?? '');
-        $set .= ", hire_date = " . (preg_match('/^\d{4}-\d{2}-\d{2}$/', $hire) ? "'$hire'" : 'NULL');
+        $set .= ", hire_date = " . (calendarIsDate($hire) ? "'$hire'" : 'NULL');
+    }
+    if (mitTsKeepsColumn()) {
+        $set .= ", keeps_timesheet = " . (empty($_POST['keeps_timesheet']) ? 0 : 1);
     }
     mysqli_query($mysqli, "INSERT INTO mit_timesheet_people SET user_id = $user_id, $set ON DUPLICATE KEY UPDATE $set");
     logAudit('Settings', 'Edit', "$session_name edited the timesheet details of user $user_id");
@@ -173,7 +188,15 @@ if (isset($_POST['mit_leave_bank_save'])) {
         flashAlert('Not saved - give it a name, and hours as numbers (for per hour worked, how many hours worked earn it; for keep up to, how many hours).', 'error');
         redirect();
     }
-    $codes = implode(',', array_filter(array_map('intval', (array) ($_POST['codes'] ?? []))));
+    $code_ids = array_filter(array_map('intval', (array) ($_POST['codes'] ?? [])));
+    // A charge code takes from one bank only - otherwise one day off would come out of two balances
+    foreach (mitLeaveBanks(true) as $other_id => $other) {
+        if ($other_id !== $bank_id && array_intersect($code_ids, $other['codes'])) {
+            flashAlert('Not saved - a charge code ticked here already belongs to the ' . escapeHtml($other['bank_name']) . ' bank.', 'error');
+            redirect();
+        }
+    }
+    $codes = implode(',', $code_ids);
     $set = "bank_name = '" . escapeSql(mb_substr($name, 0, 100)) . "', bank_codes = " . ($codes === '' ? 'NULL' : "'$codes'") . ", bank_method = '$method',
         bank_rate = $rate, bank_per_worked = $per_worked, bank_max = " . ($max === null ? 'NULL' : $max) . ", bank_carryover_max = " . ($carry_max === null ? 'NULL' : $carry_max) . ",
         bank_year_start = '" . (($_POST['year_start'] ?? '') === 'hire' ? 'hire' : 'jan1') . "', bank_waiting_days = " . max(0, min(3650, intval($_POST['waiting_days'] ?? 0))) . ",
@@ -234,7 +257,7 @@ if (isset($_POST['mit_leave_adjust'])) {
     $hours = trim((string) ($_POST['hours'] ?? ''));
     $minutes = is_numeric($hours) && abs((float) $hours) <= 10000 ? (int) round((float) $hours * 60) : (str_starts_with($hours, '-') ? -1 : 1) * (mitTsParseHours(ltrim($hours, '+-')) ?? 0);
     $date = (string) ($_POST['date'] ?? '');
-    if (!$bank || !(mitTsUsers([$user_id])[$user_id] ?? null) || !$minutes || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+    if (!$bank || !(mitTsUsers([$user_id])[$user_id] ?? null) || !$minutes || !calendarIsDate($date)) {
         flashAlert('Not added - pick a bank and give the hours (e.g. 16, or -4 to take off) and a date.', 'error');
         redirect();
     }

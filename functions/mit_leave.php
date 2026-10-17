@@ -12,9 +12,10 @@
  *   none.  Optional: a maximum balance, a waiting period after the hire date, and a person's own rate.
  * Nothing is earned before the hire date, or for pay periods that ended before the bank was set up.
  * Pay period earnings are added when the period is approved (taken off again if it is reopened), or
- * when it ends if timesheets are not approved. At the start of each leave year what is over the
- * carry-over limit goes (keep all / up to a cap / none) and the yearly grant comes in - both from the
- * timesheet cron job. Everything automatic has a unique (person, bank, kind, ref), so it is added once.
+ * once it has settled (locked, or a week after it ends) if timesheets are not approved. At the start
+ * of each leave year what is over the carry-over limit goes (keep all / up to a cap / none - worked
+ * out again for the first 60 days) and the yearly grant comes in - both from the timesheet cron job.
+ * A charge code belongs to one bank at most. Everything automatic has a unique (person, bank, kind, ref), so it is added once.
  */
 
 const MIT_LEAVE_METHODS = ['none' => 'Not earned (adjust by hand)', 'period' => 'Each pay period', 'worked' => 'Per hour worked', 'yearly' => 'Once a year'];
@@ -42,6 +43,7 @@ function mitLeaveBanks($with_archived = false) {
     if (!isset($cache[$key])) {
         $cache[$key] = [];
         if (mitLeaveReady()) {
+            // Every column on purpose: a small settings table later updates may add to, read whole like ITFlow's settings row
             $result = mysqli_query($mysqli, "SELECT * FROM mit_leave_banks" . ($with_archived ? '' : ' WHERE bank_archived_at IS NULL') . " ORDER BY bank_sort, bank_name");
             while ($row = mysqli_fetch_assoc($result)) {
                 $row['codes'] = array_values(array_filter(array_map('intval', explode(',', (string) $row['bank_codes']))));
@@ -59,7 +61,7 @@ function mitLeaveRate($user_id, $bank_id) {
     if ($rates === null) {
         $rates = [];
         if (mitLeaveReady()) {
-            $result = mysqli_query($mysqli, "SELECT * FROM mit_leave_rates");
+            $result = mysqli_query($mysqli, "SELECT user_id, bank_id, rate, excluded FROM mit_leave_rates");
             while ($row = mysqli_fetch_assoc($result)) {
                 $rates[intval($row['user_id'])][intval($row['bank_id'])] = ['rate' => $row['rate'] === null ? null : intval($row['rate']), 'excluded' => (bool) intval($row['excluded'])];
             }
@@ -156,7 +158,8 @@ function mitLeaveEarned(array $bank, $user_id, array $period) {
     if ($bank['bank_method'] === 'worked' && intval($bank['bank_per_worked']) > 0) {
         $worked = 0;
         foreach (mitTsDays([$user_id], $period['start'], $period['end'])[intval($user_id)] as $day) {
-            $worked += mitTsDayWorked($day) - $day['auto_lost'];
+            // Unaccounted time never earns leave (mitTsDayWorked already leaves it out when it is unpaid)
+            $worked += mitTsDayWorked($day) - (mitTsSettings()['auto_lost_paid'] ? $day['auto_lost'] : 0);
         }
         return (int) floor($worked * $rate / intval($bank['bank_per_worked']));
     }
@@ -205,14 +208,26 @@ function mitLeaveYearStart(array $bank, $user_id, $date) {
     return $start > $date ? (intval(substr($date, 0, 4)) - 1) . substr($start, 4) : $start;
 }
 
+/** Days into a leave year the carry-over is worked out again (late approvals and corrections to last year). */
+const MIT_LEAVE_CARRYOVER_DAYS = 60;
+
 /**
  * The start of each leave year (cron): what is over the carry-over limit goes, then the yearly grant comes in.
  * Not in the leave year someone was hired in (theirs starts at the next), and no carry-over for years before the bank
- * was made; a bank set up mid-year grants the current year at once. Returns lines for the log.
+ * was made; a bank set up mid-year grants the current year at once. For the first MIT_LEAVE_CARRYOVER_DAYS of the
+ * year the carry-over is worked out again each day, so last year's late changes still count. Returns lines for the log.
  */
 function mitLeaveYearEnds() {
+    global $mysqli;
     $log = [];
     $today = date('Y-m-d');
+    // What was already done this year and last, in one query: "user-bank-kind-ref" => minutes
+    $done = [];
+    $result = mysqli_query($mysqli, "SELECT user_id, bank_id, kind, ref, minutes FROM mit_leave_ledger
+        WHERE kind IN ('carryover', 'grant') AND entry_date >= '" . (intval(date('Y')) - 2) . "-01-01'");
+    while ($row = mysqli_fetch_assoc($result)) {
+        $done[$row['user_id'] . '-' . $row['bank_id'] . '-' . $row['kind'] . '-' . $row['ref']] = intval($row['minutes']);
+    }
     foreach (mitTsUsers() as $user_id => $user) {
         foreach (mitLeaveBanksFor($user_id) as $bank_id => $bank) {
             $year = mitLeaveYearStart($bank, $user_id, $today);
@@ -221,14 +236,19 @@ function mitLeaveYearEnds() {
                 continue;  // hired during this leave year - their first one starts next year
             }
             $before = date('Y-m-d', strtotime("$year -1 day"));
-            if ($bank['bank_carryover_max'] !== null && substr($bank['bank_created_at'], 0, 10) < $year) {
-                $balance = mitLeaveCredited($user_id, $bank_id, $before) - mitLeaveUsed($user_id, $bank, $before);
-                $over = $balance - intval($bank['bank_carryover_max']);
-                if ($over > 0 && mitLeavePost($user_id, $bank_id, $before, -$over, 'carryover', $year, 'Over the carry-over limit at year end')) {
+            $recheck = $today < date('Y-m-d', strtotime("$year +" . MIT_LEAVE_CARRYOVER_DAYS . ' days'));
+            if ($bank['bank_carryover_max'] !== null && substr($bank['bank_created_at'], 0, 10) < $year && $recheck) {
+                $key = "$user_id-$bank_id-carryover-$year";
+                $removed = $done[$key] ?? 0;  // negative, already in the ledger on $before
+                $balance = mitLeaveCredited($user_id, $bank_id, $before) - $removed - mitLeaveUsed($user_id, $bank, $before);
+                $over = max(0, $balance - intval($bank['bank_carryover_max']));
+                if (-$removed !== $over) {
+                    mysqli_query($mysqli, "DELETE FROM mit_leave_ledger WHERE user_id = $user_id AND bank_id = " . intval($bank_id) . " AND kind = 'carryover' AND ref = '" . escapeSql($year) . "'");
+                    mitLeavePost($user_id, $bank_id, $before, -$over, 'carryover', $year, 'Over the carry-over limit at year end');
                     $log[] = "{$user['user_name']} {$bank['bank_name']}: " . mitTsHours($over, false, 'decimal') . ' h over the carry-over limit removed';
                 }
             }
-            if ($bank['bank_method'] === 'yearly' && !mitLeaveWaiting($bank, $user_id, $today)) {
+            if ($bank['bank_method'] === 'yearly' && !isset($done["$user_id-$bank_id-grant-$year"]) && !mitLeaveWaiting($bank, $user_id, $today)) {
                 $rate = mitLeaveRate($user_id, $bank_id)['rate'] ?? intval($bank['bank_rate']);
                 if ($bank['bank_max'] !== null) {
                     $room = intval($bank['bank_max']) - (mitLeaveCredited($user_id, $bank_id, $year) - mitLeaveUsed($user_id, $bank, $year));
@@ -243,15 +263,23 @@ function mitLeaveYearEnds() {
     return $log;
 }
 
-/** Without approval, a pay period earns when it ends (cron) - the last few periods, each once. */
+/**
+ * Without approval, a pay period earns once its hours have settled (cron): when it locks (Admin >
+ * Timesheets, days after the end) or else 7 days after it ends. The last few periods, each once; a
+ * period that earned nothing is looked at again on later runs, in case hours were added.
+ */
 function mitLeaveAccrueEnded() {
     global $mysqli;
     $log = [];
     if (!mitLeaveReady() || mitTsSettings()['approval']) {
         return $log;
     }
+    $wait = mitTsSettings()['autolock_days'] ?: 7;
     $period = mitTsPeriodShift(mitTsPeriodFor(), -1);
-    for ($i = 0; $i < 3; $i++, $period = mitTsPeriodShift($period, -1)) {
+    for ($i = 0; $i < 4; $i++, $period = mitTsPeriodShift($period, -1)) {
+        if (date('Y-m-d') <= date('Y-m-d', strtotime($period['end'] . " +$wait days"))) {
+            continue;  // still settling
+        }
         foreach (mitTsUsers() as $user_id => $user) {
             $done = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COUNT(*) FROM mit_leave_ledger WHERE user_id = $user_id AND kind = 'accrual' AND ref = '" . escapeSql($period['start']) . "'"))[0]);
             $accrues = array_filter(mitLeaveBanksFor($user_id), function ($bank) {
@@ -295,7 +323,7 @@ function mitLeaveCheckSave($user_id, array $wanted, array $current) {
 /** The ledger for a person and bank, newest first, with what was used each pay period. */
 function mitLeaveHistory($user_id, array $bank, $limit = 60) {
     global $mysqli;
-    $rows = mysqli_fetch_all(mysqli_query($mysqli, "SELECT l.*, u.user_name AS created_by_name FROM mit_leave_ledger l LEFT JOIN users u ON u.user_id = l.created_by
+    $rows = mysqli_fetch_all(mysqli_query($mysqli, "SELECT l.ledger_id, l.user_id, l.bank_id, l.entry_date, l.minutes, l.kind, l.ref, l.note, l.created_by, l.created_at, u.user_name AS created_by_name FROM mit_leave_ledger l LEFT JOIN users u ON u.user_id = l.created_by
         WHERE l.user_id = " . intval($user_id) . " AND l.bank_id = " . intval($bank['bank_id']) . " ORDER BY l.entry_date DESC, l.ledger_id DESC LIMIT " . intval($limit)), MYSQLI_ASSOC);
     if ($bank['codes']) {
         $result = mysqli_query($mysqli, "SELECT entry_date, SUM(minutes) AS minutes, GROUP_CONCAT(note SEPARATOR '; ') AS notes FROM mit_time_entries

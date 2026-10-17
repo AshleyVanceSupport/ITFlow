@@ -29,12 +29,12 @@ if (!isset($lengths[$own_minutes])) {
 }
 $lead_when = $row['ticket_schedule'] ? mitScheduleWhenText($row['ticket_schedule'], $row['ticket_schedule_end'] ?? null) : '';
 
-// Who can be added: active techs who are not the lead and not on it already
+// Who can be added: active techs who are not the lead, not on it already, and can see the ticket's client
 $agents = [];
 if (!$tech) {
     $sql_agents = mysqli_query($mysqli, "SELECT user_id, user_name FROM users WHERE user_type = 1 AND user_status = 1 AND user_archived_at IS NULL AND user_id <> $lead_id ORDER BY user_name");
     while ($agent = mysqli_fetch_assoc($sql_agents)) {
-        if (!isset($techs[intval($agent['user_id'])])) {
+        if (!isset($techs[intval($agent['user_id'])]) && mitAgentCanSeeClient($agent['user_id'], $row['ticket_client_id'])) {
             $agents[] = $agent;
         }
     }
@@ -48,7 +48,7 @@ ob_start();
 
 <div class="modal-header bg-dark">
     <h5 class="modal-title">
-        <i class="fa fa-fw fa-user-plus me-2"></i><?= $tech ? escapeHtml($tech['user_name']) . ' on' : 'Add a tech to' ?> <small class="ms-1 opacity-75"><?= escapeHtml(ticketReference($row)) ?></small>
+        <i class="fa fa-fw fa-user-plus me-2"></i><?= $tech ? escapeHtml($tech['user_name']) . ' on' : 'Add an agent to' ?> <small class="ms-1 opacity-75"><?= escapeHtml(ticketReference($row)) ?></small>
     </h5>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
 </div>
@@ -60,10 +60,10 @@ ob_start();
         <?php if ($tech) { ?>
             <input type="hidden" name="user_id" value="<?= $edit_user_id ?>">
         <?php } elseif (!$agents) { ?>
-            <div class="alert alert-info mb-0">Every active tech is already on this ticket.</div>
+            <div class="alert alert-info mb-0">Every active agent is already on this ticket.</div>
         <?php } else { ?>
             <div class="mb-3">
-                <label>Tech</label>
+                <label>Agent</label>
                 <div class="input-group">
                     <span class="input-group-text"><i class="fa fa-fw fa-user-cog"></i></span>
                     <select class="form-select select2" name="user_id" id="scheduleTech" required>
@@ -72,7 +72,7 @@ ob_start();
                         <?php } ?>
                     </select>
                 </div>
-                <div class="form-text">The lead tech stays <?= $row['user_name'] ? '<strong>' . escapeHtml($row['user_name']) . '</strong>' : 'unassigned' ?>.</div>
+                <div class="form-text">The lead agent stays <?= $row['user_name'] ? '<strong>' . escapeHtml($row['user_name']) . '</strong>' : 'unassigned' ?>.</div>
             </div>
         <?php } ?>
 
@@ -82,7 +82,7 @@ ob_start();
                 <div class="form-check">
                     <input class="form-check-input" type="radio" name="tech_mode" value="lead" id="mitTechLead" <?= $mode === 'lead' ? 'checked' : '' ?>>
                     <label class="form-check-label" for="mitTechLead">Same time as the lead
-                        <span class="d-block small text-body-secondary"><?= $lead_when !== '' ? escapeHtml($lead_when) . ' - moves with it' : 'The lead is not booked yet - this follows once they are' ?></span>
+                        <span class="d-block small text-body-secondary"><?= $lead_when !== '' ? escapeHtml($lead_when) . ' - moves with it' : 'The lead is not scheduled yet - this follows once they are' ?></span>
                     </label>
                 </div>
                 <div class="form-check mt-1">
@@ -91,7 +91,7 @@ ob_start();
                 </div>
                 <div class="form-check mt-1">
                     <input class="form-check-input" type="radio" name="tech_mode" value="none" id="mitTechNone" <?= $mode === 'none' ? 'checked' : '' ?>>
-                    <label class="form-check-label" for="mitTechNone">Not booked <span class="small text-body-secondary">- on the ticket, nothing on their calendar</span></label>
+                    <label class="form-check-label" for="mitTechNone">Not scheduled <span class="small text-body-secondary">- on the ticket, nothing on their calendar</span></label>
                 </div>
             </div>
 
@@ -101,7 +101,7 @@ ob_start();
                         <label>Date and time</label>
                         <div class="input-group">
                             <span class="input-group-text"><i class="fa fa-fw fa-calendar-day"></i></span>
-                            <input type="datetime-local" class="form-control" name="scheduled_date_time" id="scheduleDateTime" value="<?= $own_start ? date('Y-m-d\TH:i', strtotime($own_start)) : '' ?>">
+                            <input type="datetime-local" class="form-control" name="scheduled_date_time" id="scheduleDateTime" value="<?= $own_start ? date('Y-m-d\TH:i', strtotime($own_start)) : '' ?>" min="<?= date('Y-m-d\T00:00', min(time(), $own_start ? strtotime($own_start) : time())) ?>">
                         </div>
                     </div>
                     <div class="col-sm-5">
@@ -127,14 +127,14 @@ ob_start();
                 </div>
             </div>
 
-            <div class="form-text">They see the ticket in their lists, get its client replies by email, and are sent their booking.</div>
+            <div class="form-text">They see the ticket in their lists, get its client replies by email, and are sent their schedule.</div>
         <?php } ?>
     </div>
 
     <div class="modal-footer">
         <?php if ($tech) { ?>
             <a href="post.php?mit_remove_ticket_tech=<?= $ticket_id ?>&user_id=<?= $edit_user_id ?>&csrf_token=<?= $_SESSION['csrf_token'] ?>" class="btn btn-outline-danger confirm-link me-auto"
-                data-confirm-title="Take <?= escapeHtml($tech['user_name']) ?> off this ticket?" data-confirm-text="<?= $tech['start'] !== '' ? 'Their booking is cancelled and they are emailed the cancellation.' : 'They stop seeing it in their lists.' ?>" data-confirm-button="Remove">
+                data-confirm-title="Take <?= escapeHtml($tech['user_name']) ?> off this ticket?" data-confirm-text="<?= $tech['start'] !== '' ? 'Their scheduled time is cancelled and they are emailed the cancellation.' : 'They stop seeing it in their lists.' ?>" data-confirm-button="Remove">
                 <i class="fa fa-user-minus me-2"></i>Remove
             </a>
         <?php } ?>

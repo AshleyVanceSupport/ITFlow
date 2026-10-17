@@ -6,6 +6,8 @@
 
 require_once "includes/inc_all.php";
 
+mitModuleRequire('procurement');
+
 enforceUserPermission('module_procurement');
 
 $tabs = [
@@ -31,7 +33,7 @@ $counts = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT " . implode(', ', arr
     return "COALESCE(SUM({$tabs[$key][1]}), 0) AS `$key`";
 }, array_keys($tabs))) . " FROM mit_purchase_orders po LEFT JOIN vendors ON vendors.vendor_id = po.vendor_id WHERE 1 = 1 $scope $search"));
 
-$pos = mysqli_fetch_all(mysqli_query($mysqli, "SELECT po.*, vendor_name,
+$pos = mysqli_fetch_all(mysqli_query($mysqli, "SELECT po.po_id, po.po_prefix, po.po_number, po.vendor_id, po.status, po.order_date, po.vendor_order_number, po.ship_to, po.ship_to_address, po.note, po.shipping, po.total, po.created_by, po.submitted_at, po.approved_by, po.approved_at, po.approval_note, po.ordered_by, po.ordered_at, po.received_at, po.cancelled_at, po.expense_id, po.created_at, po.updated_at, vendor_name,
         (SELECT GROUP_CONCAT(DISTINCT c.client_name ORDER BY c.client_name SEPARATOR ', ') FROM mit_po_lines l JOIN clients c ON c.client_id = l.client_id WHERE l.po_id = po.po_id) AS client_names,
         (SELECT COALESCE(SUM(quantity), 0) FROM mit_po_lines WHERE po_id = po.po_id) AS qty,
         (SELECT COALESCE(SUM(LEAST(received_qty, quantity)), 0) FROM mit_po_lines WHERE po_id = po.po_id) AS received

@@ -19,6 +19,8 @@
     const firstDay = Number(root.dataset.firstDay) || 0;
     const defaultMinutes = Number(root.dataset.defaultMinutes) || 60;
     const contactDefault = root.dataset.contactDefault === '1';
+    const lengthOptions = JSON.parse(root.dataset.lengths || '[60]');
+    const businessHours = JSON.parse(root.dataset.businessHours || 'true');
     const board = root.querySelector('[data-md-board]');
     const queueEl = root.querySelector('[data-md-queue]');
     const titleEl = root.querySelector('[data-md-title]');
@@ -129,7 +131,7 @@
             return d;
         })();
         const minutes = ticket.minutes || defaultMinutes;
-        const lengths = [15, 30, 45, 60, 90, 120, 180, 240, 360, 480];
+        const lengths = lengthOptions.slice();
         if (lengths.indexOf(minutes) === -1) {
             lengths.push(minutes);
             lengths.sort(function (a, b) {
@@ -139,7 +141,7 @@
         const html = '<div class="text-start small">'
             + '<div class="mb-2 text-muted">' + escapeText(ticket.subject || '') + '</div>'
             + '<div class="row g-2">'
-            + '<div class="col-12"><label class="form-label mb-0">Tech</label><select class="form-select form-select-sm" id="mdTech">'
+            + '<div class="col-12"><label class="form-label mb-0">Agent</label><select class="form-select form-select-sm" id="mdTech">'
             + techs.map(function (t) {
                 return '<option value="' + t.id + '"' + (t.id === Number(techId) ? ' selected' : '') + '>' + escapeText(t.name) + '</option>';
             }).join('') + '</select></div>'
@@ -157,10 +159,10 @@
 
         return Swal.fire({
             theme: document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light',
-            title: 'Book ' + ticket.reference,
+            titleText: 'Schedule ' + ticket.reference,
             html: html,
             showCancelButton: true,
-            confirmButtonText: 'Book it',
+            confirmButtonText: 'Schedule it',
             reverseButtons: true,
             buttonsStyling: false,
             focusConfirm: true,
@@ -191,7 +193,7 @@
             if (result.isConfirmed && result.value) {
                 toast(result.value.message, 'success');
                 if (result.value.conflicts && result.value.conflicts.length) {
-                    toast('Same tech, overlapping: ' + result.value.conflicts.join('; '), 'warning');
+                    toast('Same agent, overlapping: ' + result.value.conflicts.join('; '), 'warning');
                 }
             }
             refresh();
@@ -203,8 +205,8 @@
         return Swal.fire({
             theme: document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light',
             icon: 'question',
-            title: 'Take ' + ticket.reference + ' off the schedule?',
-            text: 'The booked time is cancelled and the tech and contact are told. It goes back in the queue.',
+            titleText: 'Take ' + ticket.reference + ' off the schedule?',
+            text: 'The scheduled time is cancelled and the agent and contact are told. It goes back in the queue.',
             showCancelButton: true,
             confirmButtonText: 'Take it off',
             reverseButtons: true,
@@ -226,7 +228,7 @@
         const props = event.extendedProps || {};
         const minutes = event.end && event.start ? Math.round((event.end - event.start) / 60000) : defaultMinutes;
         return {
-            id: props.ticket_id, reference: (event.title || '').split(' ')[0], subject: event.title,
+            id: props.ticket_id, reference: props.reference || (event.title || '').split(' ')[0], subject: event.title,
             minutes: minutes, onsite: (props.icon || '') === 'fa-car' ? 1 : 0
         };
     }
@@ -351,7 +353,7 @@
         const count = root.querySelector('[data-md-tech-count]');
         count.textContent = shownTechs().length + '/' + techs.length;
         if (!shownTechs().length) {
-            board.innerHTML = '<div class="text-center text-muted py-5">Pick some techs to show.</div>';
+            board.innerHTML = '<div class="text-center text-muted py-5">Pick some agents to show.</div>';
             return;
         }
         if (state.view === 'day') {
@@ -410,7 +412,7 @@
                 editable: true,
                 droppable: true,
                 eventDurationEditable: true,
-                businessHours: {daysOfWeek: [1, 2, 3, 4, 5], startTime: '08:00', endTime: '18:00'},
+                businessHours: businessHours,
                 // The times down the side once, on the first column
                 slotHeaderContent: function (arg) {
                     return index === 0 ? arg.text : '';
@@ -501,7 +503,7 @@
                     minutes += Math.round((new Date(item.end.replace(' ', 'T')) - new Date(item.start.replace(' ', 'T'))) / 60000);
                 }
             });
-            col.querySelector('[data-md-booked]').textContent = minutes ? lengthText(minutes) + ' booked' : '';
+            col.querySelector('[data-md-booked]').textContent = minutes ? lengthText(minutes) + ' scheduled' : '';
         });
     }
 
@@ -518,7 +520,7 @@
         }
         loadItems(function (items) {
             const today = ymd(new Date());
-            let html = '<div class="table-responsive"><table class="table table-bordered table-sm mb-0 mit-dispatch-week"><thead><tr><th style="min-width: 150px">Tech</th>';
+            let html = '<div class="table-responsive"><table class="table table-bordered table-sm mb-0 mit-dispatch-week"><thead><tr><th style="min-width: 150px">Agent</th>';
             days.forEach(function (d) {
                 html += '<th class="small text-center' + (ymd(d) === today ? ' text-primary' : '') + '">' + d.toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'}) + '</th>';
             });
@@ -550,7 +552,7 @@
                     }).join('') + '</td>';
                 }).join('');
                 html += '<tr><th class="small"><span class="d-inline-block rounded-circle me-1" style="width: 10px; height: 10px; background: ' + escapeText(t.color) + '"></span>'
-                    + escapeText(t.name) + '<div class="fw-normal text-muted">' + (week ? lengthText(week) + ' booked' : '') + '</div></th>' + cells + '</tr>';
+                    + escapeText(t.name) + '<div class="fw-normal text-muted">' + (week ? lengthText(week) + ' scheduled' : '') + '</div></th>' + cells + '</tr>';
             });
             html += '</tbody></table></div>';
             board.innerHTML = html;
@@ -660,6 +662,9 @@
         refresh();
     });
 
+    // render() loads the queue (through refresh) in the day view; the week view needs it here
     render();
-    loadQueue();
+    if (state.view === 'week') {
+        loadQueue();
+    }
 })();

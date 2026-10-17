@@ -2,6 +2,9 @@
 // as a day is picked, what the assigned agent already has on it - their other
 // scheduled tickets and the events they are on - so a visit is not booked on
 // top of another. Wrapped in an IIFE because the modal can open more than once.
+// Mountaineer IT: also used by our additional-agent modal (agent/modals/ticket/mit_ticket_tech.php);
+// the Agent picker (#scheduleTech) switches whose day is shown, and "How long" sets the end
+// (functions/mit_calendar.php).
 
 (function () {
 
@@ -28,7 +31,12 @@
         const day = new Date(date + 'T12:00:00');
         title.textContent = panel.dataset.name + "'s day - " + day.toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'});
         open.href = 'calendar.php?date=' + date;
+        const asked = date + '|' + panel.dataset.user;
         itflowGet('ajax.php', {calendar_day: 1, date: date, user_id: panel.dataset.user, ticket_id: panel.dataset.ticket}, function (text) {
+            // Mountaineer IT: a slower answer for a day (or tech) picked before this one - leave the newer one showing
+            if (asked !== shown + '|' + panel.dataset.user) {
+                return;
+            }
             let items = [];
             try {
                 items = JSON.parse(text).items || [];

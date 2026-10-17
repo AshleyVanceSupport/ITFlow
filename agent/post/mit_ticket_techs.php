@@ -13,7 +13,7 @@ if (isset($_POST['mit_save_ticket_tech'])) {
 
     $row = ticketForRequest($_POST['ticket_id'] ?? 0, 2);
     if (!ticketIsOpen($row)) {
-        flashAlert("Ticket <strong>" . escapeHtml(ticketReference($row)) . "</strong> is resolved or closed - reopen it to add techs.", 'error');
+        flashAlert("Ticket <strong>" . escapeHtml(ticketReference($row)) . "</strong> is resolved or closed - reopen it to add agents.", 'error');
         redirect();
     }
 
@@ -27,13 +27,13 @@ if (isset($_POST['mit_save_ticket_tech'])) {
 
     [$ok, $message, $conflicts] = mitTicketTechSave($row, intval($_POST['user_id'] ?? 0), $mode, $start, $end);
     if (!$ok) {
-        flashAlert($message, 'error');
+        flashAlert(escapeHtml($message), 'error');
         redirect();
     }
 
     flashAlert(escapeHtml($message));
     if ($conflicts) {
-        flashAlert("They already have work booked at that time: <br>" . implode(", <br>", array_map('escapeHtml', $conflicts)), 'warning');
+        flashAlert("They already have work scheduled at that time: <br>" . implode(", <br>", array_map('escapeHtml', $conflicts)), 'warning');
     }
 
     redirect();
@@ -48,7 +48,7 @@ if (isset($_GET['mit_remove_ticket_tech'])) {
 
     $name = mitTicketTechRemove($row, intval($_GET['user_id'] ?? 0));
     if ($name === false) {
-        flashAlert('That tech is not on this ticket.', 'error');
+        flashAlert('That agent is not on this ticket.', 'error');
         redirect();
     }
 

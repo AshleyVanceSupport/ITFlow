@@ -2295,10 +2295,6 @@ if (isset($_POST['calendar_move'])) {
 }
 
 /*
- * The calendar's To schedule list: an agent's open tickets with no work booked
- * (most urgent first), to drag onto the calendar - in one client, or all.
- */
-/*
  * Mountaineer IT: the calendar's view, whose calendar and what is ticked, saved to the
  * agent's account so it is the same on every device (functions/mit_calendar.php).
  */
@@ -2315,7 +2311,13 @@ if (isset($_POST['mit_calendar_state'])) {
         echo json_encode(['error' => 'Bad calendar settings']);
         exit;
     }
-    mitSetUserPreference($session_user_id, "calendar.$page", json_encode(mitCleanCalendarState($state)));
+    try {
+        mitSetUserPreference($session_user_id, "calendar.$page", json_encode(mitCleanCalendarState($state)));
+    } catch (Throwable $e) {
+        // Database update M002 not run yet - the calendar still works, it just is not remembered
+        echo json_encode(['error' => 'Not saved']);
+        exit;
+    }
     echo json_encode(['ok' => true]);
     exit;
 }
@@ -2330,7 +2332,7 @@ if (isset($_GET['mit_timer_tickets'])) {
     $ids = array_slice(array_values(array_unique(array_filter(array_map('intval', explode(',', (string) ($_GET['ids'] ?? '')))))), 0, 100);
     $tickets = [];
     if ($ids && lookupUserPermission('module_support') >= 1) {
-        $result = mysqli_query($mysqli, "SELECT ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_resolved_at, ticket_closed_at, ticket_archived_at, client_name
+        $result = mysqli_query($mysqli, "SELECT ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_client_id, ticket_resolved_at, ticket_closed_at, ticket_archived_at, client_name
             FROM tickets LEFT JOIN clients ON client_id = ticket_client_id
             WHERE ticket_id IN (" . implode(',', $ids) . ") " . clientScopeSql('ticket_client_id'));
         while ($row = mysqli_fetch_assoc($result)) {
@@ -2338,6 +2340,7 @@ if (isset($_GET['mit_timer_tickets'])) {
                 'reference' => ticketReference($row),
                 'subject' => $row['ticket_subject'],
                 'client' => (string) $row['client_name'],
+                'client_id' => intval($row['ticket_client_id']),
                 'open' => ticketIsOpen($row) && empty($row['ticket_archived_at']),
             ];
         }
@@ -2346,6 +2349,10 @@ if (isset($_GET['mit_timer_tickets'])) {
     exit;
 }
 
+/*
+ * The calendar's To schedule list: an agent's open tickets with no work booked
+ * (most urgent first), to drag onto the calendar - in one client, or all.
+ */
 if (isset($_GET['calendar_unscheduled'])) {
 
     header('Content-Type: application/json');
@@ -2386,17 +2393,17 @@ if (isset($_GET['calendar_unscheduled'])) {
     exit;
 }
 
-/*
- * One agent's day - their scheduled tickets and the events they are on - for
- * the ticket's Schedule dialog, so a visit is not booked on top of another.
- * $_GET: date, user_id, ticket_id (the ticket being scheduled, left out).
- */
 // Mountaineer IT: save / reset the ticket page layout (functions/mit_ticket_layout.php)
 if (isset($_POST['mit_ticket_layout'])) {
     validateCSRFToken();
     mitTicketLayoutAjax($_POST);
 }
 
+/*
+ * One agent's day - their scheduled tickets and the events they are on - for
+ * the ticket's Schedule dialog, so a visit is not booked on top of another.
+ * $_GET: date, user_id, ticket_id (the ticket being scheduled, left out).
+ */
 if (isset($_GET['calendar_day'])) {
 
     header('Content-Type: application/json');

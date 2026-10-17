@@ -17,6 +17,10 @@ if (isset($_POST['mit_edit_procurement_settings'])) {
         flashAlert('Fill in a prefix, a next number of 1 or more and an approval amount of 0 or more.', 'error');
         redirect();
     }
+    if ($next < mitPoNextNumber()) {
+        flashAlert('The next PO number can only go up - ' . intval(mitPoNextNumber()) . ' or more.', 'error');
+        redirect();
+    }
 
     mitSetSetting('procurement_po_prefix', mb_substr($prefix, 0, 20));
     mitSetSetting('procurement_po_next', $next);

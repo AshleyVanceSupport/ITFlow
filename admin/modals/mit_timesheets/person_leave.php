@@ -10,7 +10,7 @@ require_once '../../includes/modal_header.php';
 $user_id = intval($_GET['id'] ?? 0);
 $person = mitTsUsers([$user_id])[$user_id] ?? null;
 if (!mitLeaveReady() || !$person) {
-    exit('<div class="modal-body">That person does not keep a timesheet.</div>');
+    exit(json_encode(['error' => 'That person does not keep a timesheet.']));
 }
 $banks = mitLeaveBanks();
 

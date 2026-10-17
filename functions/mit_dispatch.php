@@ -9,13 +9,29 @@
  * a quick confirm with the tech, start, length, onsite/remote and whether to email the contact, then
  * assigns it (ticketChangeAssignee) and books it (ticketSetSchedule) exactly as the ticket page does.
  * A booking dragged back onto the queue is taken off the schedule (ticketCancelSchedule).
- * Needs Support edit (calendarCanScheduleTickets). Which techs show, the view and weekends are saved
+ * Needs Support edit (calendarCanScheduleTickets), ticketing on, and the Dispatch switch on (Admin > Settings > Modules). Which techs show, the view and weekends are saved
  * per person in mit_user_preferences (dispatch.state). No tables of its own.
  */
 
-/** May the signed-in agent dispatch? */
+/** The lengths offered when booking (minutes); a ticket's own length is added when it is not one of them. */
+const MIT_DISPATCH_LENGTHS = [15, 30, 45, 60, 90, 120, 180, 240, 360, 480];
+
+/** The board's working hours, from Admin > SLA's business days and hours: FullCalendar businessHours. */
+function mitDispatchBusinessHours() {
+    $sla = getSlaSettings();
+    $time = function ($value, $fallback) {
+        return preg_match('/^\d{1,2}:\d{2}/', (string) $value) ? substr((string) $value, 0, 5) : $fallback;
+    };
+    // ISO weekdays (Mon 1 .. Sun 7) to FullCalendar's (Sun 0 .. Sat 6)
+    $days = array_map(function ($day) {
+        return $day % 7;
+    }, $sla['business_days'] ?: [1, 2, 3, 4, 5]);
+    return ['daysOfWeek' => array_values($days), 'startTime' => $time($sla['business_hours_start'], '08:00'), 'endTime' => $time($sla['business_hours_end'], '17:00')];
+}
+
+/** May the signed-in agent dispatch? Support edit, with ticketing on (Admin > Modules) and our Dispatch switch on. */
 function mitDispatchCan() {
-    return calendarCanScheduleTickets();
+    return mitModuleOn('dispatch') && calendarCanScheduleTickets();
 }
 
 /** Agents who can be dispatched to: user_id => [user_id, name, color, initials]. */
@@ -106,6 +122,7 @@ function mitDispatchItems($from, $to, array $tech_ids) {
     $techs = mitDispatchTechs();
     $sources = calendarSources();
     $items = [];
+    $ticket_ids = [];
     foreach (array_unique(array_map('intval', $tech_ids)) as $tech_id) {
         if (!isset($techs[$tech_id])) {
             continue;
@@ -117,6 +134,7 @@ function mitDispatchItems($from, $to, array $tech_ids) {
         }
         foreach ($found as $item) {
             $kind = $item['extendedProps']['kind'] ?? '';
+            $ticket_ids[] = intval($item['extendedProps']['ticket_id'] ?? 0);
             // A helper's booking shows on their own column only
             if ($kind === 'helper' && intval($item['extendedProps']['user_id'] ?? 0) !== $tech_id) {
                 continue;
@@ -126,6 +144,19 @@ function mitDispatchItems($from, $to, array $tech_ids) {
             $item['durationEditable'] = $item['editable'];
             $items[] = $item;
         }
+    }
+    // Each booking's ticket reference (the confirm's title), in one query
+    $ticket_ids = array_filter(array_unique($ticket_ids));
+    if ($ticket_ids) {
+        $references = [];
+        $result = mysqli_query($GLOBALS['mysqli'], "SELECT ticket_id, ticket_prefix, ticket_number FROM tickets WHERE ticket_id IN (" . implode(',', $ticket_ids) . ")");
+        while ($row = mysqli_fetch_assoc($result)) {
+            $references[intval($row['ticket_id'])] = ticketReference($row);
+        }
+        foreach ($items as &$item) {
+            $item['extendedProps']['reference'] = $references[intval($item['extendedProps']['ticket_id'] ?? 0)] ?? '';
+        }
+        unset($item);
     }
     return $items;
 }
@@ -152,9 +183,10 @@ function mitDispatchBook($ticket_id, $tech_id, $start, $minutes, $onsite, $tell_
     }
     $tech_id = intval($tech_id);
     if (!isset(mitDispatchTechs()[$tech_id])) {
-        return [false, 'Pick a tech.', []];
+        return [false, 'Pick an agent.', []];
     }
     if ($tech_id !== intval($row['ticket_assigned_to'])) {
+        mitScheduleLeadChanging($row, $tech_id);
         [$assigned_ok, $assigned_message] = ticketChangeAssignee($row['ticket_id'], $tech_id);
         if (!$assigned_ok) {
             return [false, strip_tags($assigned_message), []];
@@ -167,7 +199,7 @@ function mitDispatchBook($ticket_id, $tech_id, $start, $minutes, $onsite, $tell_
     $result = ticketSetSchedule($row, $start, $onsite ? 1 : 0, $end);
     $mit_schedule_skip_contact = false;
     $tech = mitDispatchTechs()[$tech_id]['name'];
-    return [true, ticketReference($row) . " booked with $tech for " . $result['when_text'], $result['conflicts']];
+    return [true, ticketReference($row) . " scheduled with $tech for " . $result['when_text'], $result['conflicts']];
 }
 
 /** Take a ticket's booking off (dragged back to the queue). Returns [ok, message]. */
@@ -177,7 +209,7 @@ function mitDispatchUnbook($ticket_id) {
         return [false, 'That ticket no longer exists.'];
     }
     if (empty($row['ticket_schedule'])) {
-        return [false, ticketReference($row) . ' has no booked time.'];
+        return [false, ticketReference($row) . ' has no scheduled time.'];
     }
     ticketCancelSchedule($row);
     return [true, ticketReference($row) . ' taken off the schedule - it is back in the queue'];

@@ -18,14 +18,5 @@
         </div>
         <div data-timers-list></div>
     </div>
+    <script src="/js/mit_timers.js" defer></script><?php // inside the <li>: nothing else may sit in the navbar's <ul>; the script adds its own styles ?>
 </li>
-<style>
-    #mitTimers.is-running > .nav-link { color: #ffc107; }
-    #mitTimers.is-running .fa-stopwatch { animation: mit-timer-pulse 1.6s ease-in-out infinite; }
-    @keyframes mit-timer-pulse { 50% { opacity: .45; } }
-    .mit-timers-panel .mit-timer-row { padding: .6rem 1rem; border-bottom: 1px solid var(--bs-border-color); }
-    .mit-timers-panel .mit-timer-row:last-child { border-bottom: 0; }
-    .mit-timers-panel .mit-timer-time { font-variant-numeric: tabular-nums; font-weight: 600; }
-    @media (prefers-reduced-motion: reduce) { #mitTimers.is-running .fa-stopwatch { animation: none; } }
-</style>
-<script src="/js/mit_timers.js" defer></script>

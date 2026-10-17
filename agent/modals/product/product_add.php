@@ -19,7 +19,7 @@ ob_start();
     <h5 class="modal-title"><i class="fas fa-fw <?= $type_icon ?> me-2"></i>New <strong><?= ucwords($type); ?></strong></h5>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
 </div>
-<form action="post.php" method="post" autocomplete="off" enctype="multipart/form-data">
+<form action="post.php" method="post" autocomplete="off" enctype="multipart/form-data"><?php // Mountaineer IT: multipart for the image ?>
     <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
 
     <div class="modal-body">

@@ -7,18 +7,23 @@
 
 require_once '../../../includes/modal_header.php';
 
+mitModuleRequire('procurement', true);
+
 $action = (string) ($_GET['action'] ?? '');
 $levels = ['approve' => 3, 'reject' => 3, 'ordered' => 2, 'email' => 2, 'tracking' => 2, 'details' => 2, 'bill' => 2];
 if (!isset($levels[$action])) {
-    exit('<div class="modal-body">Unknown action.</div>');
+    exit(json_encode(['error' => 'Unknown action.']));
 }
 enforceUserPermission('module_procurement', $levels[$action]);
+if (($action === 'approve' || $action === 'reject') && ($po_check = mitPoRow($_GET['po_id'] ?? 0)) && !mitPoMayApprove($po_check)) {
+    exit(json_encode(['error' => 'Someone else approves a PO you made.']));
+}
 if ($action === 'bill') {
     enforceUserPermission('module_financial', 2);
 }
 $po = mitPoRow($_GET['po_id'] ?? 0);
 if (!$po || !mitPoAccessible($po['po_id'])) {
-    exit('<div class="modal-body">That purchase order does not exist, or it is for a client you cannot see.</div>');
+    exit(json_encode(['error' => 'That purchase order does not exist, or it is for a client you cannot see.']));
 }
 $po_id = intval($po['po_id']);
 $reference = escapeHtml(mitPoReference($po));
@@ -97,7 +102,7 @@ ob_start();
             </div>
 
         <?php } elseif ($action === 'details') {
-            $vendors = mysqli_fetch_all(mysqli_query($mysqli, "SELECT vendor_id, vendor_name FROM vendors WHERE vendor_client_id = 0 AND vendor_archived_at IS NULL ORDER BY vendor_name"), MYSQLI_ASSOC); ?>
+            $vendors = mitProcVendorRows(); ?>
             <?php if ($po['status'] === 'draft') { ?>
                 <div class="mb-3">
                     <label class="form-label">Vendor</label>

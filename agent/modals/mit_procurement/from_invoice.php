@@ -7,12 +7,14 @@
 
 require_once '../../../includes/modal_header.php';
 
+mitModuleRequire('procurement', true);
+
 enforceUserPermission('module_procurement', 2);
 
 $invoice_id = intval($_GET['invoice_id'] ?? 0);
 $invoice = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT invoice_id, invoice_prefix, invoice_number, invoice_client_id FROM invoices WHERE invoice_id = $invoice_id"));
 if (!$invoice || !hasClientAccess($invoice['invoice_client_id'])) {
-    exit('<div class="modal-body">That invoice does not exist, or it is for a client you cannot see.</div>');
+    exit(json_encode(['error' => 'That invoice does not exist, or it is for a client you cannot see.']));
 }
 $client_id = intval($invoice['invoice_client_id']);
 $lines = mysqli_fetch_all(mysqli_query($mysqli, "SELECT item_id, item_name, item_quantity, item_product_id FROM invoice_items WHERE item_invoice_id = $invoice_id ORDER BY item_order, item_id"), MYSQLI_ASSOC);
@@ -56,6 +58,7 @@ ob_start();
                                 <?= escapeHtml($line['item_name']) ?>
                                 <?php if ($done > 0) { ?><div class="small text-muted"><?= mitQty($done) ?> already sent<?= $left > 0 ? '' : ' - all of it' ?></div><?php } ?>
                                 <?php if ($is_service) { ?><span class="badge text-bg-light border">Service</span><?php } ?>
+                                <?php if ($product && $product['product_type'] === 'product') { ?><div class="small text-muted">Taken from stock when it was put on the invoice - that stock goes back when the order arrives</div><?php } ?>
                             </td>
                             <td><input type="text" inputmode="decimal" class="form-control form-control-sm text-center" name="lines[<?= $item_id ?>][qty]" value="<?= mitQty($left) ?>" aria-label="Quantity" <?= $left > 0 ? '' : 'disabled' ?>></td>
                             <td><input type="text" inputmode="decimal" class="form-control form-control-sm text-end" name="lines[<?= $item_id ?>][cost]" value="<?= $product && $product['cost'] !== null ? number_format((float) $product['cost'], 2, '.', '') : '' ?>" placeholder="0.00" aria-label="Our cost" <?= $left > 0 ? '' : 'disabled' ?>></td>

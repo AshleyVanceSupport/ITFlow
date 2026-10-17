@@ -31,7 +31,7 @@ ob_start();
     <h5 class="modal-title"><i class="fas fa-fw fa-box-open me-2"></i>Editing <?= ucwords($product_type) ?>: <strong><?= $product_name ?></strong></h5>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
 </div>
-<form action="post.php" method="post" autocomplete="off" enctype="multipart/form-data">
+<form action="post.php" method="post" autocomplete="off" enctype="multipart/form-data"><?php // Mountaineer IT: multipart for the image ?>
     <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
     <input type="hidden" name="product_id" value="<?= $product_id ?>">
     <div class="modal-body">

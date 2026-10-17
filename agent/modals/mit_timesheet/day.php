@@ -2,18 +2,23 @@
 
 /*
  * Mountaineer IT - a timesheet day's ticket time (functions/mit_timesheets.php): the tickets behind
- * the auto-filled hours. Tickets for clients the viewer cannot see are counted but not named.
+ * the auto-filled hours. Tickets are named only to someone with Support access and access to their
+ * client; the rest are counted, not named. Hours here are as logged - the timesheet rounds the day.
  */
 
 require_once '../../../includes/modal_header.php';
 
+mitModuleRequire('timesheets', true);
+
 $user_id = intval($_GET['user_id'] ?? 0);
 $date = (string) ($_GET['date'] ?? '');
-if (!mitTsReady() || !mitTsMaySee($user_id) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
-    exit('<div class="modal-body">You cannot see that timesheet.</div>');
+if (!mitTsReady() || !mitTsMaySee($user_id) || !calendarIsDate($date)) {
+    exit(json_encode(['error' => 'You cannot see that timesheet.']));
 }
 $rows = mitTsDayTickets($user_id, $date);
 $hidden = 0;
+$see_tickets = lookupUserPermission('module_support') >= 1;
+$rounding = mitTsSettings()['rounding'];
 
 ob_start();
 
@@ -31,22 +36,25 @@ ob_start();
             <thead class="small text-muted"><tr><th>Ticket</th><th>Client</th><th class="text-center">Billable</th><th class="text-end">Hours</th></tr></thead>
             <tbody>
                 <?php foreach ($rows as $row) {
-                    if (!hasClientAccess($row['ticket_client_id'])) {
+                    if (!$see_tickets || !hasClientAccess($row['ticket_client_id'])) {
                         $hidden += $row['minutes'];
                         continue;
                     } ?>
                     <tr>
-                        <td><a href="ticket.php?ticket_id=<?= intval($row['ticket_id']) ?>"><?= escapeHtml($row['ticket_prefix'] . $row['ticket_number']) ?></a> <?= escapeHtml($row['ticket_subject']) ?></td>
+                        <td><?= ticketLink($row) ?></td>
                         <td class="small"><?= escapeHtml($row['client_name'] ?: '-') ?></td>
                         <td class="text-center"><?= intval($row['ticket_billable']) ? '<i class="fas fa-check text-success" title="Billable"></i>' : '' ?></td>
                         <td class="text-end"><?= mitTsHours($row['minutes'], false) ?></td>
                     </tr>
                 <?php } ?>
                 <?php if ($hidden) { ?>
-                    <tr><td colspan="3" class="text-muted small">Tickets for clients you cannot see</td><td class="text-end"><?= mitTsHours($hidden, false) ?></td></tr>
+                    <tr><td colspan="3" class="text-muted small">Tickets you cannot see</td><td class="text-end"><?= mitTsHours($hidden, false) ?></td></tr>
                 <?php } ?>
             </tbody>
         </table>
+        <?php if ($rounding) { ?>
+            <div class="form-text">As logged - the timesheet rounds each day's ticket time to the nearest <?= intval($rounding) ?> minutes.</div>
+        <?php } ?>
     <?php } ?>
 </div>
 <div class="modal-footer">

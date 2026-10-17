@@ -352,10 +352,11 @@
             return;
         }
 
-        // Mountaineer IT: a tech helping on a ticket - moving it gives them their own time
+        // Mountaineer IT: an agent helping on a ticket - moving or resizing it gives them their own time
         if (props.kind === 'helper') {
+            const resized = info.oldEvent && info.oldEvent.start && info.oldEvent.start.getTime() === start.getTime();
             confirmDialog({
-                title: 'Move ' + event.title.split(' ')[0] + ' for this tech to ' + words(start, false) + '?',
+                title: (resized ? 'Change ' + event.title.split(' ')[0] + ' for this agent to end at ' + words(end, false) : 'Move ' + event.title.split(' ')[0] + ' for this agent to ' + words(start, false)) + '?',
                 text: props.follows_lead ? 'They get their own time - no longer moving with the lead. They are emailed the new time.' : 'They are emailed the new time.',
                 confirmButtonText: 'Move it'
             }).then(function (result) {

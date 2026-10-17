@@ -7,6 +7,8 @@
 
 defined('FROM_POST_HANDLER') || die("Direct file access is not allowed");
 
+mitModuleGuard('procurement', ['mit_part', 'mit_proc_']);
+
 if (isset($_POST['mit_proc_from_invoice'])) {
 
     validateCSRFToken();
@@ -75,8 +77,12 @@ if (isset($_GET['mit_part_remove'])) {
     validateCSRFToken();
 
     $ticket = ticketForRequest($_GET['ticket_id'] ?? 0, 2);
+    if (!empty($ticket['ticket_closed_at'])) {
+        flashAlert('The ticket is closed.', 'error');
+        redirect();
+    }
     [$ok, $message] = mitTicketPartRemove($ticket, $_GET['mit_part_remove']);
-    flashAlert(escapeHtml($message), $ok ? 'error' : 'error');
+    flashAlert(escapeHtml($message), $ok ? 'success' : 'error');
     redirect();
 }
 

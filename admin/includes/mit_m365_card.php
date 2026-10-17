@@ -10,22 +10,20 @@ $mit_m365_mailbox_connected = $mit_m365_app && !empty($config_mail_oauth_refresh
     && ($config_mail_oauth_client_id ?? '') === $mit_m365_app['client_id'];
 $mit_m365_mail_uses_ms = ($config_smtp_provider ?? '') === 'microsoft_oauth' || ($config_imap_provider ?? '') === 'microsoft_oauth';
 
-// Is mail going through Microsoft Graph? Needs the Mail permissions on the mailbox's token.
-$mit_m365_graph_mail = false;
-$mit_m365_graph_error = '';
-if ($mit_m365_mailbox_connected) {
-    try {
-        $mit_m365_graph_mail = mitM365MailGraphToken('Mail.Send') !== null && in_array('Mail.ReadWrite', mitM365MailGraphScopes(), true);
-    } catch (Throwable $e) {
-        $mit_m365_graph_error = $e->getMessage();
-    }
-    $mit_m365_app = mitM365App();  // the token check may have recorded the permissions
-}
+// Secrets still under the old derived key are moved to config.php's key (cheap when there is nothing to do)
+mitUpgradeSecrets();
+
+// Is mail going through Microsoft Graph? Decided from the mailbox's last token (cached) - opening this page
+// never calls Microsoft; Test IMAP / Test OAuth below do the live checks.
+$mit_m365_graph_scopes = mitM365MailGraphScopes();
+$mit_m365_graph_mail = $mit_m365_mailbox_connected && in_array('Mail.Send', $mit_m365_graph_scopes, true) && in_array('Mail.ReadWrite', $mit_m365_graph_scopes, true);
+$mit_m365_graph_unknown = $mit_m365_mailbox_connected && !$mit_m365_graph_scopes;
 $mit_m365_needs_update = $mit_m365_app && intval($mit_m365_app['permissions_version']) < MIT_M365_PERMISSIONS_VERSION;
+$mit_m365_cert_expired = $mit_m365_app && $mit_m365_app['cert_expires'] !== '' && strtotime($mit_m365_app['cert_expires']) < time();
 ?>
 
-<div class="card mb-3" id="mitM365">
-    <div class="card-header py-2 d-flex align-items-center">
+<div class="card card-dark mb-3" id="mitM365">
+    <div class="card-header py-3 d-flex align-items-center">
         <h3 class="card-title mb-0"><i class="fab fa-fw fa-microsoft me-2"></i>Microsoft 365</h3>
         <?php if ($mit_m365_app) { ?>
             <span class="badge rounded-pill <?= $mit_m365_mailbox_connected ? 'text-bg-success' : 'text-bg-warning' ?> ms-auto"><?= $mit_m365_mailbox_connected ? 'Ready' : 'Mailbox not connected' ?></span>
@@ -64,9 +62,14 @@ $mit_m365_needs_update = $mit_m365_app && intval($mit_m365_app['permissions_vers
             <?php if (mitM365KeyPem() === '') { ?>
                 <div class="alert alert-danger">
                     <strong>This server cannot read the app's certificate</strong>, so it cannot sign in to Microsoft 365 - mail through it
-                    has stopped. That happens when ITFlow is restored onto a new server: the certificate is encrypted with a key from
-                    <code>config.php</code>. Either copy <code>$installation_id</code> from the old server's <code>config.php</code> into this
+                    has stopped. That happens when ITFlow is restored onto a new server: the certificate is encrypted with a key kept in
+                    <code>config.php</code>. Either copy <code>$config_mit_secret_key</code> from the old server's <code>config.php</code> into this
                     one's, or click <strong>Remove</strong> and set it up again (then connect the mailbox, and staff reconnect Outlook).
+                </div>
+            <?php } elseif ($mit_m365_cert_expired) { ?>
+                <div class="alert alert-danger">
+                    <strong>The app's certificate has expired</strong>, so ITFlow can no longer sign in to Microsoft 365 or replace it by itself.
+                    Click <strong>Remove</strong> and set the app up again (then connect the mailbox, and staff reconnect Outlook).
                 </div>
             <?php } ?>
 
@@ -87,13 +90,15 @@ $mit_m365_needs_update = $mit_m365_app && intval($mit_m365_app['permissions_vers
             <?php } ?>
 
             <?php if ($mit_m365_mailbox_connected) { ?>
-                <?php if ($mit_m365_graph_error !== '') { ?>
-                    <div class="text-danger"><i class="fas fa-exclamation-triangle me-2"></i><?= escapeHtml($mit_m365_graph_error) ?></div>
+                <?php if ($mit_m365_graph_unknown) { ?>
+                    <div class="text-success"><i class="fas fa-check-circle me-2"></i>Mailbox connected - ITFlow checks which way mail goes the next time it sends or receives
+                        (or use <strong>Test IMAP</strong> on the Receiving tab now).</div>
                 <?php } elseif ($mit_m365_graph_mail) { ?>
                     <div class="text-success"><i class="fas fa-check-circle me-2"></i>Mailbox connected - mail is sent and received through Microsoft Graph.
                         To use a different mailbox, click Connect Microsoft 365 on the <a href="?tab=oauth">OAuth</a> tab again.</div>
                 <?php } else { ?>
-                    <div class="text-success"><i class="fas fa-check-circle me-2"></i>Mailbox connected - mail still goes through SMTP and IMAP until the permissions above are updated.</div>
+                    <div class="text-success"><i class="fas fa-check-circle me-2"></i>Mailbox connected - mail still goes through SMTP and IMAP, because the app does not have the Mail permissions
+                        (<strong>Update permissions</strong> when it is offered above, or add them to the app in Entra).</div>
                 <?php } ?>
             <?php } else { ?>
                 <div class="alert alert-info mb-0">
@@ -109,14 +114,14 @@ $mit_m365_needs_update = $mit_m365_app && intval($mit_m365_app['permissions_vers
 
             <p class="mb-3">
                 ITFlow can create its own app in your Microsoft 365 for email and Outlook calendars - with the permissions it needs, approved
-                for your organisation, and a certificate it renews itself. You sign in once as a Global Administrator; nothing else to copy or paste.
+                for your organization, and a certificate it renews itself. You sign in once as a Global Administrator; nothing else to copy or paste.
             </p>
             <button type="button" class="btn btn-primary js-mit-m365-start" data-purpose="create"><i class="fab fa-microsoft me-2"></i>Set up automatically</button>
             <button type="button" class="btn btn-link" data-bs-toggle="collapse" data-bs-target="#mitM365Manual">Set up by hand instead</button>
 
             <div class="collapse mt-3" id="mitM365Manual">
                 <div class="border rounded p-3">
-                    <p class="mb-2">If your organisation blocks the code sign-in, create the app by hand in the
+                    <p class="mb-2">If your organization blocks the code sign-in, create the app by hand in the
                         <a href="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener">Entra admin center</a>:</p>
                     <ol class="mb-3">
                         <li><strong>App registrations &gt; New registration</strong>: name it <em><?= escapeHtml(MIT_M365_APP_NAME) ?></em>, single tenant,
@@ -185,8 +190,8 @@ $mit_m365_needs_update = $mit_m365_app && intval($mit_m365_app['permissions_vers
                     step.hidden = true;
                     errorBox.hidden = false;
                     const manual = document.getElementById('mitM365Manual');
-                    errorBox.textContent = message + (blocked ? (manual ? ' Your organisation blocks this kind of sign-in - use "Set up by hand instead" below.'
-                        : ' Your organisation blocks this kind of sign-in - add the permissions by hand as described above.') : '');
+                    errorBox.textContent = message + (blocked ? (manual ? ' Your organization blocks this kind of sign-in - use "Set up by hand instead" below.'
+                        : ' Your organization blocks this kind of sign-in - add the permissions by hand as described above.') : '');
                     start.disabled = false;
                     if (blocked && manual) {
                         manual.classList.add('show');
@@ -210,10 +215,22 @@ $mit_m365_needs_update = $mit_m365_app && intval($mit_m365_app['permissions_vers
                         flow.querySelector('.js-copy').onclick = function () {
                             navigator.clipboard && navigator.clipboard.writeText(json.user_code);
                         };
+                        // Ask until Microsoft answers, the code expires, or the server stops answering in JSON (session gone)
+                        let interval = json.interval * 1000;
+                        let misses = 0;
+                        const deadline = Date.now() + (json.expires_in || 900) * 1000;
                         const poll = function () {
+                            if (Date.now() > deadline) {
+                                fail('The sign-in code has expired - start again.');
+                                return;
+                            }
                             post('mit_m365_poll').then(function (result) {
+                                misses = 0;
                                 if (result.pending) {
-                                    setTimeout(poll, json.interval * 1000);
+                                    if (result.slow_down) {
+                                        interval += 5000;  // Microsoft asked us to ask less often
+                                    }
+                                    setTimeout(poll, interval);
                                 } else if (result.ok) {
                                     statusText.textContent = 'Done - reloading...';
                                     window.location.href = 'settings_mail.php?tab=oauth';
@@ -221,7 +238,11 @@ $mit_m365_needs_update = $mit_m365_app && intval($mit_m365_app['permissions_vers
                                     fail(result.error || 'That did not work.', result.blocked);
                                 }
                             }).catch(function () {
-                                setTimeout(poll, json.interval * 1000);
+                                if (++misses >= 3) {
+                                    fail('The server stopped answering - reload the page and try again.');
+                                } else {
+                                    setTimeout(poll, interval);
+                                }
                             });
                         };
                         setTimeout(function () {

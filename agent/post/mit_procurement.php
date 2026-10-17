@@ -7,11 +7,7 @@
 
 defined('FROM_POST_HANDLER') || die("Direct file access is not allowed");
 
-/** A posted money / quantity value, or null when blank. */
-function mitProcNumber($value) {
-    $value = trim(str_replace([',', '$'], '', (string) $value));
-    return $value === '' || !is_numeric($value) ? null : round((float) $value, 2);
-}
+mitModuleGuard('procurement', ['mit_po_', 'mit_proc_']);
 
 // ---------- items to order ----------
 
@@ -40,16 +36,32 @@ if (isset($_POST['mit_proc_save_item'])) {
     ];
 
     if ($item_id) {
-        $item = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT * FROM mit_procurement_items proc WHERE item_id = $item_id AND status = 'waiting'" . clientScopeSql('proc.client_id')));
+        $item = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT proc.item_id, proc.source, proc.client_id, proc.project_id, proc.invoice_id, proc.invoice_item_id, proc.ticket_id, proc.product_id, proc.vendor_id, proc.name, proc.description, proc.quantity, proc.unit_cost, proc.status, proc.note, proc.created_by, proc.created_at, proc.updated_at FROM mit_procurement_items proc WHERE item_id = $item_id AND status = 'waiting'" . clientScopeSql('proc.client_id')));
         if (!$item) {
             flashAlert('That item is no longer waiting to be ordered.', 'error');
             redirect();
         }
+        // An item from an invoice or ticket stays with that client; a project must be the client's own
+        if ($item['source'] !== 'manual') {
+            $client_id = intval($item['client_id']);
+        }
+        if ($fields['project_id'] && intval(getFieldById('projects', $fields['project_id'], 'project_client_id')) !== $client_id) {
+            $fields['project_id'] = 0;
+        }
+        if (!isset(mitProcVendors()[$fields['vendor_id']])) {
+            $fields['vendor_id'] = 0;
+        }
         mysqli_query($mysqli, "UPDATE mit_procurement_items SET name = '" . escapeSql(mb_substr($name, 0, 255)) . "', quantity = $quantity,
             unit_cost = " . ($cost === null ? 'NULL' : $cost) . ", vendor_id = " . $fields['vendor_id'] . ", client_id = $client_id, project_id = " . $fields['project_id'] . ",
             note = " . (trim($fields['note']) === '' ? 'NULL' : "'" . escapeSql(mb_substr($fields['note'], 0, 255)) . "'") . " WHERE item_id = $item_id");
+        // A ticket's part follows its item
+        mysqli_query($mysqli, "UPDATE mit_ticket_parts SET quantity = $quantity WHERE proc_item_id = $item_id AND invoice_id = 0");
+        logAudit('Procurement', 'Edit', escapeSql(mitProcWho() . " changed $name on the list to order"), $client_id);
         flashAlert('Item <strong>' . escapeHtml($name) . '</strong> saved');
     } else {
+        if ($fields['project_id'] && intval(getFieldById('projects', $fields['project_id'], 'project_client_id')) !== $client_id) {
+            $fields['project_id'] = 0;
+        }
         mitProcAddItem($fields);
         logAudit('Procurement', 'Create', escapeSql(mitProcWho() . " added $name to the list to order"), $client_id);
         flashAlert('Item <strong>' . escapeHtml($name) . '</strong> added to the list to order');
@@ -99,6 +111,7 @@ if (isset($_POST['mit_po_create']) || isset($_POST['mit_po_add_items']) || isset
             redirect();
         }
         mysqli_query($mysqli, "UPDATE mit_procurement_items SET vendor_id = $vendor_id WHERE item_id IN (" . implode(',', $item_ids) . ")");
+        logAudit('Procurement', 'Edit', escapeSql(mitProcWho() . ' set the vendor of ' . count($item_ids) . ' item(s) to order'));
         flashAlert(count($item_ids) . ' item' . (count($item_ids) === 1 ? '' : 's') . ' set to that vendor');
         redirect();
     }
@@ -127,10 +140,14 @@ if (isset($_POST['mit_po_save_lines'])) {
             continue;
         }
         mysqli_query($mysqli, "UPDATE mit_po_lines SET quantity = $qty, unit_cost = $cost WHERE line_id = " . intval($line_id) . " AND po_id = " . intval($po['po_id']));
+        // A ticket's part follows the quantity ordered for it
+        mysqli_query($mysqli, "UPDATE mit_ticket_parts parts JOIN mit_po_lines l ON l.proc_item_id = parts.proc_item_id AND parts.proc_item_id > 0
+            SET parts.quantity = $qty WHERE l.line_id = " . intval($line_id) . " AND l.po_id = " . intval($po['po_id']) . " AND parts.invoice_id = 0");
     }
     $shipping = mitProcNumber($_POST['shipping'] ?? '');
     mysqli_query($mysqli, "UPDATE mit_purchase_orders SET shipping = " . max(0, (float) $shipping) . " WHERE po_id = " . intval($po['po_id']));
     mitPoRecalc($po['po_id']);
+    mitPoLog($po['po_id'], mitProcWho() . ' changed the quantities and costs');
     flashAlert('Quantities and costs saved');
     redirect();
 }
@@ -166,6 +183,10 @@ if (isset($_POST['mit_po_decide'])) {
     $po = mitPoForRequest($_POST['po_id'] ?? 0, 3);
     if ($po['status'] !== 'pending') {
         flashAlert('That PO is not waiting for approval.', 'error');
+        redirect();
+    }
+    if (!mitPoMayApprove($po)) {
+        flashAlert('Someone else approves a PO you made.', 'error');
         redirect();
     }
     $approve = ($_POST['decision'] ?? '') === 'approve';
@@ -268,6 +289,7 @@ if (isset($_POST['mit_po_tracking_add'])) {
     mysqli_query($mysqli, "INSERT INTO mit_po_tracking SET po_id = " . intval($po['po_id']) . ", carrier = '$carrier', tracking_number = '" . escapeSql(mb_substr($number, 0, 100)) . "',
         note = " . ($note === '' ? 'NULL' : "'" . escapeSql(mb_substr($note, 0, 255)) . "'") . ", eta = " . (preg_match('/^\d{4}-\d{2}-\d{2}$/', $eta) ? "'$eta'" : 'NULL'));
     mitPoLog($po['po_id'], mitProcWho() . ' added tracking - ' . MIT_CARRIERS[$carrier][0] . " $number");
+    logAudit('Purchase Order', 'Edit', escapeSql(mitProcWho() . ' added tracking to ' . mitPoReference($po)), 0, intval($po['po_id']));
     flashAlert('Tracking added');
     redirect();
 }
@@ -276,7 +298,7 @@ if (isset($_GET['mit_po_tracking_delivered']) || isset($_GET['mit_po_tracking_de
 
     validateCSRFToken();
     $tracking_id = intval($_GET['mit_po_tracking_delivered'] ?? $_GET['mit_po_tracking_delete']);
-    $tracking = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT * FROM mit_po_tracking WHERE tracking_id = $tracking_id"));
+    $tracking = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT tracking_id, po_id, carrier, tracking_number FROM mit_po_tracking WHERE tracking_id = $tracking_id"));
     if (!$tracking) {
         flashAlert('That tracking number is gone.', 'error');
         redirect();
@@ -289,6 +311,7 @@ if (isset($_GET['mit_po_tracking_delivered']) || isset($_GET['mit_po_tracking_de
     } else {
         mysqli_query($mysqli, "DELETE FROM mit_po_tracking WHERE tracking_id = $tracking_id");
         mitPoLog($po['po_id'], mitProcWho() . ' removed tracking ' . $tracking['tracking_number']);
+        logAudit('Purchase Order', 'Edit', escapeSql(mitProcWho() . ' removed tracking from ' . mitPoReference($po)), 0, intval($po['po_id']));
         flashAlert('Tracking removed', 'error');
     }
     redirect();
@@ -352,6 +375,10 @@ if (isset($_POST['mit_po_receive'])) {
     if ($extras['notes']) {
         $also[] = $extras['notes'] . ' ticket note' . ($extras['notes'] === 1 ? '' : 's');
     }
+    if (!empty($extras['capped'])) {
+        $also[] = 'assets stop at 50 per line - add the rest by hand';
+    }
+    logAudit('Purchase Order', 'Edit', escapeSql(mitProcWho() . " received $lines line(s) on $pos PO(s)"));
     flashAlert("Received $lines line" . ($lines === 1 ? '' : 's') . " on $pos PO" . ($pos === 1 ? '' : 's') . ($also ? ' - ' . implode(', ', $also) : ''));
     redirect();
 }

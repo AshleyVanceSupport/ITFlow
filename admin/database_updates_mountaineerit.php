@@ -37,6 +37,16 @@ if (!function_exists('mitColumnExists')) {
     }
 }
 
+/** Does an index exist on a table? */
+if (!function_exists('mitIndexExists')) {
+    function mitIndexExists($mysqli, $table, $index) {
+        $table = mysqli_real_escape_string($mysqli, $table);
+        $index = mysqli_real_escape_string($mysqli, $index);
+        $result = mysqli_query($mysqli, "SHOW INDEX FROM `$table` WHERE Key_name = '$index'");
+        return $result && mysqli_num_rows($result) > 0;
+    }
+}
+
 $mit_updates_applied = [];
 $mit_updates_error = null;
 
@@ -63,12 +73,12 @@ foreach ($mit_update_files as $mit_update_file) {
 
     try {
         require $mit_update_file;
+        // IGNORE: a second run that got here at the same time (two cron updates) is not a failure
+        mysqli_query($mysqli, "INSERT IGNORE INTO mit_database_updates SET mit_update_name = '" . mysqli_real_escape_string($mysqli, $mit_update_name) . "'");
     } catch (Throwable $e) {
         $mit_updates_error = "$mit_update_name: " . $e->getMessage();
         error_log("Mountaineer IT database update $mit_update_name failed: " . $e->getMessage());
         break;
     }
-
-    mysqli_query($mysqli, "INSERT INTO mit_database_updates SET mit_update_name = '" . mysqli_real_escape_string($mysqli, $mit_update_name) . "'");
     $mit_updates_applied[] = $mit_update_name;
 }

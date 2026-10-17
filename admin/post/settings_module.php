@@ -13,6 +13,7 @@ if (isset($_POST['edit_module_settings'])) {
     $config_whitelabel_key = escapeSql($_POST['config_whitelabel_key']);
 
     mysqli_query($mysqli,"UPDATE settings SET config_module_enable_itdoc = $config_module_enable_itdoc, config_module_enable_ticketing = $config_module_enable_ticketing, config_module_enable_accounting = $config_module_enable_accounting, config_client_portal_enable = $config_client_portal_enable WHERE company_id = 1");
+    mitModulesSave($_POST); // Mountaineer IT: Procurement, Timesheets, Dispatch switches
 
     // Validate white label key
     if (!empty($config_whitelabel_key && validateWhitelabelKey($config_whitelabel_key))) {

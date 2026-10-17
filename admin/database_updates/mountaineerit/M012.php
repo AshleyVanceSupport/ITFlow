@@ -24,16 +24,19 @@ mysqli_query($mysqli, "CREATE TABLE IF NOT EXISTS `mit_charge_codes` (
     PRIMARY KEY (`code_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
 
-// A starting list - only into an empty table, so a second run (or codes the admin removed) is left alone
+// A starting list - only into an empty table, so a second run (or codes the admin removed) is left alone.
+// One INSERT, so a run that stops part way never leaves half a list behind.
 if (intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COUNT(*) FROM mit_charge_codes"))[0]) === 0) {
     $mit_m012_codes = [
         ['Admin', 'work', 1, '#0d6efd'], ['Training', 'work', 1, '#6610f2'], ['Travel', 'work', 1, '#20c997'],
         ['Lost time', 'lost', 1, '#dc3545'], ['PTO', 'leave', 1, '#fd7e14'], ['Vacation', 'leave', 1, '#ffc107'],
         ['Holiday', 'leave', 1, '#198754'], ['Sick leave', 'leave', 1, '#d63384'], ['Unpaid leave', 'leave', 0, '#6c757d'],
     ];
+    $mit_m012_rows = [];
     foreach ($mit_m012_codes as $mit_i => [$mit_name, $mit_kind, $mit_paid, $mit_color]) {
-        mysqli_query($mysqli, "INSERT INTO mit_charge_codes SET code_name = '$mit_name', code_kind = '$mit_kind', code_paid = $mit_paid, code_color = '$mit_color', code_sort = " . ($mit_i + 1));
+        $mit_m012_rows[] = "('$mit_name', '$mit_kind', $mit_paid, '$mit_color', " . ($mit_i + 1) . ")";
     }
+    mysqli_query($mysqli, "INSERT INTO mit_charge_codes (code_name, code_kind, code_paid, code_color, code_sort) VALUES " . implode(', ', $mit_m012_rows));
 }
 
 // One row per person, day and code; source 'ticket_billable' / 'ticket_other' (code 0) are the ticket time

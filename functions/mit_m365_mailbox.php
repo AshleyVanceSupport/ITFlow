@@ -182,9 +182,11 @@ class MitGraphMessageQuery {
     public function get() {
         // A listing Microsoft refuses (throttled, a hiccup) is just no mail this run - the parser tries again next minute
         try {
-            $filter = rawurlencode('isRead eq false');
+            // Oldest first, as the IMAP path reads them (Graph wants the $orderby property in the $filter, first).
+            // Flagged mail - what the parser could not process - is skipped below; the window allows for some of it.
+            $filter = rawurlencode('receivedDateTime ge 1900-01-01T00:00:00Z and isRead eq false');
             $list = $this->mailbox->call('GET', '/mailFolders/' . rawurlencode($this->folder_id)
-                . "/messages?\$filter=$filter&\$select=id,receivedDateTime,flag&\$top=" . min(1000, $this->limit * 4));
+                . "/messages?\$filter=$filter&\$orderby=receivedDateTime%20asc&\$select=id,receivedDateTime,flag&\$top=" . min(1000, $this->limit * 4));
         } catch (Throwable $e) {
             logApp("Cron-Email-Parser", "warning", "Microsoft 365: could not list new mail - " . $e->getMessage());
             return [];
@@ -192,9 +194,6 @@ class MitGraphMessageQuery {
         $rows = array_values(array_filter($list['json']['value'] ?? [], function ($row) {
             return ($row['flag']['flagStatus'] ?? '') !== 'flagged';
         }));
-        usort($rows, function ($a, $b) {
-            return strcmp($a['receivedDateTime'] ?? '', $b['receivedDateTime'] ?? '');
-        });
         $messages = [];
         foreach (array_slice($rows, 0, $this->limit) as $row) {
             try {

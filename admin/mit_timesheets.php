@@ -14,6 +14,9 @@ if (!mitTsReady()) {
     require_once "../includes/footer.php";
     exit;
 }
+if (!mitModuleOn('timesheets')) {
+    echo '<div class="alert alert-info">Timesheets are switched off (Settings > Modules) - these settings are kept for when they are on.</div>';
+}
 
 $tab = in_array($_GET['tab'] ?? '', ['settings', 'codes', 'leave', 'people'], true) ? $_GET['tab'] : 'settings';
 $settings = mitTsSettings();
@@ -204,6 +207,11 @@ $company_week = mitTsCompanySchedule();
                             <label class="form-check-label" for="mitTsAutoLost">Normal hours nothing accounts for are lost time</label>
                         </div>
                         <div class="form-text">For days already over - shown on the timesheet as "Unaccounted".</div>
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" role="switch" name="auto_lost_paid" value="1" id="mitTsAutoLostPaid" <?= $settings['auto_lost_paid'] ? 'checked' : '' ?>>
+                            <label class="form-check-label" for="mitTsAutoLostPaid">Pay unaccounted time</label>
+                        </div>
+                        <div class="form-text">Off: it is counted, but not paid (and earns no leave).</div>
                     </div>
                 </div>
 
@@ -326,7 +334,7 @@ $company_week = mitTsCompanySchedule();
         <?php } ?>
 
     <?php } else {
-        $people = mitTsUsers();
+        $people = mitTsUsers([], true);
         $result = mysqli_query($mysqli, "SELECT user_id, role_name FROM users LEFT JOIN user_roles ON role_id = user_role_id WHERE user_type = 1");
         $user_roles = [];
         while ($row = mysqli_fetch_assoc($result)) {
@@ -346,7 +354,8 @@ $company_week = mitTsCompanySchedule();
                         $week = mitTsSchedule($user_id);
                         $approver = $details['approver_id'] ? ($people[$details['approver_id']]['user_name'] ?? 'Someone no longer here') : ''; ?>
                         <tr>
-                            <td class="ps-3"><a class="text-dark text-bold ajax-modal" href="#" data-modal-url="modals/mit_timesheets/person.php?id=<?= intval($user_id) ?>"><?= escapeHtml($person['user_name']) ?></a></td>
+                            <td class="ps-3"><a class="text-dark text-bold ajax-modal" href="#" data-modal-url="modals/mit_timesheets/person.php?id=<?= intval($user_id) ?>"><?= escapeHtml($person['user_name']) ?></a>
+                                <?php if (!mitTsKeepsTimesheet($user_id)) { ?><span class="badge text-bg-secondary ms-1">No timesheet</span><?php } ?></td>
                             <td class="small"><?= escapeHtml($user_roles[$user_id] ?? '-') ?></td>
                             <td class="small">
                                 <?= mitTsHours(array_sum($week), false, 'decimal') ?> h ·

@@ -26,7 +26,8 @@ $agent_id = reportAgentId();
 $from = $period['start'];
 $to = $period['end'];
 
-$people = mitTsUsers();
+// Everyone who keeps a timesheet, and anyone who has left (or was left out) but has hours in these dates
+$people = mitTsUsers(mitTsUsersWithActivity($from, $to));
 if ($agent_id) {
     $people = array_intersect_key(mitTsUsers([$agent_id]), [$agent_id => true]);
 }
@@ -66,7 +67,7 @@ foreach ($totals as $t) {
 $code_columns = array_intersect_key($codes, $used);
 
 $rows = [];
-$sum = ['billable' => 0, 'other' => 0, 'work' => 0, 'lost' => 0, 'auto_lost' => 0, 'leave' => 0, 'unpaid' => 0, 'worked' => 0, 'paid' => 0, 'total' => 0, 'overtime' => 0, 'regular' => 0];
+$sum = ['billable' => 0, 'other' => 0, 'work' => 0, 'lost' => 0, 'auto_lost' => 0, 'leave' => 0, 'leave_paid' => 0, 'unpaid' => 0, 'worked' => 0, 'paid' => 0, 'total' => 0, 'overtime' => 0, 'regular' => 0];
 foreach ($people as $user_id => $person) {
     $t = $totals[$user_id];
     if (!$t['total'] && !$agent_id) {
@@ -76,7 +77,7 @@ foreach ($people as $user_id => $person) {
     $row = ['user_id' => $user_id, 'person' => $person['user_name'], 'email' => $person['user_email'], 'avatar' => $person['user_avatar'] ?? '',
         'employee_id' => $details['employee_id'], 'pay_type' => $details['pay_type'] === 'salary' ? 'Salaried' : 'Hourly',
         'regular' => $t['regular'] * 60, 'overtime' => $t['overtime'] * 60, 'auto_lost' => $t['auto_lost'] * 60,
-        'billable' => $t['billable'] * 60, 'other' => $t['other'] * 60, 'worked' => $t['worked'] * 60, 'leave' => $t['leave'] * 60,
+        'billable' => $t['billable'] * 60, 'other' => $t['other'] * 60, 'work' => $t['work'] * 60, 'worked' => $t['worked'] * 60, 'leave' => $t['leave'] * 60,
         'unpaid' => $t['unpaid'] * 60, 'paid' => $t['paid'] * 60, 'total' => $t['total'] * 60, 'lost' => $t['lost'] * 60,
         'share' => $t['worked'] ? round($t['billable'] / $t['worked'] * 100, 1) : null,
         'approved' => ($approved[$user_id] ?? 0) . ' of ' . count($periods)];
@@ -106,11 +107,11 @@ foreach ($code_columns as $code_id => $code) {
 }
 $columns += [
     'auto_lost' => ['label' => 'Unaccounted', 'type' => 'hours', 'decimals' => 2, 'screen' => (bool) $settings['auto_lost'], 'csv' => $settings['auto_lost'] ? null : false,
-        'title' => 'Normal hours nothing accounted for - counted as lost time'],
+        'title' => 'Normal hours nothing accounted for - counted as lost time' . ($settings['auto_lost_paid'] ? ', and paid' : ', not paid')],
     'worked' => ['label' => 'Worked', 'type' => 'hours', 'decimals' => 2, 'title' => 'Ticket time, admin and other work, and lost time'],
     'leave' => ['label' => 'Leave', 'type' => 'hours', 'decimals' => 2],
     'unpaid' => ['label' => 'Unpaid', 'type' => 'hours', 'decimals' => 2],
-    'paid' => ['label' => 'Paid hours', 'type' => 'hours', 'decimals' => 2, 'class' => 'fw-semibold', 'title' => 'What payroll pays: worked and paid leave, less unpaid codes'],
+    'paid' => ['label' => 'Paid hours', 'type' => 'hours', 'decimals' => 2, 'class' => 'fw-semibold', 'title' => 'What payroll pays: worked and paid leave, less unpaid codes' . ($settings['auto_lost_paid'] ? '' : ' and unaccounted time')],
     'regular' => ['label' => 'Regular', 'type' => 'hours', 'decimals' => 2, 'screen' => $overtime, 'title' => 'Paid hours less overtime'],
     'overtime' => ['label' => 'Overtime', 'type' => 'hours', 'decimals' => 2, 'screen' => $overtime, 'title' => 'Over the daily / weekly limit set in Admin > Timesheets (hourly people)'],
     'share' => ['label' => 'Billable %', 'type' => 'percent'],
@@ -134,25 +135,26 @@ $table_totals['share'] = $sum['worked'] ? round($sum['billable'] / $sum['worked'
 
 if (reportExporting('detail')) {
     $detail = [];
+    // The days carry ticket and unaccounted time; the entries are read again only for their notes
+    $all_days = mitTsDays(array_keys($people), $from, $to);
     $entries = mitTsEntries(array_keys($people), $from, $to);
-    $tickets = mitTsTicketMinutes(array_keys($people), $from, $to);
-    $all_days = $settings['auto_lost'] ? mitTsDays(array_keys($people), $from, $to) : [];
     foreach ($people as $user_id => $person) {
         $days = [];
         foreach ($all_days[$user_id] ?? [] as $date => $d) {
             if ($d['auto_lost']) {
-                $days[] = ['date' => $date, 'code' => 'Unaccounted (lost)', 'kind' => 'Lost time', 'paid' => 'Yes', 'hours' => $d['auto_lost'] * 60];
+                $days[] = ['date' => $date, 'code' => 'Unaccounted (lost)', 'kind' => 'Lost time', 'paid' => $settings['auto_lost_paid'] ? 'Yes' : 'No', 'hours' => $d['auto_lost'] * 60];
             }
-        }
-        foreach ($tickets[$user_id] ?? [] as $date => $values) {
             foreach (['billable' => 'Ticket time - billable', 'other' => 'Ticket time - other'] as $kind => $label) {
-                if ($values[$kind]) {
-                    $days[] = ['date' => $date, 'code' => $label, 'kind' => 'Work', 'paid' => 'Yes', 'hours' => $values[$kind] * 60];
+                if ($d[$kind]) {
+                    $days[] = ['date' => $date, 'code' => $label, 'kind' => 'Work', 'paid' => 'Yes', 'hours' => $d[$kind] * 60];
                 }
             }
         }
         foreach ($entries[$user_id] ?? [] as $date => $by_code) {
             foreach ($by_code as $code_id => $entry) {
+                if (!$entry['minutes']) {
+                    continue;  // a cleared closure day
+                }
                 $code = $codes[$code_id] ?? ['code_name' => "Code $code_id", 'code_kind' => 'work', 'code_paid' => 1];
                 $days[] = ['date' => $date, 'code' => $code['code_name'], 'kind' => MIT_TS_KINDS[$code['code_kind']] ?? $code['code_kind'],
                     'paid' => intval($code['code_paid']) ? 'Yes' : 'No', 'hours' => $entry['minutes'] * 60, 'note' => (string) $entry['note']];
@@ -175,9 +177,6 @@ if (reportExporting()) {
     unset($csv_columns['employee_id']);
     $csv_columns['person'] = ['label' => 'Person'];
     $csv_columns = ['person' => $csv_columns['person'], 'employee_id' => ['label' => 'Employee ID'], 'email' => ['label' => 'Email'], 'pay_type' => ['label' => 'Pay type']] + $csv_columns;
-    foreach (['regular', 'overtime'] as $key) {
-        $csv_columns[$key]['screen'] = true;
-    }
     if ($approval) {
         $csv_columns['approved'] = ['label' => 'Pay periods approved'];
     } else {
@@ -218,7 +217,7 @@ $with_hours = array_values(array_filter($rows, function ($r) {
         ['label' => 'Paid hours', 'value' => reportHours($sum['paid'] * 60, 2) . ' h', 'sub' => '<span class="text-body-tertiary">' . count($rows) . ' ' . (count($rows) === 1 ? 'person' : 'people') . '</span>'],
         ['label' => 'Billable', 'value' => reportPercent($table_totals['share'] === null ? null : round($table_totals['share'])), 'sub' => escapeHtml(reportHours($sum['billable'] * 60, 2)) . ' h <span class="text-body-tertiary">of ' . escapeHtml(reportHours($sum['worked'] * 60, 2)) . ' h worked</span>'],
         ['label' => 'Lost time', 'value' => reportHours($sum['lost'] * 60, 2) . ' h', 'tone' => $sum['lost'] ? 'danger' : '', 'sub' => '<span class="text-body-tertiary">' . ($sum['worked'] ? round($sum['lost'] / $sum['worked'] * 100) : 0) . '% of hours worked</span>'],
-        ['label' => 'Leave', 'value' => reportHours($sum['leave'] * 60, 2) . ' h', 'sub' => $sum['unpaid'] ? escapeHtml(reportHours($sum['unpaid'] * 60, 2)) . ' h <span class="text-body-tertiary">unpaid</span>' : '<span class="text-body-tertiary">All paid</span>'],
+        ['label' => 'Leave', 'value' => reportHours($sum['leave'] * 60, 2) . ' h', 'sub' => $sum['leave'] > $sum['leave_paid'] ? escapeHtml(reportHours(($sum['leave'] - $sum['leave_paid']) * 60, 2)) . ' h <span class="text-body-tertiary">unpaid</span>' : '<span class="text-body-tertiary">All paid</span>'],
     ] + ($overtime ? [5 => ['label' => 'Overtime', 'value' => reportHours($sum['overtime'] * 60, 2) . ' h', 'tone' => $sum['overtime'] ? 'warning' : '',
             'sub' => '<span class="text-body-tertiary">' . escapeHtml(reportHours($sum['regular'] * 60, 2)) . ' h regular</span>']] : [])
         + ($approval ? [6 => ['label' => 'Not approved', 'value' => reportCount($not_approved), 'tone' => $not_approved ? 'warning' : 'success',
@@ -233,7 +232,7 @@ $with_hours = array_values(array_filter($rows, function ($r) {
                     'series' => [
                         ['label' => 'Billable', 'data' => array_map(function ($r) { return round($r['billable'] / 3600, 2); }, $with_hours), 'tone' => 'success', 'stack' => 'h'],
                         ['label' => 'Other tickets', 'data' => array_map(function ($r) { return round($r['other'] / 3600, 2); }, $with_hours), 'tone' => 'accent', 'stack' => 'h'],
-                        ['label' => 'Admin & work', 'data' => array_map(function ($r) { return round(($r['worked'] - $r['billable'] - $r['other'] - $r['lost']) / 3600, 2); }, $with_hours), 'tone' => 'purple', 'stack' => 'h'],
+                        ['label' => 'Admin & work', 'data' => array_map(function ($r) { return round($r['work'] / 3600, 2); }, $with_hours), 'tone' => 'purple', 'stack' => 'h'],
                         ['label' => 'Lost', 'data' => array_map(function ($r) { return round($r['lost'] / 3600, 2); }, $with_hours), 'tone' => 'danger', 'stack' => 'h'],
                         ['label' => 'Leave', 'data' => array_map(function ($r) { return round($r['leave'] / 3600, 2); }, $with_hours), 'tone' => 'warning', 'stack' => 'h'],
                     ],
@@ -249,8 +248,8 @@ $with_hours = array_values(array_filter($rows, function ($r) {
         <div class="card-footer small text-body-secondary">
             Ticket time is the time logged on ticket replies each day (billable when the ticket is billable) - as it was when the period was approved,
             or as it is now for periods not approved yet. Paid hours are hours worked plus paid leave, less hours on unpaid codes.
-            <?= $sum['auto_lost'] ? 'Lost time includes ' . escapeHtml(reportHours($sum['auto_lost'] * 60, 2)) . ' h of normal hours nothing accounted for. ' : '' ?>
-            <?= $overtime ? 'Overtime is hours over ' . implode(' and then over ', array_filter([$settings['ot_day'] ? mitTsHours($settings['ot_day'], true, 'decimal') . ' h a day' : '', $settings['ot_week'] ? mitTsHours($settings['ot_week'], true, 'decimal') . ' h a week' : ''])) . ', for hourly people; a week counts in the dates its last day is in. ' : '' ?>
+            <?= $sum['auto_lost'] ? 'Lost time includes ' . escapeHtml(reportHours($sum['auto_lost'] * 60, 2)) . ' h of normal hours nothing accounted for' . ($settings['auto_lost_paid'] ? '' : ' (not paid)') . '. ' : '' ?>
+            <?= $overtime ? 'Overtime is hours over ' . implode(' and then over ', array_filter([$settings['ot_day'] ? mitTsHours($settings['ot_day'], true, 'decimal') . ' h a day' : '', $settings['ot_week'] ? mitTsHours($settings['ot_week'], true, 'decimal') . ' h a week' : ''])) . ', for hourly people, on the day it is worked. ' : '' ?>
             Charge codes, overtime and each person's schedule are set in Admin > Timesheets.
         </div>
     </div>

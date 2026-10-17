@@ -984,7 +984,7 @@ if (isset($_GET['export_quote_pdf'])) {
     $sub_total = 0;
     $total_tax = 0;
 
-    $sql_items = mysqli_query($mysqli, "SELECT item_id, item_description, item_name, item_price, item_quantity, item_tax, item_total FROM quote_items WHERE item_quote_id = $quote_id ORDER BY item_order ASC");
+    $sql_items = mysqli_query($mysqli, "SELECT item_id, item_description, item_name, item_price, item_quantity, item_tax, item_total FROM quote_items WHERE item_quote_id = $quote_id ORDER BY item_order ASC"); // Mountaineer IT: item_id for the line image
     while ($item = mysqli_fetch_assoc($sql_items)) {
         $name = $item['item_name'];
         $desc = $item['item_description'];

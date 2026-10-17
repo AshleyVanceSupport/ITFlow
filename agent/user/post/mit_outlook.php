@@ -26,7 +26,11 @@ if (isset($_POST['mit_outlook_sync'])) {
 
     try {
         $summary = mitOutlookSync($session_user_id, true);
-        flashAlert("Outlook calendar synced - " . escapeHtml(strtolower($summary)) . ".");
+        if ($summary === 'Already syncing') {
+            flashAlert('Outlook is syncing in the background right now - try again in a moment.', 'warning');
+        } else {
+            flashAlert("Outlook calendar synced - " . escapeHtml(strtolower($summary)) . ".");
+        }
     } catch (Throwable $e) {
         flashAlert("Outlook sync failed: " . escapeHtml($e->getMessage()), 'error');
     }
@@ -44,6 +48,6 @@ if (isset($_POST['mit_outlook_disconnect'])) {
         redirect('mit_outlook.php');
     }
     logAudit("User Account", "Edit", "$session_name disconnected their Outlook calendar");
-    flashAlert($left ? "Outlook disconnected. $left booking" . ($left === 1 ? '' : 's') . " could not be taken out of Outlook - delete them there (they have the ITFlow category)." : "Outlook disconnected and ITFlow's bookings taken out of it.", $left ? 'warning' : 'success');
+    flashAlert($left ? "Outlook disconnected. $left scheduled ticket" . ($left === 1 ? '' : 's') . " could not be taken out of Outlook - delete them there (they have the ITFlow category)." : "Outlook disconnected and ITFlow's bookings taken out of it.", $left ? 'warning' : 'success');
     redirect('mit_outlook.php');
 }

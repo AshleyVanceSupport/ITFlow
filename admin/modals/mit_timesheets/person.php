@@ -8,10 +8,10 @@
 require_once '../../includes/modal_header.php';
 
 $user_id = intval($_GET['id'] ?? 0);
-$people = mitTsUsers([$user_id]);
+$people = mitTsUsers([$user_id], true);
 $person = $people[$user_id] ?? null;
 if (!$person) {
-    exit('<div class="modal-body">That person does not keep a timesheet.</div>');
+    exit(json_encode(['error' => 'That person does not keep a timesheet.']));
 }
 $details = mitTsPerson($user_id);
 $week = $details['schedule'] === '' ? null : mitTsSchedule($user_id);
@@ -29,6 +29,13 @@ ob_start();
     <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
     <input type="hidden" name="user_id" value="<?= $user_id ?>">
     <div class="modal-body">
+        <?php if (mitTsKeepsColumn()) { ?>
+            <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" role="switch" name="keeps_timesheet" value="1" id="mitTsKeeps" <?= mitTsKeepsTimesheet($user_id) ? 'checked' : '' ?>>
+                <label class="form-check-label" for="mitTsKeeps">Keeps a timesheet</label>
+                <div class="form-text">Off for people who don't (owners, contractors): no timesheet, reminders or leave earned, and they are left off the Everyone page.</div>
+            </div>
+        <?php } ?>
         <label class="form-label">Normal week <span class="text-muted small">(hours a day)</span></label>
         <div class="d-flex flex-wrap gap-2 mb-1">
             <?php foreach (MIT_TS_WEEKDAYS as $n => $day) { ?>

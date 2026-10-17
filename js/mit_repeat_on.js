@@ -94,10 +94,13 @@
         };
         document.addEventListener('change', onChange);
         document.addEventListener('input', onChange);
-        // select2 announces changes through jQuery only
+        // select2 announces changes through jQuery only (a jQuery-triggered event has no originalEvent;
+        // a real change is already handled by the listeners above)
         if (window.jQuery) {
             window.jQuery(document).on('change', 'select', function (e) {
-                onChange({target: this});
+                if (!e.originalEvent) {
+                    onChange({target: this});
+                }
             });
         }
         document.addEventListener('shown.bs.modal', function (e) {

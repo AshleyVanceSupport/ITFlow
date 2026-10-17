@@ -3,21 +3,21 @@
 /*
  * Mountaineer IT - calendar additions on top of ITFlow's calendar (functions/calendar.php).
  *
- *  - Every agent has a colour of their own, worked out from their user id, so a new tech
+ *  - Every agent has a color of their own, worked out from their user id, so a new tech
  *    has one the moment their account exists and their booked work is told apart on the
  *    calendar at a glance.
  *  - Booked work on a ticket has an end as well as a start (tickets.ticket_schedule_end,
  *    database update M001). An empty end is ITFlow's default length, CALENDAR_TICKET_MINUTES.
  */
 
-/** Twelve colours that read well on white and dark backgrounds and are easy to tell apart. */
+/** Twelve colors that read well on white and dark backgrounds and are easy to tell apart. */
 const MIT_AGENT_COLORS = [
     '#2563eb', '#16a34a', '#d97706', '#9333ea', '#dc2626', '#0891b2',
     '#db2777', '#65a30d', '#7c3aed', '#ea580c', '#0d9488', '#4f46e5',
 ];
 
 /**
- * An agent's calendar colour: the one they picked (saved as the calendar.color preference),
+ * An agent's calendar color: the one they picked (saved as the calendar.color preference),
  * or one worked out from their user id - the same every time, different for the first twelve.
  */
 function mitAgentColor($user_id) {
@@ -29,12 +29,12 @@ function mitAgentColor($user_id) {
     return $chosen[$user_id] ?? mitAgentDefaultColor($user_id);
 }
 
-/** The colour an agent has until they pick one. */
+/** The color an agent has until they pick one. */
 function mitAgentDefaultColor($user_id) {
     return MIT_AGENT_COLORS[(max(1, intval($user_id)) - 1) % count(MIT_AGENT_COLORS)];
 }
 
-/** Every agent's picked colour, user_id => '#rrggbb' - read once per request. Pass true after saving one. */
+/** Every agent's picked color, user_id => '#rrggbb' - read once per request. Pass true after saving one. */
 function mitAgentChosenColors($reload = false) {
     global $mysqli;
     static $colors = null;
@@ -43,7 +43,7 @@ function mitAgentChosenColors($reload = false) {
         try {
             $result = mysqli_query($mysqli, "SELECT user_id, value FROM mit_user_preferences WHERE preference = 'calendar.color'");
         } catch (Throwable $e) {
-            $result = false;  // database update pending - automatic colours
+            $result = false;  // database update pending - automatic colors
         }
         while ($result && $row = mysqli_fetch_assoc($result)) {
             if (mitIsHexColor($row['value'])) {
@@ -54,13 +54,13 @@ function mitAgentChosenColors($reload = false) {
     return $colors;
 }
 
-/** A '#rrggbb' colour? */
+/** A '#rrggbb' color? */
 function mitIsHexColor($color) {
     return is_string($color) && preg_match('/^#[0-9a-fA-F]{6}$/', $color) === 1;
 }
 
 /**
- * The Calendar colour field - Account > Preferences (your own) and Admin > Users > Edit (anyone's).
+ * The Calendar color field - Account > Preferences (your own) and Admin > Users > Edit (anyone's).
  * Posts mit_calendar_color ('#rrggbb') and mit_calendar_color_auto; mitSaveAgentColor() reads them.
  */
 function mitCalendarColorField($user_id, $col = 'col-md-6') {
@@ -68,15 +68,15 @@ function mitCalendarColorField($user_id, $col = 'col-md-6') {
     $chosen = mitAgentChosenColors()[$user_id] ?? '';
     $color = mitAgentColor($user_id);
     $id = 'mitCalendarColor' . $user_id;
-    $html = '<div class="' . $col . '" data-mit-color-field><label class="form-label" for="' . $id . '">Calendar colour</label>'
+    $html = '<div class="' . $col . '" data-mit-color-field><label class="form-label" for="' . $id . '">Calendar color</label>'
         . '<div class="d-flex flex-wrap align-items-center gap-2">'
-        . '<input type="color" class="form-control form-control-color" id="' . $id . '" name="mit_calendar_color" value="' . $color . '" title="Pick any colour">';
+        . '<input type="color" class="form-control form-control-color" id="' . $id . '" name="mit_calendar_color" value="' . $color . '" title="Pick any color">';
     foreach (MIT_AGENT_COLORS as $preset) {
         $html .= '<button type="button" class="btn p-0 rounded-circle border" style="width:1.5rem;height:1.5rem;background:' . $preset . '" data-mit-color="' . $preset . '" title="' . $preset . '"></button>';
     }
     $html .= '</div><div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="mit_calendar_color_auto" value="1" id="' . $id . 'Auto"' . ($chosen === '' ? ' checked' : '') . '>'
         . '<label class="form-check-label" for="' . $id . 'Auto">Automatic (' . mitAgentDefaultColor($user_id) . ')</label></div>'
-        . '<div class="form-text">Booked tickets are drawn in this colour on the calendar.</div>'
+        . '<div class="form-text">Scheduled tickets are drawn in this color on the calendar.</div>'
         . "<script>(function (f) { var c = f.querySelector('input[type=color]'), a = f.querySelector('[name=mit_calendar_color_auto]');"
         . " f.querySelectorAll('[data-mit-color]').forEach(function (b) { b.addEventListener('click', function () { c.value = b.dataset.mitColor; a.checked = false; }); });"
         . " c.addEventListener('input', function () { a.checked = false; }); })(document.currentScript.closest('[data-mit-color-field]'));</script>"
@@ -84,7 +84,7 @@ function mitCalendarColorField($user_id, $col = 'col-md-6') {
     return $html;
 }
 
-/** Save the Calendar colour field for an agent (a no-op when the form did not have it). */
+/** Save the Calendar color field for an agent (a no-op when the form did not have it). */
 function mitSaveAgentColor($user_id, array $post) {
     global $mysqli;
     $user_id = intval($user_id);
@@ -99,7 +99,7 @@ function mitSaveAgentColor($user_id, array $post) {
             mitSetUserPreference($user_id, 'calendar.color', $color);
         }
     } catch (Throwable $e) {
-        // mit_user_preferences not there yet (database update pending) - automatic colours
+        // mit_user_preferences not there yet (database update pending) - automatic colors
     }
     mitAgentChosenColors(true);
 }
@@ -226,6 +226,7 @@ function mitSetUserPreference($user_id, $preference, $value) {
     if (!$user_id) {
         return;
     }
+    // Not escapeSql(): it strips tags and trims, and values here are JSON and settings that must come back exactly
     $preference = mysqli_real_escape_string($mysqli, (string) $preference);
     $value = mysqli_real_escape_string($mysqli, (string) $value);
     mysqli_query($mysqli, "INSERT INTO mit_user_preferences SET user_id = $user_id, preference = '$preference', value = '$value'

@@ -111,21 +111,11 @@ function cronJobRegistry(): array
             'daily_at' => '02:30',
         ],
         [
-            'name' => 'app_update',
-            'label' => 'Application Update',
-            'script' => 'app_update.php',
-            'description' => 'Runs an update queued from Maintenance > Update. Does nothing unless one is queued.',
-            'schedule' => 'Daily',
-            'daily_at' => '05:00',
-            'enabled' => 0,
-            'interval_safe' => false,
-        ],
-        [
             // Mountaineer IT (functions/mit_outlook.php)
             'name' => 'mit_outlook_sync',
             'label' => 'Outlook Calendar Sync',
             'script' => 'mit_outlook_sync.php',
-            'description' => 'Puts each tech\'s booked tickets in the Outlook calendar they connected under Account > Outlook calendar, and puts back events changed there.',
+            'description' => 'Puts each agent\'s scheduled tickets in the Outlook calendar they connected under Account > Outlook calendar, and puts back events changed there.',
             'schedule' => 'Interval',
             'interval_minutes' => 1,
         ],
@@ -137,6 +127,25 @@ function cronJobRegistry(): array
             'description' => 'Timesheet reminders, and PTO / sick leave earned and carried over, as set in Admin > Timesheets.',
             'schedule' => 'Interval',
             'interval_minutes' => 60,
+        ],
+        [
+            // Mountaineer IT (functions/mit_procurement_parts.php)
+            'name' => 'mit_procurement_tidy',
+            'label' => 'Procurement Tidy-up',
+            'script' => 'mit_procurement_tidy.php',
+            'description' => 'Cancels items to order for deleted tickets and clients, and frees ticket parts whose invoice line was deleted.',
+            'schedule' => 'Daily',
+            'daily_at' => '04:15',
+        ],
+        [
+            'name' => 'app_update',
+            'label' => 'Application Update',
+            'script' => 'app_update.php',
+            'description' => 'Runs an update queued from Maintenance > Update. Does nothing unless one is queued.',
+            'schedule' => 'Daily',
+            'daily_at' => '05:00',
+            'enabled' => 0,
+            'interval_safe' => false,
         ],
     ];
 }

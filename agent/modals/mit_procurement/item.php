@@ -6,21 +6,23 @@
 
 require_once '../../../includes/modal_header.php';
 
+mitModuleRequire('procurement', true);
+
 enforceUserPermission('module_procurement', 2);
 
 $item = null;
 $item_id = intval($_GET['item_id'] ?? 0);
 if ($item_id) {
-    $item = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT * FROM mit_procurement_items proc WHERE item_id = $item_id AND status = 'waiting'" . clientScopeSql('proc.client_id')));
+    $item = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT proc.item_id, proc.source, proc.client_id, proc.project_id, proc.invoice_id, proc.invoice_item_id, proc.ticket_id, proc.product_id, proc.vendor_id, proc.name, proc.description, proc.quantity, proc.unit_cost, proc.status, proc.note, proc.created_by, proc.created_at, proc.updated_at FROM mit_procurement_items proc WHERE item_id = $item_id AND status = 'waiting'" . clientScopeSql('proc.client_id')));
     if (!$item) {
-        exit('<div class="modal-body">That item is no longer waiting to be ordered.</div>');
+        exit(json_encode(['error' => 'That item is no longer waiting to be ordered.']));
     }
 }
 $value = function ($key, $default = '') use ($item) {
     return escapeHtml($item[$key] ?? $default);
 };
 
-$vendors = mysqli_fetch_all(mysqli_query($mysqli, "SELECT vendor_id, vendor_name FROM vendors WHERE vendor_client_id = 0 AND vendor_archived_at IS NULL ORDER BY vendor_name"), MYSQLI_ASSOC);
+$vendors = mitProcVendorRows();
 $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name FROM clients WHERE client_archived_at IS NULL" . clientScopeSql('client_id') . " ORDER BY client_name"), MYSQLI_ASSOC);
 $projects = mysqli_fetch_all(mysqli_query($mysqli, "SELECT project_id, project_prefix, project_number, project_name, project_client_id, client_name FROM projects
     LEFT JOIN clients ON clients.client_id = project_client_id

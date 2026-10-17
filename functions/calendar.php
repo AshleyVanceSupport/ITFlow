@@ -596,11 +596,11 @@ function calendarSourceItems($key, $from, $to, array $opts = []) {
                 'id' => 'ticket-' . intval($row['ticket_id']),
                 'title' => calendarTicketTitle($row, !$client_id),
                 'start' => $row['ticket_schedule'],
-                'end' => mitTicketScheduleEnd($row['ticket_schedule'], $row['ticket_schedule_end']),
+                'end' => mitTicketScheduleEnd($row['ticket_schedule'], $row['ticket_schedule_end']), // Mountaineer IT: its end (M001)
                 'allDay' => false,
                 'editable' => $can_move && $open,
-                'durationEditable' => $can_move && $open,
-                // Mountaineer IT: each tech's booked work in their own colour
+                'durationEditable' => $can_move && $open, // Mountaineer IT: resize to change the end
+                // Mountaineer IT: each agent's scheduled work in their own color
                 'color' => intval($row['ticket_assigned_to']) ? mitAgentColor($row['ticket_assigned_to']) : $source['color'],
                 'className' => $open ? '' : 'itflow-cal-done',
                 'extendedProps' => ['kind' => 'ticket', 'ticket_id' => intval($row['ticket_id']), 'client_id' => intval($row['ticket_client_id']),
@@ -609,7 +609,7 @@ function calendarSourceItems($key, $from, $to, array $opts = []) {
                     'detail' => implode(' · ', array_filter([$row['user_name'] ?: 'Unassigned', $row['ticket_status_name']]))],
             ] + $base;
         }
-        // Mountaineer IT: techs helping on a ticket, at their own time or the lead's
+        // Mountaineer IT: agents helping on a ticket, at their own time or the lead's
         $items = array_merge($items, mitTicketTechCalendarItems($from, $to, $client_id, $user_id, $can_move));
     } elseif ($key === 'projects') {
         $sql = mysqli_query($mysqli, "SELECT project_id, project_prefix, project_number, project_name, project_start, project_due, project_client_id, client_name
@@ -727,7 +727,7 @@ function calendarEventItems(array $calendar_ids, $from, $to, array $opts = []) {
     $user_id = intval($opts['user_id'] ?? 0);
     $user_query = $user_id ? "AND (event_created_by = $user_id OR EXISTS (SELECT 1 FROM calendar_event_attendees a WHERE a.attendee_event_id = event_id AND a.attendee_user_id = $user_id))" : '';
 
-    $sql = mysqli_query($mysqli, "SELECT event_id, event_title, event_start, event_end, event_all_day, event_repeat, event_repeat_interval, event_repeat_until, event_repeat_skip," . (function_exists('mitEventByDayColumn') ? mitEventByDayColumn() : '') . "
+    $sql = mysqli_query($mysqli, "SELECT event_id, event_title, event_start, event_end, event_all_day, event_repeat, event_repeat_interval, event_repeat_until, event_repeat_skip," . (function_exists('mitEventByDayColumn') ? mitEventByDayColumn() : '') /* Mountaineer IT */ . "
             event_location, event_client_id, event_calendar_id, calendar_color, client_name, location_name,
             (SELECT COUNT(*) FROM calendar_event_attendees a WHERE a.attendee_event_id = event_id) AS attendee_count,
             (SELECT COUNT(*) FROM calendar_event_attendees a WHERE a.attendee_event_id = event_id AND a.attendee_invited_at IS NOT NULL) AS invited_count
@@ -930,6 +930,7 @@ function icsVtimezone($timezone, $from, $to) {
  * more than one, then UNTIL. A timed event's UNTIL is the end of that day in
  * UTC (RFC 5545 requires UTC when DTSTART carries a TZID); an all-day event's
  * is the date itself.
+ * Mountaineer IT: $by_day ("3WE") and $start (for a yearly one's month) - functions/mit_recurring.php.
  */
 function icsRepeatToRrule($repeat, $interval = 1, $until = null, $all_day = false, $timezone = 'UTC', $by_day = '', $start = '') {
 
@@ -1009,7 +1010,7 @@ function icsEventLines(array $item, $timezone, $tzid) {
         }
     }
 
-    $rrule = icsRepeatToRrule($item['repeat'] ?? '', $item['repeat_interval'] ?? 1, $item['repeat_until'] ?? null, $all_day, $timezone, $item['repeat_by_day'] ?? '', $start);
+    $rrule = icsRepeatToRrule($item['repeat'] ?? '', $item['repeat_interval'] ?? 1, $item['repeat_until'] ?? null, $all_day, $timezone, $item['repeat_by_day'] ?? '', $start); // Mountaineer IT: + weekday rule
     if ($rrule) {
         $lines[] = "RRULE:$rrule";
         foreach ($item['skip'] ?? [] as $date) {
@@ -1154,7 +1155,7 @@ function calendarEventIcsItem(array $event, $busy = false) {
         'created' => $event['event_created_at'],
         'sequence' => intval($event['event_sequence'] ?? 0),
         'repeat' => $event['event_repeat'] ?? '',
-        'repeat_by_day' => $event['event_repeat_by_day'] ?? '',
+        'repeat_by_day' => $event['event_repeat_by_day'] ?? '', // Mountaineer IT
         'repeat_interval' => $event['event_repeat_interval'] ?? 1,
         'repeat_until' => $event['event_repeat_until'] ?? null,
         'skip' => calendarSkippedDates($event),
@@ -1260,7 +1261,7 @@ function calendarUserFeedItems(array $feed, $from, $to) {
             $items[] = [
                 'uid' => "itflow-ticket-$ticket_id@$host",
                 'start' => $row['ticket_schedule'],
-                'end' => mitTicketScheduleEnd($row['ticket_schedule'], $row['ticket_schedule_end']),
+                'end' => mitTicketScheduleEnd($row['ticket_schedule'], $row['ticket_schedule_end']), // Mountaineer IT: its end (M001)
                 'summary' => calendarTicketTitle($row) . ($everyone && $row['user_name'] ? ' (' . $row['user_name'] . ')' : '') . (ticketIsOpen($row) ? '' : ' [done]'),
                 'location' => implode(', ', array_filter([$row['location_address'], $row['location_city'], trim($row['location_state'] . ' ' . $row['location_zip'])])),
                 'description' => implode("\n", array_filter([

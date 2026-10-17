@@ -85,6 +85,25 @@ function mitPostedNumber($value) {
     return $value === '' || !is_numeric($value) ? null : round((float) $value, 2);
 }
 
+/**
+ * The cost, method and % a form posted (fields <prefix>_cost, _price_method, _price_percent), made
+ * sane: a negative cost or % is dropped, a margin of 100% or more (no price can give it) is dropped,
+ * and a set price has no %. Returns [cost|null, method|'', percent|null].
+ */
+function mitPricingPosted(array $post, $prefix) {
+    $cost = mitPostedNumber($post[$prefix . '_cost'] ?? '');
+    $method = mitPriceMethod($post[$prefix . '_price_method'] ?? '');
+    $percent = mitPostedNumber($post[$prefix . '_price_percent'] ?? '');
+    if ($cost !== null && $cost < 0) {
+        $cost = null;
+    }
+    if ($method === 'price' || ($percent !== null && ($percent < 0 || $percent >= 100000))
+        || ($method === 'margin' && $percent !== null && $percent >= 100)) {
+        $percent = null;
+    }
+    return [$cost, $method, $percent];
+}
+
 /*
  * ---------- images ----------
  */
@@ -112,14 +131,16 @@ function mitImageStore($bytes) {
     if (!$info || !in_array($info[2], [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_GIF, IMAGETYPE_WEBP], true)) {
         throw new RuntimeException('That is not a JPG, PNG, GIF or WebP image.');
     }
-    if ($info[0] * $info[1] > 40000000) {
+    // GD holds the whole bitmap in memory (about 4 bytes a pixel), so keep it to ~25 megapixels
+    if ($info[0] * $info[1] > 25000000) {
         throw new RuntimeException('That image is too large to work with.');
     }
     $source = @imagecreatefromstring($bytes);
     if (!$source) {
         throw new RuntimeException('That image could not be read.');
     }
-    // Re-drawing it drops anything but the picture (metadata, scripts in SVG-like payloads, etc.)
+    // Re-drawing it keeps only the pixels: metadata and anything hidden after the image data are
+    // dropped. SVG is never accepted (it can carry script), so only the four bitmap types get here.
     $width = imagesx($source);
     $height = imagesy($source);
     $scale = min(1, MIT_IMAGE_MAX_SIDE / max($width, $height));
@@ -175,13 +196,40 @@ function mitImageDelete($relative) {
 }
 
 /**
+ * Is this IP address on the public internet? Not private, loopback, link-local, reserved, carrier-
+ * grade NAT (100.64.0.0/10) or any other special range.
+ */
+function mitIpIsPublic($ip) {
+    $flags = FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE;
+    if (defined('FILTER_FLAG_GLOBAL_RANGE')) {
+        $flags |= FILTER_FLAG_GLOBAL_RANGE; // PHP 8.2+: also CGNAT, documentation and benchmark ranges
+    }
+    if (!filter_var($ip, FILTER_VALIDATE_IP, $flags)) {
+        return false;
+    }
+    // Older PHP: carrier-grade NAT by hand, and IPv4-mapped IPv6 (::ffff:10.0.0.1) by its IPv4 part
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && (ip2long($ip) & 0xFFC00000) === (ip2long('100.64.0.0') & 0xFFC00000)) {
+        return false;
+    }
+    if (stripos($ip, '::ffff:') === 0) {
+        return mitIpIsPublic(substr($ip, 7));
+    }
+    return true;
+}
+
+/**
  * Fetch a web address for an image, safely: http(s) only, public addresses only (never this server
  * or the internal network - checked for every address the name resolves to, and the connection is
- * pinned to the checked one), at most 3 redirects, a size cap and a time limit.
- * Returns [body, content type].
+ * pinned to the checked one), at most 3 redirects, a size cap and a time limit for the whole fetch
+ * (redirects included). Returns [body, content type].
  */
-function mitFetchPublic($url, $max_bytes = MIT_IMAGE_MAX_BYTES) {
+function mitFetchPublic($url, $max_bytes = MIT_IMAGE_MAX_BYTES, $deadline = null) {
+    $deadline = $deadline ?? microtime(true) + 20;
     for ($hop = 0; $hop < 4; $hop++) {
+        $time_left = (int) floor($deadline - microtime(true));
+        if ($time_left < 2) {
+            throw new RuntimeException('The website took too long to answer.');
+        }
         $parts = parse_url((string) $url);
         $scheme = strtolower($parts['scheme'] ?? '');
         $host = $parts['host'] ?? '';
@@ -202,7 +250,7 @@ function mitFetchPublic($url, $max_bytes = MIT_IMAGE_MAX_BYTES) {
             throw new RuntimeException("Could not find $host.");
         }
         foreach ($ips as $ip) {
-            if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            if (!mitIpIsPublic($ip)) {
                 throw new RuntimeException('That address is on a private or local network - ITFlow only fetches public web addresses.');
             }
         }
@@ -211,8 +259,8 @@ function mitFetchPublic($url, $max_bytes = MIT_IMAGE_MAX_BYTES) {
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => false,
             CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_TIMEOUT => 15,
-            CURLOPT_CONNECTTIMEOUT => 8,
+            CURLOPT_TIMEOUT => min(15, $time_left),
+            CURLOPT_CONNECTTIMEOUT => min(8, $time_left),
             CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
             CURLOPT_RESOLVE => ["$host_plain:$port:" . (strpos($ips[0], ':') !== false ? "[{$ips[0]}]" : $ips[0])],
             CURLOPT_USERAGENT => 'Mozilla/5.0 (compatible; ITFlow image fetch)',
@@ -233,6 +281,7 @@ function mitFetchPublic($url, $max_bytes = MIT_IMAGE_MAX_BYTES) {
             throw new RuntimeException('That file is bigger than ' . ($max_bytes / 1048576) . ' MB.');
         }
         if ($status >= 300 && $status < 400 && $redirect !== '') {
+            // curl works out relative Location headers against the address it fetched
             $url = $redirect;
             continue;
         }
@@ -244,9 +293,50 @@ function mitFetchPublic($url, $max_bytes = MIT_IMAGE_MAX_BYTES) {
     throw new RuntimeException('That web address redirects too many times.');
 }
 
+/**
+ * A link found on a page, made absolute against the page's address: "//cdn/x.jpg", "/x.jpg" and
+ * "img/x.jpg" (relative to the page's folder) all work. Only http(s) results come back; '' otherwise.
+ */
+function mitUrlResolve($base, $relative) {
+    $relative = trim($relative);
+    if (preg_match('#^https?://#i', $relative)) {
+        return $relative;
+    }
+    $b = parse_url($base);
+    if (empty($b['scheme']) || empty($b['host'])) {
+        return '';
+    }
+    if (preg_match('#^[a-z][a-z0-9+.-]*:#i', $relative)) {
+        return ''; // data:, javascript: and the like
+    }
+    if (strpos($relative, '//') === 0) {
+        return $b['scheme'] . ':' . $relative;
+    }
+    $origin = $b['scheme'] . '://' . $b['host'] . (isset($b['port']) ? ':' . $b['port'] : '');
+    if (strpos($relative, '/') === 0) {
+        return $origin . $relative;
+    }
+    $dir = preg_replace('#/[^/]*$#', '/', $b['path'] ?? '/');
+    if (strpos($relative, '?') === 0) {
+        return $origin . ($b['path'] ?? '/') . $relative;
+    }
+    // Fold "./" and "../" so the address is a clean one
+    $segments = [];
+    foreach (explode('/', $dir . $relative) as $segment) {
+        if ($segment === '..') {
+            array_pop($segments);
+        } elseif ($segment !== '.') {
+            $segments[] = $segment;
+        }
+    }
+    return $origin . '/' . ltrim(implode('/', $segments), '/');
+}
+
 /** An image from a link - the image itself, or a web page's main picture (og:image and the like). Stored; returns its path. */
 function mitImageFromUrl($url) {
-    [$body, $type] = mitFetchPublic(trim((string) $url));
+    $url = trim((string) $url);
+    $deadline = microtime(true) + 25; // the page and its picture together
+    [$body, $type] = mitFetchPublic($url, MIT_IMAGE_MAX_BYTES, $deadline);
     if (strpos($type, 'text/html') !== false || preg_match('/^\s*<(!doctype|html)/i', substr($body, 0, 200))) {
         $image_url = '';
         foreach (['og:image:secure_url', 'og:image', 'twitter:image', 'twitter:image:src'] as $name) {
@@ -262,13 +352,11 @@ function mitImageFromUrl($url) {
         if ($image_url === '') {
             throw new RuntimeException('That page does not name a main picture - right-click the picture you want, copy its image address, and use that instead.');
         }
-        if (strpos($image_url, '//') === 0) {
-            $image_url = (parse_url($url, PHP_URL_SCHEME) ?: 'https') . ':' . $image_url;
-        } elseif (!preg_match('#^https?://#i', $image_url)) {
-            $base = parse_url($url);
-            $image_url = $base['scheme'] . '://' . $base['host'] . (isset($base['port']) ? ':' . $base['port'] : '') . '/' . ltrim($image_url, '/');
+        $image_url = mitUrlResolve($url, $image_url);
+        if ($image_url === '') {
+            throw new RuntimeException('That page\'s main picture is not a normal web address - copy the image address instead.');
         }
-        [$body] = mitFetchPublic($image_url);
+        [$body] = mitFetchPublic($image_url, MIT_IMAGE_MAX_BYTES, $deadline);
     }
     return mitImageStore($body);
 }
@@ -329,12 +417,7 @@ function mitQuoteItemSave($item_id, array $post, array $files, $is_new = false) 
     if (!$item_id || !mitQuoteColumnsReady()) {
         return;
     }
-    $cost = mitPostedNumber($post['item_cost'] ?? '');
-    $method = mitPriceMethod($post['item_price_method'] ?? '');
-    $percent = mitPostedNumber($post['item_price_percent'] ?? '');
-    if ($method === 'price') {
-        $percent = null;
-    }
+    [$cost, $method, $percent] = mitPricingPosted($post, 'item');
     $set = "item_cost = " . ($cost === null ? 'NULL' : $cost)
         . ", item_price_method = " . ($method === '' ? 'NULL' : "'$method'")
         . ", item_price_percent = " . ($percent === null ? 'NULL' : $percent);
@@ -414,9 +497,7 @@ function mitProductSave($product_id, array $post, array $files) {
     if (!$product_id || !mitQuoteColumnsReady()) {
         return;
     }
-    $cost = mitPostedNumber($post['product_cost'] ?? '');
-    $method = mitPriceMethod($post['product_price_method'] ?? '');
-    $percent = $method === 'price' ? null : mitPostedNumber($post['product_price_percent'] ?? '');
+    [$cost, $method, $percent] = mitPricingPosted($post, 'product');
     $set = "product_cost = " . ($cost === null ? 'NULL' : $cost)
         . ", product_price_method = " . ($method === '' ? 'NULL' : "'$method'")
         . ", product_price_percent = " . ($percent === null ? 'NULL' : $percent);
@@ -448,6 +529,23 @@ function mitProductDelete($product_id) {
     }
     $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT product_image FROM products WHERE product_id = " . intval($product_id)));
     mitImageDelete($row['product_image'] ?? '');
+}
+
+/**
+ * Column list for the API's products read (api/v1/products/read.php): every products column except
+ * our cost and markup ones, so an API key with Sales access does not see what we pay or our margin.
+ */
+function mitProductApiColumns() {
+    global $mysqli;
+    $hidden = ['product_cost', 'product_price_method', 'product_price_percent'];
+    $columns = [];
+    $result = mysqli_query($mysqli, "SHOW COLUMNS FROM products");
+    while ($result && $row = mysqli_fetch_assoc($result)) {
+        if (!in_array($row['Field'], $hidden, true)) {
+            $columns[] = '`' . $row['Field'] . '`';
+        }
+    }
+    return $columns ? implode(', ', $columns) : '*';
 }
 
 /** Products' pricing and images for the quote add-item row: {product_id: {cost, method, percent, image}}. */
@@ -486,8 +584,10 @@ function mitPricingFields(array $names, $cost, $method, $percent, $price_name = 
     $fmt = function ($n) {
         return $n === null || $n === '' ? '' : rtrim(rtrim(number_format((float) $n, 2, '.', ''), '0'), '.');
     };
-    $html = '<div class="border rounded p-3 mb-3" style="background:#fffcf2;border-color:#f3e3b0!important" data-mit-pricing data-price="' . escapeHtml($price_name) . '">'
-        . '<div class="small fw-bold mb-2" style="color:#6b4e00;letter-spacing:.04em">PRICING - ONLY STAFF SEE THIS</div>'
+    global $session_company_currency;
+    // Staff-only blocks share one look: Bootstrap's warning-subtle colors, which follow dark mode
+    $html = '<div class="border border-warning-subtle bg-warning-subtle rounded p-3 mb-3" data-mit-pricing data-price="' . escapeHtml($price_name) . '" data-mit-currency="' . escapeHtml($session_company_currency ?? 'USD') . '">'
+        . '<div class="small fw-bold mb-2 text-warning-emphasis">PRICING - ONLY STAFF SEE THIS</div>'
         . '<div class="row g-2 align-items-end">'
         . '<div class="col-sm-4"><label class="form-label mb-1">Our cost (each)</label><div class="input-group"><span class="input-group-text"><i class="fa fa-fw fa-dollar-sign"></i></span>'
         . '<input type="text" class="form-control text-end" inputmode="decimal" name="' . escapeHtml($names[0]) . '" value="' . escapeHtml($cost === null || $cost === '' ? '' : number_format((float) $cost, 2, '.', '')) . '" placeholder="0.00" data-mit-cost></div></div>'
@@ -500,7 +600,7 @@ function mitPricingFields(array $names, $cost, $method, $percent, $price_name = 
         . '<input type="text" class="form-control text-end" inputmode="decimal" name="' . escapeHtml($names[2]) . '" value="' . escapeHtml($fmt($percent)) . '" data-mit-pct></div>'
         . '</div><div class="d-flex flex-wrap gap-2 mt-2" data-mit-presets' . ($method === 'price' ? ' hidden' : '') . '>';
     foreach ($settings['presets'] as $preset) {
-        $html .= '<button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" data-mit-preset="' . escapeHtml($fmt($preset)) . '">' . escapeHtml($fmt($preset)) . '%</button>';
+        $html .= '<button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" data-mit-preset="' . escapeHtml($fmt($preset)) . '" aria-label="Use ' . escapeHtml($fmt($preset)) . '%">' . escapeHtml($fmt($preset)) . '%</button>';
     }
     return $html . '</div><div class="small text-body-secondary mt-2" data-mit-hint></div></div>'
         . '<script src="/js/mit_quote_pricing.js"></script>';
@@ -521,14 +621,19 @@ function mitImageField($name, $current) {
         . '</div></div></div>';
 }
 
+/*
+ * The quote page's extra cells (agent/quote.php). Each returns '' until database update M007 has
+ * run, all together, so the table keeps the same number of columns in every row.
+ */
+
 /** Quote page (agent/quote.php): the Image header cell. */
 function mitQuoteHeadImage() {
-    return mitQuoteSettings()['show_images'] ? '<th style="width:72px">Image</th>' : '';
+    return mitQuoteColumnsReady() && mitQuoteSettings()['show_images'] ? '<th style="width:72px">Image</th>' : '';
 }
 
 /** Quote page: the staff-only Our cost header cell (cost, and the pricing under it - not printed). */
 function mitQuoteHeadPricing() {
-    return '<th class="d-print-none" style="background:#fff8e1;color:#6b4e00">Our cost</th>';
+    return mitQuoteColumnsReady() ? '<th class="d-print-none bg-warning-subtle text-warning-emphasis">Our cost</th>' : '';
 }
 
 function mitQuoteThumb($relative, $size = 56) {
@@ -538,18 +643,25 @@ function mitQuoteThumb($relative, $size = 56) {
 
 /** Quote page: a line's image cell. */
 function mitQuoteCellImage($quote_id, $item_id) {
-    if (!mitQuoteSettings()['show_images']) {
+    if (!mitQuoteColumnsReady() || !mitQuoteSettings()['show_images']) {
         return '';
     }
     $extra = mitQuoteItemExtra($quote_id, $item_id);
     return '<td>' . mitQuoteThumb($extra['item_image'] ?? '') . '</td>';
 }
 
-/** "Markup 20%" and what that is as the other measure. */
+/**
+ * "Markup 20%" and what that is as the other measure. A line saved as markup / margin whose price
+ * was later changed by hand (so it no longer comes from the cost) shows as a set price.
+ */
 function mitPricingBadge($cost, $method, $percent, $price) {
     $cost = (float) $cost;
     $price = (float) $price;
     $method = mitPriceMethod($method);
+    if (($method === 'markup' || $method === 'margin') && $cost > 0
+        && abs((float) mitPriceFromCost($cost, $method, $percent) - $price) >= 0.01) {
+        $method = 'price';
+    }
     if ($cost <= 0 || $price <= 0) {
         return $method === 'price' ? '<span class="badge text-bg-light border">Set price</span>' : '';
     }
@@ -566,9 +678,12 @@ function mitPricingBadge($cost, $method, $percent, $price) {
 
 /** Quote page: a line's staff-only cell - our cost, with the pricing under it. */
 function mitQuoteCellPricing($quote_id, $item_id, $currency_format, $currency_code) {
+    if (!mitQuoteColumnsReady()) {
+        return '';
+    }
     $extra = mitQuoteItemExtra($quote_id, $item_id);
     $cost = $extra['item_cost'] ?? null;
-    return '<td class="d-print-none" style="background:#fffcf2">' . ($cost === null ? '<span class="text-body-secondary">-</span>' : numfmt_format_currency($currency_format, (float) $cost, $currency_code))
+    return '<td class="d-print-none bg-warning-subtle">' . ($cost === null ? '<span class="text-body-secondary">-</span>' : numfmt_format_currency($currency_format, (float) $cost, $currency_code))
         . '<div>' . mitPricingBadge($cost, $extra['item_price_method'] ?? '', $extra['item_price_percent'] ?? '', $extra['item_price'] ?? 0) . '</div></td>';
 }
 
@@ -578,7 +693,7 @@ function mitQuoteCellPricing($quote_id, $item_id, $currency_format, $currency_co
  * comes along by itself.
  */
 function mitQuoteAddCellImage() {
-    if (!mitQuoteSettings()['show_images']) {
+    if (!mitQuoteColumnsReady() || !mitQuoteSettings()['show_images']) {
         return '';
     }
     return '<td><div class="dropdown" data-mit-image-box>'
@@ -597,8 +712,13 @@ function mitQuoteAddCellImage() {
 
 /** Quote page add-item row: our cost with the pricing under it, wired to the row's price field. */
 function mitQuoteAddCellPricing() {
+    global $quote_currency_code, $session_company_currency;
+    if (!mitQuoteColumnsReady()) {
+        return '';
+    }
     $settings = mitQuoteSettings();
-    $html = '<td class="d-print-none" style="background:#fffcf2;min-width:150px"><input type="text" class="form-control text-end mb-1" inputmode="decimal" name="item_cost" placeholder="Our cost" data-mit-cost data-mit-price-field="price">'
+    $currency = escapeHtml($quote_currency_code ?? $session_company_currency ?? 'USD'); // agent/quote.php's own variable
+    $html = '<td class="d-print-none bg-warning-subtle" style="min-width:150px" data-mit-currency="' . $currency . '"><input type="text" class="form-control text-end mb-1" inputmode="decimal" name="item_cost" placeholder="Our cost" data-mit-cost data-mit-price-field="price">'
         . '<div class="input-group flex-nowrap"><select class="form-select" style="padding-left:.5rem;padding-right:1.5rem;background-position:right .35rem center" name="item_price_method" data-mit-method>';
     foreach (MIT_PRICE_METHODS as $value => $label) {
         $html .= '<option value="' . $value . '"' . ($value === $settings['method'] ? ' selected' : '') . '>' . $label . '</option>';
@@ -612,8 +732,15 @@ function mitQuoteAddCellPricing() {
         . '<script>window.mitProductPricing = ' . mitProductsPricingJson() . ';</script><script src="/js/mit_quote_pricing.js"></script></td>';
 }
 
-/** Quote page: the staff-only profit box (not printed). */
+/**
+ * Quote page: the staff-only profit box (not printed). The customer price is the lines' total less
+ * the quote's discount (before tax - tax is not ours to keep).
+ */
 function mitQuoteProfitBox($quote_id, $currency_format, $currency_code) {
+    global $mysqli;
+    if (!mitQuoteColumnsReady()) {
+        return '';
+    }
     $cost = 0;
     $priced = 0;
     $missing = 0;
@@ -629,6 +756,9 @@ function mitQuoteProfitBox($quote_id, $currency_format, $currency_code) {
         $cost += (float) $extra['item_cost'] * (float) $extra['item_quantity'];
         $priced += $line;
     }
+    $discount = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT quote_discount_amount FROM quotes WHERE quote_id = " . intval($quote_id)));
+    $discount = (float) ($discount['quote_discount_amount'] ?? 0);
+    $priced -= $discount;
     if ($priced <= 0) {
         return '';
     }
@@ -636,10 +766,10 @@ function mitQuoteProfitBox($quote_id, $currency_format, $currency_code) {
     $money = function ($n) use ($currency_format, $currency_code) {
         return numfmt_format_currency($currency_format, $n, $currency_code);
     };
-    return '<div class="border rounded p-3 mt-3 small d-print-none" style="background:#fffcf2;border-color:#f3e3b0!important">'
-        . '<div class="small fw-bold mb-2" style="color:#6b4e00;letter-spacing:.04em">PROFIT - ONLY STAFF SEE THIS</div>'
+    return '<div class="border border-warning-subtle bg-warning-subtle rounded p-3 mt-3 small d-print-none">'
+        . '<div class="small fw-bold mb-2 text-warning-emphasis">PROFIT - ONLY STAFF SEE THIS</div>'
         . '<div class="d-flex justify-content-between"><span>Our cost</span><span>' . $money($cost) . '</span></div>'
-        . '<div class="d-flex justify-content-between"><span>Customer price</span><span>' . $money($priced) . '</span></div>'
+        . '<div class="d-flex justify-content-between"><span>Customer price' . ($discount > 0 ? ' (after ' . $money($discount) . ' discount)' : '') . '</span><span>' . $money($priced) . '</span></div>'
         . '<div class="d-flex justify-content-between fw-bold border-top mt-1 pt-1 ' . ($profit < 0 ? 'text-danger' : 'text-success-emphasis') . '"><span>Profit</span><span>' . $money($profit) . '</span></div>'
         . '<div class="d-flex justify-content-between ' . ($profit < 0 ? 'text-danger' : 'text-success-emphasis') . '"><span>Margin</span><span>' . number_format($profit / $priced * 100, 1) . '%</span></div>'
         . ($missing ? '<div class="small text-body-secondary mt-1">' . $missing . ' line' . ($missing === 1 ? ' has' : 's have') . ' no cost entered - counted as all profit.</div>' : '')
@@ -670,5 +800,6 @@ function mitQuotePdfImage($quote_id, $item_id) {
     if (!mitImageIsOurs($relative) || !is_file(mitImagePath($relative))) {
         return '';
     }
-    return '<img src="' . htmlspecialchars(mitImagePath($relative)) . '" height="40"><br>';
+    // A web-root path, as ITFlow's own PDFs use - TCPDF puts the document root in front
+    return '<img src="/' . htmlspecialchars($relative) . '" height="40"><br>';
 }

@@ -2,12 +2,21 @@
 
 /*
  * Mountaineer IT - everyone's timesheets for one pay period (functions/mit_timesheets.php): hours
- * by kind, billable share, status; Full access approves the submitted ones. ?start= any date in the period.
+ * by kind, billable share, status. Timesheets View (or being someone's approver) to see it; Full
+ * access, or the person's approver, ticks and approves submitted ones. Anyone who has left but has
+ * hours in the period is listed too. ?start= any date in the period.
  */
 
 require_once "includes/inc_all.php";
 
-if (!mitTsReady() || (mitTsLevel() < 1 && !mitTsMyReports())) {
+mitModuleRequire('timesheets');
+
+if (!mitTsReady()) {
+    echo '<div class="alert alert-warning">Timesheets need the database update - Admin > Update.</div>';
+    require_once "../includes/footer.php";
+    exit;
+}
+if (mitTsLevel() < 1 && !mitTsMyReports()) {
     enforceUserPermission('module_timesheets');
 }
 
@@ -15,7 +24,7 @@ $settings = mitTsSettings();
 $approval = $settings['approval'];
 $overtime = $settings['ot_day'] || $settings['ot_week'];
 $period = mitTsPeriodFromRequest($_GET['start'] ?? '');
-$people = mitTsVisibleUsers();
+$people = mitTsVisibleUsers($period);
 $sheets = mitTsSheets(array_keys($people), $period);
 $totals = mitTsTotals(array_keys($people), $period['start'], $period['end']);
 $prev = mitTsPeriodShift($period, -1);
@@ -79,7 +88,8 @@ $bulk = in_array(true, $can_approve, true);
                                 <?php if ($bulk) { ?>
                                     <td><input class="form-check-input" type="checkbox" name="user_ids[]" value="<?= intval($user_id) ?>" <?= $status === 'submitted' && $can_approve[$user_id] ? '' : 'disabled' ?> aria-label="Approve <?= escapeHtml($person['user_name']) ?>"></td>
                                 <?php } ?>
-                                <td><a href="mit_timesheet.php?user_id=<?= intval($user_id) ?>&start=<?= $period['start'] ?>"><?= escapeHtml($person['user_name']) ?></a></td>
+                                <td><a href="mit_timesheet.php?user_id=<?= intval($user_id) ?>&start=<?= $period['start'] ?>"><?= escapeHtml($person['user_name']) ?></a>
+                                    <?php if (intval($person['user_status']) !== 1) { ?><span class="badge text-bg-secondary ms-1">Inactive</span><?php } ?></td>
                                 <td class="text-end"><?= mitTsHours($t['billable'], false) ?></td>
                                 <td class="text-end"><?= mitTsHours($t['other'], false) ?></td>
                                 <td class="text-end"><?= mitTsHours($t['work'], false) ?></td>

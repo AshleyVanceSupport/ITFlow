@@ -578,7 +578,7 @@ $contact_archived = !empty($project['contact_archived_at']);
 
             </div>
         </div>
-        <?= mitProcProjectCard($project_id) ?>
+        <?= mitProcProjectCard($project_id) // Mountaineer IT: procurement ?>
     </div>
 
     <!-- What it is for, the details, and who is on it -->

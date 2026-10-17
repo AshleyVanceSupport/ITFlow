@@ -8,6 +8,8 @@
 
 require_once "includes/inc_all.php";
 
+mitModuleRequire('procurement');
+
 enforceUserPermission('module_procurement');
 $can_receive = mitProcLevel() >= 2;
 

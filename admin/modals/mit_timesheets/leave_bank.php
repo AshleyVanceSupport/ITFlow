@@ -9,7 +9,7 @@ require_once '../../includes/modal_header.php';
 $bank_id = intval($_GET['id'] ?? 0);
 $bank = $bank_id ? (mitLeaveBanks(true)[$bank_id] ?? null) : null;
 if (!mitLeaveReady() || ($bank_id && !$bank)) {
-    exit('<div class="modal-body">That leave bank does not exist.</div>');
+    exit(json_encode(['error' => 'That leave bank does not exist.']));
 }
 $bank = $bank ?: ['bank_name' => '', 'codes' => [], 'bank_method' => 'none', 'bank_rate' => 0, 'bank_per_worked' => 0, 'bank_max' => null,
     'bank_carryover_max' => null, 'bank_year_start' => 'jan1', 'bank_waiting_days' => 0, 'bank_allow_negative' => 0];
