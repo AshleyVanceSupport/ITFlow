@@ -201,6 +201,20 @@ if (isset($_POST['mit_po_ordered'])) {
     redirect();
 }
 
+if (isset($_POST['mit_po_bill'])) {
+
+    validateCSRFToken();
+    enforceUserPermission('module_financial', 2);
+    $po = mitPoForRequest($_POST['po_id'] ?? 0, 2);
+    if (!in_array($po['status'], ['ordered', 'partial', 'received'], true)) {
+        flashAlert('Record the bill once the PO is ordered.', 'error');
+        redirect();
+    }
+    [$expense_id, $message] = mitPoRecordBill($po, $_POST);
+    flashAlert(escapeHtml($message), $expense_id ? 'success' : 'error');
+    redirect();
+}
+
 if (isset($_POST['mit_po_email'])) {
 
     validateCSRFToken();
@@ -323,11 +337,21 @@ if (isset($_POST['mit_po_receive'])) {
     validateCSRFToken();
     enforceUserPermission('module_procurement', 2);
 
-    [$lines, $pos] = mitPoReceive((array) ($_POST['received'] ?? []));
+    [$lines, $pos, $extras] = mitPoReceive((array) ($_POST['received'] ?? []), (array) ($_POST['options'] ?? []));
     if (!$lines) {
         flashAlert('Nothing was ticked as received.', 'error');
         redirect();
     }
-    flashAlert("Received $lines line" . ($lines === 1 ? '' : 's') . " on $pos PO" . ($pos === 1 ? '' : 's'));
+    $also = [];
+    if ($extras['assets']) {
+        $also[] = $extras['assets'] . ' asset' . ($extras['assets'] === 1 ? '' : 's') . ' added';
+    }
+    if ($extras['stock']) {
+        $also[] = $extras['stock'] . ' into stock';
+    }
+    if ($extras['notes']) {
+        $also[] = $extras['notes'] . ' ticket note' . ($extras['notes'] === 1 ? '' : 's');
+    }
+    flashAlert("Received $lines line" . ($lines === 1 ? '' : 's') . " on $pos PO" . ($pos === 1 ? '' : 's') . ($also ? ' - ' . implode(', ', $also) : ''));
     redirect();
 }

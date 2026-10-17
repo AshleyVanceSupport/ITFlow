@@ -167,8 +167,14 @@ model: see DEPLOYMENT.md.
   product_stock at once (billed lines have no item_product_id, so ITFlow does not take it again);
   to-order parts become procurement items (source ticket). Product vendor: `mitProductVendorField`
   appended to the product modals' pricing hook line, saved from `mitProductSave`.
-  Part 3 (planned): receiving extras (assets, stock, notes), vendor bill -> expense, order status on
-  invoice/project.
+  Part 3: `functions/mit_procurement_extras.php` (ours, required from mit_procurement.php), M011
+  (`mit_po_receipts.asset_ids`). Receiving (`mitPoReceive` options -> `mitProcAfterReceive`): client
+  lines become assets (one per unit, serial, type picked per line on `agent/mit_receiving.php`, linked
+  to the ticket for ticket parts), stock lines add product_stock, ticket parts get an internal note.
+  "Record vendor bill" on the PO (`po_action.php?action=bill`, needs Financial edit) inserts an ITFlow
+  expense (`mitPoRecordBill`, PO `expense_id`). Hooks: `mitProcInvoiceSummary` + `mitProcInvoiceLineStatus`
+  in `agent/invoice.php` (above the items / under each line name), `mitProcProjectCard` in
+  `agent/project.php` (left column, under the tabs card).
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files
   upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
   SSRF, broken tag links, Clients/Tickets/dashboard/search performance.

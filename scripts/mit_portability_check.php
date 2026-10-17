@@ -133,7 +133,7 @@ if ($n) {
 }
 $n = $count("SELECT COUNT(*) FROM mit_purchase_orders");
 if ($n || $count("SELECT COUNT(*) FROM modules WHERE module_name = 'module_procurement'")) {
-    $after[] = "Procurement: $n purchase order" . ($n === 1 ? '' : 's') . " and the items to order are not shown by stock ITFlow (they stay in the mit_ tables; PO PDFs in uploads/mit_po). Admin > Roles keeps an unused \"Procurement\" permission - delete its row from the modules table if it bothers you.";
+    $after[] = "Procurement: $n purchase order" . ($n === 1 ? '' : 's') . " and the items to order are not shown by stock ITFlow (they stay in the mit_ tables; PO PDFs in uploads/mit_po). Admin > Roles keeps an unused \"Procurement\" permission - delete its row from the modules table if it bothers you. Assets, stock and vendor-bill expenses made when receiving are ordinary ITFlow records and stay.";
 }
 if ($n = $count("SELECT COUNT(*) FROM mit_ticket_parts")) {
     $after[] = "Ticket parts: $n part" . ($n === 1 ? '' : 's') . " on tickets are not shown by stock ITFlow (billed ones are ordinary invoice lines and stay). Products' \"Order from\" vendor is not shown either.";

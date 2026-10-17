@@ -175,7 +175,7 @@ function mitProcForHtml(array $row) {
         $parts[] = '<a href="client_overview.php?client_id=' . intval($row['client_id']) . '">' . escapeHtml($row['client_name'] ?? 'Client') . '</a>';
     }
     if (intval($row['project_id'] ?? 0) && !empty($row['project_name'])) {
-        $parts[] = '<a href="project_details.php?project_id=' . intval($row['project_id']) . '" title="' . escapeHtml($row['project_name']) . '">' . escapeHtml($row['project_prefix'] . $row['project_number']) . '</a>';
+        $parts[] = '<a href="project.php?project_id=' . intval($row['project_id']) . '" title="' . escapeHtml($row['project_name']) . '">' . escapeHtml($row['project_prefix'] . $row['project_number']) . '</a>';
     }
     if (intval($row['invoice_id'] ?? 0) && !empty($row['invoice_number'])) {
         $parts[] = '<a href="invoice.php?invoice_id=' . intval($row['invoice_id']) . '">' . escapeHtml($row['invoice_prefix'] . $row['invoice_number']) . '</a>';
@@ -470,13 +470,15 @@ function mitPoRemoveLine(array $po, $line_id) {
 }
 
 /**
- * Record what arrived: $received = [line_id => ['qty' => n, 'serials' => text]], for any number of
- * POs (the receiving page). Returns [lines received, POs touched].
+ * Record what arrived: $received = [line_id => ['qty' => n, 'serials' => text, 'asset_type' => ...]],
+ * for any number of POs (the receiving page). $options: assets / stock / notes - what else to do
+ * (functions/mit_procurement_extras.php). Returns [lines received, POs touched, extras done].
  */
-function mitPoReceive(array $received) {
+function mitPoReceive(array $received, array $options = []) {
     global $mysqli, $session_user_id;
     $count = 0;
     $touched = [];
+    $extras = ['assets' => 0, 'stock' => 0, 'notes' => 0];
     foreach ($received as $line_id => $in) {
         $qty = round((float) ($in['qty'] ?? 0), 2);
         if ($qty <= 0) {
@@ -490,10 +492,14 @@ function mitPoReceive(array $received) {
         if ($qty <= 0) {
             continue;
         }
-        $serials = trim(preg_replace('/[\r\n,;]+/', "\n", (string) ($in['serials'] ?? '')));
+        $serials = trim(preg_replace('/\s*[\r\n,;]+\s*/', "\n", (string) ($in['serials'] ?? '')));
         mysqli_query($mysqli, "INSERT INTO mit_po_receipts SET po_id = " . intval($line['po_id']) . ", line_id = " . intval($line_id) . ", quantity = $qty,
             serials = " . ($serials === '' ? 'NULL' : "'" . escapeSql($serials) . "'") . ", received_by = " . intval($session_user_id));
+        $receipt_id = mysqli_insert_id($mysqli);
         mysqli_query($mysqli, "UPDATE mit_po_lines SET received_qty = received_qty + $qty WHERE line_id = " . intval($line_id));
+        foreach (mitProcAfterReceive($line, $qty, $serials, $receipt_id, $options, $in) as $key => $done) {
+            $extras[$key] += $done;
+        }
         mitPoLog($line['po_id'], mitProcWho() . ' received ' . mitQty($qty) . ' × ' . $line['name'] . ($serials !== '' ? ' (serials: ' . str_replace("\n", ', ', $serials) . ')' : ''));
         $touched[intval($line['po_id'])] = true;
         $count++;
@@ -501,7 +507,7 @@ function mitPoReceive(array $received) {
     foreach (array_keys($touched) as $po_id) {
         mitPoRecalc($po_id);
     }
-    return [$count, count($touched)];
+    return [$count, count($touched), $extras];
 }
 
 /** Lines still to arrive on ordered POs the agent can see, by PO. */
@@ -640,3 +646,4 @@ function mitPoEmail(array $po, $to) {
 }
 
 require_once __DIR__ . '/mit_procurement_parts.php';
+require_once __DIR__ . '/mit_procurement_extras.php';

@@ -17,6 +17,9 @@ if (!$po || !mitPoAccessible($po['po_id'])) {
 }
 $po_id = intval($po['po_id']);
 $level = mitProcLevel();
+$can_see_expense = lookupUserPermission('module_financial') >= 1;
+$can_bill = lookupUserPermission('module_financial') >= 2;
+$expense = mitPoExpense($po);
 $status = $po['status'];
 $lines = mitPoLines($po_id);
 $tracking = mitPoTracking($po_id);
@@ -72,6 +75,9 @@ $at = $order[$status] ?? 0;
                 <?php } ?>
                 <?php if ($level >= 2 && in_array($status, ['ordered', 'partial'], true)) { ?>
                     <a href="mit_receiving.php?po_id=<?= $po_id ?>" class="btn btn-success"><i class="fas fa-truck-loading me-2"></i>Receive items</a>
+                <?php } ?>
+                <?php if ($level >= 2 && $can_bill && !$expense && in_array($status, ['ordered', 'partial', 'received'], true)) { ?>
+                    <a href="#" <?= $modal('bill') ?> class="btn btn-light border"><i class="fas fa-file-invoice me-2"></i>Record vendor bill</a>
                 <?php } ?>
                 <?php if ($level >= 2 && !in_array($status, ['received', 'cancelled'], true)) { ?>
                     <div class="dropdown">
@@ -274,6 +280,13 @@ $at = $order[$status] ?? 0;
                     <?php if ($po['approved_at']) { ?>
                         <dt class="col-5 fw-normal text-muted">Approved</dt>
                         <dd class="col-7"><?= escapeHtml($po['approved_by_name'] ?: '-') ?> <span class="text-muted"><?= escapeHtml(date('M j', strtotime($po['approved_at']))) ?><?= $po['approval_note'] ? ' - ' . escapeHtml($po['approval_note']) : '' ?></span></dd>
+                    <?php } ?>
+                    <?php if ($expense) { ?>
+                        <dt class="col-5 fw-normal text-muted">Vendor bill</dt>
+                        <dd class="col-7">
+                            <?= $can_see_expense ? '<a href="expenses.php?q=' . urlencode(mitPoReference($po)) . '">' . mitMoney($expense['expense_amount']) . '</a>' : mitMoney($expense['expense_amount']) ?>
+                            <span class="text-muted"><?= escapeHtml($expense['expense_date']) ?><?= $expense['expense_reference'] ? ' · ' . escapeHtml($expense['expense_reference']) : '' ?></span>
+                        </dd>
                     <?php } ?>
                     <?php if (trim((string) $po['note']) !== '') { ?>
                         <dt class="col-5 fw-normal text-muted">Note to vendor</dt>

@@ -2,17 +2,20 @@
 
 /*
  * Mountaineer IT - the smaller forms on a purchase order (agent/mit_purchase_order.php):
- * ?action= approve | reject | ordered | email | tracking | details. Handlers in agent/post/mit_procurement.php.
+ * ?action= approve | reject | ordered | email | tracking | details | bill. Handlers in agent/post/mit_procurement.php.
  */
 
 require_once '../../../includes/modal_header.php';
 
 $action = (string) ($_GET['action'] ?? '');
-$levels = ['approve' => 3, 'reject' => 3, 'ordered' => 2, 'email' => 2, 'tracking' => 2, 'details' => 2];
+$levels = ['approve' => 3, 'reject' => 3, 'ordered' => 2, 'email' => 2, 'tracking' => 2, 'details' => 2, 'bill' => 2];
 if (!isset($levels[$action])) {
     exit('<div class="modal-body">Unknown action.</div>');
 }
 enforceUserPermission('module_procurement', $levels[$action]);
+if ($action === 'bill') {
+    enforceUserPermission('module_financial', 2);
+}
 $po = mitPoRow($_GET['po_id'] ?? 0);
 if (!$po || !mitPoAccessible($po['po_id'])) {
     exit('<div class="modal-body">That purchase order does not exist, or it is for a client you cannot see.</div>');
@@ -26,6 +29,7 @@ $titles = [
     'email' => ['fa-paper-plane', "Email $reference to the vendor"],
     'tracking' => ['fa-shipping-fast', "Add tracking to $reference"],
     'details' => ['fa-pen', "$reference details"],
+    'bill' => ['fa-file-invoice', "Record the vendor bill for $reference"],
 ];
 [$icon, $title] = $titles[$action];
 
@@ -123,6 +127,52 @@ ob_start();
                 <label class="form-label">Note to the vendor <span class="text-muted small">(on the PDF)</span></label>
                 <textarea class="form-control" name="note" rows="2"><?= escapeHtml($po['note']) ?></textarea>
             </div>
+        <?php } elseif ($action === 'bill') {
+            $categories = mysqli_fetch_all(mysqli_query($mysqli, "SELECT category_id, category_name FROM categories WHERE category_type = 'Expense' AND category_archived_at IS NULL ORDER BY category_name"), MYSQLI_ASSOC);
+            $accounts = mysqli_fetch_all(mysqli_query($mysqli, "SELECT account_id, account_name FROM accounts WHERE account_archived_at IS NULL ORDER BY account_name"), MYSQLI_ASSOC); ?>
+            <?php if (mitPoExpense($po)) { ?>
+                <div class="alert alert-info mb-0">This PO's vendor bill is already recorded.</div>
+            <?php } else { ?>
+                <p class="text-muted small">Makes an expense in Finance > Expenses for <?= escapeHtml($po['vendor_name']) ?>, linked to this PO.</p>
+                <div class="row g-2 mb-3">
+                    <div class="col-sm-6">
+                        <label class="form-label">Amount</label>
+                        <input type="text" inputmode="decimal" class="form-control" name="amount" value="<?= number_format((float) $po['total'], 2, '.', '') ?>" required>
+                        <div class="form-text">The PO total - change it to match their bill (shipping, tax).</div>
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label">Bill date</label>
+                        <input type="date" class="form-control" name="date" value="<?= date('Y-m-d') ?>" required>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Their invoice #</label>
+                    <input type="text" class="form-control" name="reference" maxlength="200" placeholder="From their bill - the PO number if left empty">
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-sm-6">
+                        <label class="form-label">Expense category</label>
+                        <select class="form-select" name="category" required>
+                            <?php foreach ($categories as $category) { ?>
+                                <option value="<?= intval($category['category_id']) ?>"><?= escapeHtml($category['category_name']) ?></option>
+                            <?php } ?>
+                        </select>
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label">Paid from</label>
+                        <select class="form-select" name="account">
+                            <option value="0">Not paid yet / no account</option>
+                            <?php foreach ($accounts as $account) { ?>
+                                <option value="<?= intval($account['account_id']) ?>"><?= escapeHtml($account['account_name']) ?></option>
+                            <?php } ?>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label">Description</label>
+                    <input type="text" class="form-control" name="description" maxlength="255" value="<?= escapeHtml(mitPoReference($po) . ' - ' . $po['vendor_name']) ?>">
+                </div>
+            <?php } ?>
         <?php } ?>
 
     </div>
@@ -135,6 +185,7 @@ ob_start();
             'email' => ['mit_po_email', 'btn-primary', 'Send'],
             'tracking' => ['mit_po_tracking_add', 'btn-primary', 'Add'],
             'details' => ['mit_po_details', 'btn-primary', 'Save'],
+            'bill' => ['mit_po_bill', 'btn-primary', 'Record expense'],
         ];
         [$name, $class, $label] = $buttons[$action]; ?>
         <button type="submit" name="<?= $name ?>" class="btn <?= $class ?> text-bold"><i class="fas fa-check me-2"></i><?= $label ?></button>

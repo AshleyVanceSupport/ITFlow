@@ -72,7 +72,21 @@ foreach ($by_po as $lines) {
                                     $left = (float) $line['quantity'] - (float) $line['received_qty']; ?>
                                     <tr class="border-bottom">
                                         <td><input class="form-check-input" type="checkbox" data-mit-got data-left="<?= mitQty($left) ?>" aria-label="Received <?= escapeHtml($line['name']) ?>" <?= $can_receive ? '' : 'disabled' ?>></td>
-                                        <td><strong><?= escapeHtml($line['name']) ?></strong></td>
+                                        <td>
+                                            <strong><?= escapeHtml($line['name']) ?></strong>
+                                            <?php if (intval($line['client_id']) && $can_receive) {
+                                                $guess = mitProcGuessAssetType($line['name']); ?>
+                                                <div class="d-flex align-items-center gap-2 mt-1" data-mit-asset-type>
+                                                    <span class="small text-muted text-nowrap">Asset type</span>
+                                                    <select class="form-select form-select-sm w-auto" name="received[<?= $line_id ?>][asset_type]" aria-label="Asset type">
+                                                        <?php foreach (array_keys($asset_types_array) as $type) { ?>
+                                                            <option <?= $type === $guess ? 'selected' : '' ?>><?= escapeHtml($type) ?></option>
+                                                        <?php } ?>
+                                                        <option value="none">Don't make assets</option>
+                                                    </select>
+                                                </div>
+                                            <?php } ?>
+                                        </td>
                                         <td class="small"><?= mitProcForHtml($line) ?></td>
                                         <td class="text-center"><?= mitQty($line['quantity']) ?></td>
                                         <td class="text-center"><?= mitQty($line['received_qty']) ?></td>
@@ -85,8 +99,20 @@ foreach ($by_po as $lines) {
                     </table>
                 </div>
                 <?php if ($can_receive) { ?>
-                    <div class="d-flex align-items-center gap-3 mt-3 p-3 rounded bg-body-tertiary border">
+                    <div class="d-flex flex-wrap align-items-center gap-3 mt-3 p-3 rounded bg-body-tertiary border">
                         <strong data-mit-total>Nothing ticked</strong>
+                        <div class="form-check mb-0" title="One asset per unit for the client, with its serial number - linked to the ticket when it was a ticket's part">
+                            <input class="form-check-input" type="checkbox" name="options[assets]" value="1" id="mitOptAssets" checked>
+                            <label class="form-check-label" for="mitOptAssets">Make client items assets</label>
+                        </div>
+                        <div class="form-check mb-0" title="Items ordered for our own stock are added to the product's stock">
+                            <input class="form-check-input" type="checkbox" name="options[stock]" value="1" id="mitOptStock" checked>
+                            <label class="form-check-label" for="mitOptStock">Add stock items to stock</label>
+                        </div>
+                        <div class="form-check mb-0" title="An internal note on the ticket a part was for">
+                            <input class="form-check-input" type="checkbox" name="options[notes]" value="1" id="mitOptNotes" checked>
+                            <label class="form-check-label" for="mitOptNotes">Note it on the ticket</label>
+                        </div>
                         <button type="submit" name="mit_po_receive" class="btn btn-success ms-auto"><i class="fas fa-check me-2"></i>Mark received</button>
                     </div>
                 <?php } ?>
@@ -95,6 +121,14 @@ foreach ($by_po as $lines) {
                 (function () {
                     const form = document.getElementById('mitReceiveForm');
                     const total = form.querySelector('[data-mit-total]');
+                    const assets = document.getElementById('mitOptAssets');
+                    if (assets) {
+                        assets.addEventListener('change', function () {
+                            form.querySelectorAll('[data-mit-asset-type]').forEach(function (row) {
+                                row.classList.toggle('d-none', !assets.checked);
+                            });
+                        });
+                    }
                     function sum() {
                         let n = 0;
                         form.querySelectorAll('[data-mit-qty]').forEach(function (input) {
