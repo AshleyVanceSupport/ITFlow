@@ -195,6 +195,8 @@ break stock ITFlow, and lists what stops working after a move.
   `mit_leave_rates`, settings in `mit_settings` (ts_*); export the Timesheets & Payroll
   report (both CSVs) before moving. Ticket time is ITFlow's own (ticket replies) and stays. Admin >
   Roles keeps an unused "Timesheets" permission (`module_timesheets` row) – harmless.
+- **Dispatch** – the page goes away; it keeps nothing of its own (bookings and assignments it made are
+  ordinary ITFlow ticket fields and stay). Use Calendar and each ticket's Schedule instead.
 - **Ticket parts** – the Parts box is ours (`mit_ticket_parts`); parts already billed are ordinary
   invoice lines and stay. Products' "Order from" vendor (`products.product_vendor_id`) is ignored.
 - **Additional techs on tickets** – stock ITFlow keeps only the lead (the assigned tech). Helpers,

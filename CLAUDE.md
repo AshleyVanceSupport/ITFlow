@@ -206,6 +206,15 @@ model: see DEPLOYMENT.md.
   `admin/includes/mit_admin_nav.php` in `admin/includes/side_nav.php` (after Categories), Account > Preferences
   (`mitTsPreferenceFields` in `agent/user/user_preferences.php`, `mitTsSavePreferences` in
   `agent/user/post/profile.php`), `functions.php` (require).
+- Dispatch (Oct 2026): `functions/mit_dispatch.php` (ours) - page `agent/mit_dispatch.php`, script
+  `agent/js/mit_dispatch.js` (Day: one FullCalendar v7 timeGridDay per tech - v7 options, e.g. `slotHeaderContent`,
+  and hashed class names, so style by data- attributes; Week: techs x days table with SortableJS), requests
+  `agent/mit_dispatch_ajax.php` (queue, items, book, unbook, state). Queue: open tickets with no tech / with a tech
+  and nothing booked. Book = `ticketChangeAssignee` + `ticketSetSchedule`; unbook = `ticketCancelSchedule`.
+  Needs Support edit (`calendarCanScheduleTickets`). Settings per agent in `mit_user_preferences` dispatch.state.
+  Hooks: require of `agent/includes/mit_dispatch_nav.php` in `agent/includes/side_nav.php` (under Calendar),
+  `functions.php` (require), and one condition in `functions/ticket.php` ticketMailSchedule
+  (`empty($GLOBALS['mit_schedule_skip_contact'])` - the "Email the contact" tick).
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files
   upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
   SSRF, broken tag links, Clients/Tickets/dashboard/search performance.

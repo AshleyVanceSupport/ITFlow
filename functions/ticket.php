@@ -1150,7 +1150,7 @@ function ticketMailSchedule($row, $cal_str, $cancelled, $when_text) {
             'body' => $sql('Hello, ' . $html($row['user_name']) . "<br><br>$what<br><br>--------------------------------<br><a href=\"$agent_link\">" . $html($reference) . "</a><br>--------------------------------<br><br>Please do not reply to this email. <br><br>Ticket: " . $html($reference) . "<br>Subject: " . $html($subject) . "<br>Portal: $agent_link<br><br>~<br>" . $html($company_name) . "<br>Support Department<br>" . $html($from_email))];
     }
 
-    if (intval($config_ticket_client_general_notifications) === 1) {
+    if (intval($config_ticket_client_general_notifications) === 1 && empty($GLOBALS['mit_schedule_skip_contact'])) { // Mountaineer IT: Dispatch can leave the contact out
         // The contact
         if (filter_var($row['contact_email'] ?? '', FILTER_VALIDATE_EMAIL)) {
             $data[] = $from + ['recipient' => $sql($row['contact_email']), 'recipient_name' => $sql($row['contact_name']),
