@@ -66,3 +66,23 @@ test('calendar draws', async ({ page }) => {
     await page.waitForTimeout(1000);
     await expectClean(page, errors);
 });
+
+test('cron health address and alert settings', async ({ page }) => {
+    const errors = watch(page);
+    await visit(page, 'admin/cron.php', errors);
+    const url = page.locator('#mitHealthUrl');
+    test.skip(await url.count() === 0, 'cron alerts card not shown');
+    const healthPath = new URL(await url.inputValue()).pathname + new URL(await url.inputValue()).search;
+
+    // The right key answers OK (200) or PROBLEM (503) - either way plain text, no PHP error
+    const right = await fetchText(page, healthPath);
+    expect([200, 503]).toContain(right.status);
+    expect(right.text).toMatch(/^(OK|PROBLEM)\n/);
+    expect(right.text).not.toMatch(/Fatal error|Warning:/);
+    // A wrong key or none is refused
+    expect((await fetchText(page, '/mit_health.php?key=wrong')).status).toBe(403);
+    expect((await fetchText(page, '/mit_health.php')).status).toBe(403);
+
+    // The top bar warning matches: shown exactly when the address reports a problem
+    await expect(page.locator('#mitCronHealth')).toHaveCount(right.status === 503 ? 1 : 0);
+});

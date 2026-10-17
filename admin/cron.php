@@ -205,4 +205,6 @@ while ($job_row = mysqli_fetch_assoc($sql)) {
     </div>
 </div>
 
+<?php require_once "includes/mit_cron_card.php"; // Mountaineer IT: cron alerts and health address ?>
+
 <?php require_once "../includes/footer.php"; ?>

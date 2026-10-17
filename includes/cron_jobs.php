@@ -138,6 +138,15 @@ function cronJobRegistry(): array
             'daily_at' => '04:15',
         ],
         [
+            // Mountaineer IT (functions/mit_cron_health.php)
+            'name' => 'mit_cron_watch',
+            'label' => 'Cron Watch',
+            'script' => 'mit_cron_watch.php',
+            'description' => 'Emails the admins when a job here fails, gets stuck or falls behind, and when it is fixed.',
+            'schedule' => 'Interval',
+            'interval_minutes' => 5,
+        ],
+        [
             'name' => 'app_update',
             'label' => 'Application Update',
             'script' => 'app_update.php',

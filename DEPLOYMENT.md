@@ -192,6 +192,8 @@ break stock ITFlow, and lists what stops working after a move.
   OAuth, and switch SMTP AUTH / IMAP back on for the mailbox.
 - **Outlook calendars** stop syncing; events ITFlow already put in people's Outlook stay until
   deleted (they carry the *ITFlow* category).
+- **Cron alerts** – the top-bar warning, the alert emails and `/mit_health.php` go; Maintenance > Cron still shows
+  ITFlow's own status. Point your uptime monitor elsewhere (it will report the address as gone).
 - **Remembered Tickets filters** – stock ITFlow opens Tickets with its defaults every time (the saved
   views sit unused in `mit_user_preferences`).
 - **Repeats by weekday** ("the third Wednesday", "the last Friday") – stock ITFlow repeats those
@@ -316,6 +318,13 @@ It will fetch the latest **official release** from itflow-org, summarise what ch
 (including any database updates), merge it into `develop` and, once you confirm, push it.
 The beta server picks it up; test there (including the smoke tests below), then ask Claude to open the
 `develop` → `MountaineerIT` PR.
+
+## Cron alerts
+
+Admin > Maintenance > Cron has a **Cron alerts** card. Admins get a warning next to the bell, and an email,
+when a cron job fails, gets stuck or falls behind. An email can't report that cron itself has stopped, so
+copy the card's **health address** into an uptime monitor (Uptime Kuma, UptimeRobot...) and have it check
+every 5 minutes. It answers `OK`, or HTTP 503 when something is wrong. Do this on production and beta.
 
 ## Smoke tests
 

@@ -272,6 +272,14 @@ model: see DEPLOYMENT.md.
   open, not in a client's ticket list. Hooks in `agent/tickets.php`: one line after `enforceUserPermission`
   (`mitListViewRestore('tickets')`, then filter_header.php runs again so sort / order / dates follow) and
   `mitListViewResetButton('tickets')` before the List / Board group (`?mit_reset_view=1`). `functions.php` (require).
+- Cron health (Oct 2026): `functions/mit_cron_health.php` (ours) reads ITFlow's own `cron_jobs` / `config_cron_last_dispatch_at`
+  (`mitCronProblems`: not running > 5 min, switched off, a job Failed, stuck Running > 2 h, or late - interval jobs past two
+  intervals (min +10 min), daily ones past 26 h). Shown as a warning next to the bell for admins (`includes/mit_cron_nav.php`,
+  one require in `includes/top_nav.php` after the timers); emailed by cron job `mit_cron_watch` (`cron/mit_cron_watch.php`,
+  entry in `includes/cron_jobs.php`, every 5 min: new / daily reminder / fixed, state in `mit_settings` cron_alert_state;
+  cron_alert_email, cron_alert_to - empty = active admins); `/mit_health.php?key=` (ours, web root, `cron_health_key`) answers
+  200 OK / 503 PROBLEM for an outside uptime monitor - the only alert when cron itself stops. Settings card
+  `admin/includes/mit_cron_card.php` (one require at the end of `admin/cron.php`), handlers `admin/post/mit_cron_health.php`.
 - Review fixes (Oct 2026): `functions/mit_common.php` (ours, required first in `functions.php`) - shared
   helpers: `mitMailBody` / `mitSqlHtml` (HTML for SQL without escapeSql's strip_tags), `mitProductIsTangible`,
   module switches (`mitModuleOn`, `mitModuleRequire` for pages/modals, `mitModuleGuard` for handler files,
