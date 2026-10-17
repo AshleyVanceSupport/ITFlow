@@ -402,7 +402,8 @@
                 dayHeaders: false,
                 allDaySlot: true,
                 allDayText: '',
-                height: 'calc(100vh - 16rem)',
+                // Side by side it fills its column, the same height as the queue (CSS in agent/mit_dispatch.php)
+                height: window.matchMedia('(min-width: 992px)').matches ? '100%' : 'calc(100vh - 16rem)',
                 slotMinTime: '06:00:00',
                 slotMaxTime: '21:00:00',
                 scrollTime: '07:30:00',
@@ -527,7 +528,7 @@
         }
         loadItems(function (items) {
             const today = ymd(new Date());
-            let html = '<div class="table-responsive"><table class="table table-bordered table-sm mb-0 mit-dispatch-week"><thead><tr><th style="min-width: 150px">Agent</th>';
+            let html = '<div class="table-responsive mit-dispatch-week-wrap"><table class="table table-bordered table-sm mb-0 mit-dispatch-week"><thead><tr><th style="min-width: 150px">Agent</th>';
             days.forEach(function (d) {
                 html += '<th class="small text-center' + (ymd(d) === today ? ' text-primary' : '') + '">' + d.toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'}) + '</th>';
             });

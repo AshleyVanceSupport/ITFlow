@@ -45,6 +45,17 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
     .mit-dw-chip { font-size: .78rem; border-radius: .3rem; padding: .15rem .35rem; margin-bottom: .2rem; color: #fff; cursor: grab; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .mit-dw-chip[data-kind="outlook_busy"], .mit-dw-chip[data-kind="helper"] { cursor: default; }
     .mit-dw-cell .sortable-ghost, .mit-dispatch-queue .sortable-ghost { opacity: .4; }
+    /* Side by side (lg and up) the queue and the board are one height, filling the window; each scrolls inside */
+    @media (min-width: 992px) {
+        .mit-dispatch-pane { height: max(28rem, calc(100vh - 13.5rem)); display: flex; flex-direction: column; }
+        .mit-dispatch-pane .mit-dispatch-queue { flex: 1 1 auto; min-height: 0; max-height: none; }
+        .mit-dispatch-pane [data-md-board] { flex: 1 1 auto; min-height: 0; overflow: auto; }
+        .mit-dispatch-pane .mit-dispatch-cols { height: 100%; }
+        .mit-dispatch-pane .mit-dispatch-col { display: flex; flex-direction: column; }
+        .mit-dispatch-pane .mit-dispatch-col [data-md-cal] { flex: 1 1 auto; min-height: 0; }
+        .mit-dispatch-pane .mit-dispatch-week thead th { position: sticky; top: 0; z-index: 2; background: var(--bs-body-bg); }
+        .mit-dispatch-pane .mit-dispatch-week-wrap { overflow: visible; }
+    }
 </style>
 
 <div class="mit-dispatch" id="mitDispatch"
@@ -92,7 +103,7 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
 
     <div class="row g-3">
         <div class="col-lg-3">
-            <div class="card mb-0">
+            <div class="card mb-0 mit-dispatch-pane">
                 <div class="card-header p-2">
                     <ul class="nav nav-pills nav-fill small" role="tablist">
                         <li class="nav-item"><a class="nav-link py-1" href="#" data-md-tab="unassigned">No agent <span class="badge text-bg-danger ms-1" data-md-count="unassigned"></span></a></li>
@@ -121,7 +132,7 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
             </div>
         </div>
         <div class="col-lg-9">
-            <div class="card mb-0">
+            <div class="card mb-0 mit-dispatch-pane">
                 <div class="card-body p-0" data-md-board></div>
             </div>
         </div>
