@@ -190,8 +190,17 @@ model: see DEPLOYMENT.md.
   codes `code_roles` / `code_note_required` / `code_daily_max` / `code_closure_fill`; `mit_timesheet_people`
   (schedule, approver - who can then see, correct and approve them -, employee_id, pay_type: salaried = no
   overtime); personal `mit_user_preferences` timesheet.format / .view / .hidden_codes / .reminders.
-  Cron job `mit_timesheet_reminders` (`cron/mit_timesheet_reminders.php`, entry in `includes/cron_jobs.php`,
-  hourly; `mit_timesheets.reminded_due_at` / `reminded_late_at`). Hooks: one line in `functions/reports.php`
+  Cron job `mit_timesheets` (`cron/mit_timesheets.php`, entry in `includes/cron_jobs.php`, hourly: reminders -
+  `mit_timesheets.reminded_due_at` / `reminded_late_at` -, leave earned when approval is off, leave year ends).
+  Leave balances (M014): `functions/mit_leave.php` (ours, required from mit_timesheets.php) - banks
+  (`mit_leave_banks`: codes that use it up, earned per period / per hour worked / yearly / not, max, carry-over
+  keep all / cap / lose, year from 1 Jan or hire anniversary, waiting days, below 0 allowed), ledger
+  (`mit_leave_ledger`, unique person+bank+kind+ref for automatic rows), per-person rate / left out
+  (`mit_leave_rates`), `mit_timesheet_people.hire_date`. Balance = ledger - hours on its codes. Period earnings
+  added in `mitTsDecide` approve (`mitLeaveAccruePeriod`), removed in `mitTsReopen`; save checks
+  `mitLeaveCheckSave`. UI: balances box on the timesheet (`mitLeaveTimesheetBox`, history modal
+  `agent/modals/mit_timesheet/leave.php`), Admin > Timesheets > Leave tab (`admin/modals/mit_timesheets/leave_bank.php`)
+  and People tab (`person_leave.php`: rates, adjustments, history); "<bank> left" columns in the payroll report. Hooks: one line in `functions/reports.php`
   reportCatalog (`'mit_payroll' => mitTsReportEntry()` after time_by_tech), require of
   `agent/includes/mit_timesheet_nav.php` in `agent/includes/side_nav.php` (under Calendar), require of
   `admin/includes/mit_admin_nav.php` in `admin/includes/side_nav.php` (after Categories), Account > Preferences

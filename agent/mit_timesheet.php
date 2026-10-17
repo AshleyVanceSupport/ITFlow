@@ -125,6 +125,8 @@ if ($settings['ot_day'] || $settings['ot_week']) {
             <?php } ?>
         </div>
 
+        <?= mitLeaveTimesheetBox($user_id, $period) ?>
+
         <form action="post.php" method="post" autocomplete="off" id="mitTsForm" data-format="<?= $format ?>" data-today="<?= $today ?>" data-auto-lost="<?= $settings['auto_lost'] ?>">
             <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
             <input type="hidden" name="user_id" value="<?= $user_id ?>">
@@ -358,6 +360,12 @@ if ($settings['ot_day'] || $settings['ot_week']) {
                 alert(bad.dataset.code + ': ' + (readable(bad.value) ? 'at most ' + hours(+bad.dataset.max) + ' hours a day.' : 'type hours as e.g. 7.5 or 7:30.'));
                 return;
             }
+            const short = document.querySelector('[data-mit-leave-bank].border-danger');
+            if (short) {
+                e.preventDefault();
+                alert('Not enough ' + short.dataset.name + ' for those hours.');
+                return;
+            }
             const missing = [...form.querySelectorAll('input[data-note-required="1"]')].find(function (cell) {
                 return !cell.disabled && minutes(cell.value) > 0 && cell.parentElement.querySelector('input[type=hidden]').value.trim() === '';
             });
@@ -368,8 +376,28 @@ if ($settings['ot_day'] || $settings['ot_week']) {
                 alert(missing.dataset.code + ' needs a note - type it in the box under the week.');
             }
         });
-        form.addEventListener('input', sum);
+        // Leave left, as hours are typed: each bank's balance less what is on its codes in this period
+        function leave() {
+            document.querySelectorAll('[data-mit-leave-bank]').forEach(function (box) {
+                const codes = box.dataset.codes.split(',');
+                let used = 0;
+                form.querySelectorAll('input[data-date]').forEach(function (cell) {
+                    const code = cell.name.match(/\[(\d+)\]$/);
+                    if (code && codes.includes(code[1])) used += minutes(cell.value);
+                });
+                const left = +box.dataset.base - used;
+                const out = box.querySelector('[data-mit-leave-left]');
+                out.textContent = (left < 0 ? '-' : '') + hours(Math.abs(left), true);
+                out.classList.toggle('text-danger', left < 0);
+                box.classList.toggle('border-danger', left < 0 && box.dataset.negative !== '1');
+            });
+        }
+        form.addEventListener('input', function () {
+            sum();
+            leave();
+        });
         sum();
+        leave();
     })();
 </script>
 

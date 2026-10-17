@@ -31,6 +31,7 @@ if ($agent_id) {
     $people = array_intersect_key(mitTsUsers([$agent_id]), [$agent_id => true]);
 }
 $codes = mitTsCodes(true);
+$banks = mitLeaveReady() ? mitLeaveBanks() : [];
 $totals = mitTsTotals(array_keys($people), $from, $to);
 $settings = mitTsSettings();
 $approval = $settings['approval'];
@@ -82,6 +83,9 @@ foreach ($people as $user_id => $person) {
     foreach ($code_columns as $code_id => $code) {
         $row["code_$code_id"] = ($t['codes'][$code_id] ?? 0) * 60;
     }
+    foreach ($banks as $bank_id => $bank) {
+        $row["bank_$bank_id"] = isset(mitLeaveBanksFor($user_id)[$bank_id]) ? (mitLeaveCredited($user_id, $bank_id, $to) - mitLeaveUsed($user_id, $bank, $to)) * 60 : null;
+    }
     foreach ($sum as $key => $value) {
         $sum[$key] += $t[$key];
     }
@@ -110,6 +114,11 @@ $columns += [
     'regular' => ['label' => 'Regular', 'type' => 'hours', 'decimals' => 2, 'screen' => $overtime, 'title' => 'Paid hours less overtime'],
     'overtime' => ['label' => 'Overtime', 'type' => 'hours', 'decimals' => 2, 'screen' => $overtime, 'title' => 'Over the daily / weekly limit set in Admin > Timesheets (hourly people)'],
     'share' => ['label' => 'Billable %', 'type' => 'percent'],
+];
+foreach ($banks as $bank_id => $bank) {
+    $columns["bank_$bank_id"] = ['label' => $bank['bank_name'] . ' left', 'type' => 'hours', 'decimals' => 2, 'title' => $bank['bank_name'] . ' balance at the end of these dates'];
+}
+$columns += [
     'approved' => ['label' => 'Approved', 'title' => 'Pay periods approved', 'screen' => (bool) $approval, 'html' => function ($r) use ($periods) {
         $all = intval($r['approved']) === count($periods);
         return '<span class="badge ' . ($all ? 'text-bg-success' : 'text-bg-warning') . '">' . escapeHtml($r['approved']) . '</span>';
@@ -117,7 +126,7 @@ $columns += [
 ];
 $table_totals = ['person' => 'Total'];
 foreach ($columns as $key => $column) {
-    if ($key !== 'person' && reportColumnIsNumber($column) && $key !== 'share') {
+    if ($key !== 'person' && reportColumnIsNumber($column) && $key !== 'share' && strpos($key, 'bank_') !== 0) {
         $table_totals[$key] = array_sum(array_column($rows, $key));
     }
 }
@@ -146,7 +155,7 @@ if (reportExporting('detail')) {
             foreach ($by_code as $code_id => $entry) {
                 $code = $codes[$code_id] ?? ['code_name' => "Code $code_id", 'code_kind' => 'work', 'code_paid' => 1];
                 $days[] = ['date' => $date, 'code' => $code['code_name'], 'kind' => MIT_TS_KINDS[$code['code_kind']] ?? $code['code_kind'],
-                    'paid' => intval($code['code_paid']) ? 'Yes' : 'No', 'hours' => $entry['minutes'] * 60];
+                    'paid' => intval($code['code_paid']) ? 'Yes' : 'No', 'hours' => $entry['minutes'] * 60, 'note' => (string) $entry['note']];
             }
         }
         usort($days, function ($a, $b) {
@@ -158,7 +167,7 @@ if (reportExporting('detail')) {
     }
     reportCsv('Timesheet detail', [
         'person' => ['label' => 'Person'], 'employee_id' => ['label' => 'Employee ID'], 'email' => ['label' => 'Email'], 'date' => ['label' => 'Date'], 'code' => ['label' => 'Charge code'],
-        'kind' => ['label' => 'Kind'], 'paid' => ['label' => 'Paid'], 'hours' => ['label' => 'Hours', 'type' => 'hours'],
+        'kind' => ['label' => 'Kind'], 'paid' => ['label' => 'Paid'], 'hours' => ['label' => 'Hours', 'type' => 'hours'], 'note' => ['label' => 'Note'],
     ], $detail);
 }
 if (reportExporting()) {

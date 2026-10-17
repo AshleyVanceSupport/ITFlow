@@ -1,7 +1,7 @@
 <?php
 
 /*
- * Mountaineer IT - Admin > Timesheets (admin/mit_timesheets.php): settings, charge codes and people.
+ * Mountaineer IT - Admin > Timesheets (admin/mit_timesheets.php): settings, charge codes, leave banks and people.
  */
 
 defined('FROM_POST_HANDLER') || die("Direct file access is not allowed");
@@ -146,8 +146,111 @@ if (isset($_POST['mit_ts_person_save'])) {
     $pay_type = isset(MIT_TS_PAY_TYPES[$_POST['pay_type'] ?? '']) ? $_POST['pay_type'] : 'hourly';
     $set = "schedule = " . ($schedule === '' ? 'NULL' : "'$schedule'") . ", approver_id = $approver_id,
         employee_id = " . ($employee_id === '' ? 'NULL' : "'" . escapeSql(mb_substr($employee_id, 0, 50)) . "'") . ", pay_type = '$pay_type'";
+    if (mitLeaveReady()) {
+        $hire = (string) ($_POST['hire_date'] ?? '');
+        $set .= ", hire_date = " . (preg_match('/^\d{4}-\d{2}-\d{2}$/', $hire) ? "'$hire'" : 'NULL');
+    }
     mysqli_query($mysqli, "INSERT INTO mit_timesheet_people SET user_id = $user_id, $set ON DUPLICATE KEY UPDATE $set");
     logAudit('Settings', 'Edit', "$session_name edited the timesheet details of user $user_id");
     flashAlert('Saved');
+    redirect();
+}
+
+if (isset($_POST['mit_leave_bank_save'])) {
+
+    validateCSRFToken();
+
+    $bank_id = intval($_POST['bank_id'] ?? 0);
+    $name = trim((string) ($_POST['name'] ?? ''));
+    $method = isset(MIT_LEAVE_METHODS[$_POST['method'] ?? '']) ? $_POST['method'] : 'none';
+    $rate = mitTsParseHoursAny($_POST['rate'] ?? '');
+    $per_worked = mitTsParseHoursAny($_POST['per_worked'] ?? '');
+    $max = trim((string) ($_POST['max'] ?? '')) === '' ? null : mitTsParseHoursAny($_POST['max']);
+    $carry = (string) ($_POST['carryover'] ?? 'all');
+    $carry_max = $carry === 'all' ? null : ($carry === 'none' ? 0 : mitTsParseHoursAny($_POST['carryover_max'] ?? ''));
+    if (!mitLeaveReady() || $name === '' || $rate === null || $per_worked === null || ($max === null && trim((string) ($_POST['max'] ?? '')) !== '')
+        || ($carry === 'cap' && !$carry_max) || ($method === 'worked' && !$per_worked)) {
+        flashAlert('Not saved - give it a name, and hours as numbers (for per hour worked, how many hours worked earn it; for keep up to, how many hours).', 'error');
+        redirect();
+    }
+    $codes = implode(',', array_filter(array_map('intval', (array) ($_POST['codes'] ?? []))));
+    $set = "bank_name = '" . escapeSql(mb_substr($name, 0, 100)) . "', bank_codes = " . ($codes === '' ? 'NULL' : "'$codes'") . ", bank_method = '$method',
+        bank_rate = $rate, bank_per_worked = $per_worked, bank_max = " . ($max === null ? 'NULL' : $max) . ", bank_carryover_max = " . ($carry_max === null ? 'NULL' : $carry_max) . ",
+        bank_year_start = '" . (($_POST['year_start'] ?? '') === 'hire' ? 'hire' : 'jan1') . "', bank_waiting_days = " . max(0, min(3650, intval($_POST['waiting_days'] ?? 0))) . ",
+        bank_allow_negative = " . (empty($_POST['allow_negative']) ? 0 : 1);
+    if ($bank_id) {
+        mysqli_query($mysqli, "UPDATE mit_leave_banks SET $set WHERE bank_id = $bank_id");
+    } else {
+        $sort = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COALESCE(MAX(bank_sort), 0) + 1 FROM mit_leave_banks"))[0]);
+        mysqli_query($mysqli, "INSERT INTO mit_leave_banks SET $set, bank_sort = $sort");
+    }
+    logAudit('Settings', $bank_id ? 'Edit' : 'Create', "$session_name " . ($bank_id ? 'edited' : 'created') . " leave bank " . escapeSql($name));
+    flashAlert('Leave bank <strong>' . escapeHtml($name) . '</strong> saved');
+    redirect();
+}
+
+if (isset($_GET['mit_leave_bank_archive']) || isset($_GET['mit_leave_bank_restore'])) {
+
+    validateCSRFToken();
+
+    $archive = isset($_GET['mit_leave_bank_archive']);
+    $bank_id = intval($archive ? $_GET['mit_leave_bank_archive'] : $_GET['mit_leave_bank_restore']);
+    mysqli_query($mysqli, "UPDATE mit_leave_banks SET bank_archived_at = " . ($archive ? 'NOW()' : 'NULL') . " WHERE bank_id = $bank_id");
+    logAudit('Settings', $archive ? 'Archive' : 'Restore', "$session_name " . ($archive ? 'archived' : 'restored') . " leave bank $bank_id");
+    flashAlert($archive ? 'Archived - its history stays' : 'Restored');
+    redirect();
+}
+
+if (isset($_POST['mit_leave_rates_save'])) {
+
+    validateCSRFToken();
+
+    $user_id = intval($_POST['user_id'] ?? 0);
+    if (!mitLeaveReady() || !(mitTsUsers([$user_id])[$user_id] ?? null)) {
+        redirect();
+    }
+    foreach (mitLeaveBanks() as $bank_id => $bank) {
+        $text = trim((string) ($_POST['rates'][$bank_id] ?? ''));
+        $rate = $text === '' ? null : mitTsParseHoursAny($text);
+        if ($text !== '' && $rate === null) {
+            flashAlert('Not saved - ' . escapeHtml($bank['bank_name']) . ': the rate should be hours, e.g. 3.33.', 'error');
+            redirect();
+        }
+        $excluded = empty($_POST['excluded'][$bank_id]) ? 0 : 1;
+        $set = "rate = " . ($rate === null ? 'NULL' : $rate) . ", excluded = $excluded";
+        mysqli_query($mysqli, "INSERT INTO mit_leave_rates SET user_id = $user_id, bank_id = " . intval($bank_id) . ", $set ON DUPLICATE KEY UPDATE $set");
+    }
+    logAudit('Settings', 'Edit', "$session_name edited the leave rates of user $user_id");
+    flashAlert('Saved');
+    redirect();
+}
+
+if (isset($_POST['mit_leave_adjust'])) {
+
+    validateCSRFToken();
+
+    $user_id = intval($_POST['user_id'] ?? 0);
+    $bank = mitLeaveBanks()[intval($_POST['bank_id'] ?? 0)] ?? null;
+    $hours = trim((string) ($_POST['hours'] ?? ''));
+    $minutes = is_numeric($hours) && abs((float) $hours) <= 10000 ? (int) round((float) $hours * 60) : (str_starts_with($hours, '-') ? -1 : 1) * (mitTsParseHours(ltrim($hours, '+-')) ?? 0);
+    $date = (string) ($_POST['date'] ?? '');
+    if (!$bank || !(mitTsUsers([$user_id])[$user_id] ?? null) || !$minutes || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        flashAlert('Not added - pick a bank and give the hours (e.g. 16, or -4 to take off) and a date.', 'error');
+        redirect();
+    }
+    mitLeavePost($user_id, $bank['bank_id'], $date, $minutes, ($_POST['kind'] ?? '') === 'start' ? 'start' : 'adjust', null, trim((string) ($_POST['note'] ?? '')));
+    logAudit('Settings', 'Edit', escapeSql("$session_name changed the {$bank['bank_name']} balance of user $user_id by " . mitTsHours($minutes, false, 'decimal') . ' h'));
+    flashAlert(escapeHtml($bank['bank_name']) . ' ' . ($minutes > 0 ? '+' : '') . mitTsHours($minutes, false, 'decimal') . ' h');
+    redirect();
+}
+
+if (isset($_GET['mit_leave_adjust_delete'])) {
+
+    validateCSRFToken();
+
+    $ledger_id = intval($_GET['mit_leave_adjust_delete']);
+    mysqli_query($mysqli, "DELETE FROM mit_leave_ledger WHERE ledger_id = $ledger_id AND kind IN ('adjust', 'start')");
+    logAudit('Settings', 'Delete', "$session_name removed leave adjustment $ledger_id");
+    flashAlert('Removed', 'error');
     redirect();
 }

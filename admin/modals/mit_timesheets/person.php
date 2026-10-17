@@ -2,7 +2,7 @@
 
 /*
  * Mountaineer IT - one person's timesheet details (admin/mit_timesheets.php?tab=people): normal week,
- * approver, employee ID and pay type.
+ * approver, employee ID, pay type and hire date.
  */
 
 require_once '../../includes/modal_header.php';
@@ -58,6 +58,10 @@ ob_start();
             <div class="col-sm-6">
                 <label class="form-label">Employee ID <span class="text-muted small">(payroll)</span></label>
                 <input type="text" class="form-control" name="employee_id" maxlength="50" value="<?= escapeHtml($details['employee_id']) ?>">
+            </div>
+            <div class="col-sm-6">
+                <label class="form-label">Hire date <span class="text-muted small">(leave waiting periods, anniversaries)</span></label>
+                <input type="date" class="form-control" name="hire_date" value="<?= escapeHtml(mitLeaveHireDate($user_id)) ?>">
             </div>
             <div class="col-sm-6">
                 <label class="form-label">Pay</label>

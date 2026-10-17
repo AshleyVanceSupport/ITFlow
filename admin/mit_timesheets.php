@@ -2,7 +2,8 @@
 
 /*
  * Mountaineer IT - Admin > Timesheets (functions/mit_timesheets.php): ?tab= settings (the company's rules),
- * codes (charge codes) and people (each person's schedule, approver, employee ID, pay type).
+ * codes (charge codes), leave (PTO / sick banks - functions/mit_leave.php) and people (each person's schedule,
+ * approver, employee ID, pay type, hire date and leave balances).
  * Handlers in admin/post/mit_timesheets.php.
  */
 
@@ -14,7 +15,7 @@ if (!mitTsReady()) {
     exit;
 }
 
-$tab = in_array($_GET['tab'] ?? '', ['settings', 'codes', 'people'], true) ? $_GET['tab'] : 'settings';
+$tab = in_array($_GET['tab'] ?? '', ['settings', 'codes', 'leave', 'people'], true) ? $_GET['tab'] : 'settings';
 $settings = mitTsSettings();
 [$period_type, $period_anchor] = mitTsPeriodSettings();
 $csrf = $_SESSION['csrf_token'];
@@ -37,12 +38,17 @@ $company_week = mitTsCompanySchedule();
             <div class="card-tools">
                 <button type="button" class="btn btn-primary ajax-modal" data-modal-url="modals/mit_timesheets/charge_code.php"><i class="fas fa-plus me-2"></i>New charge code</button>
             </div>
+        <?php } elseif ($tab === 'leave' && mitLeaveReady()) { ?>
+            <div class="card-tools">
+                <button type="button" class="btn btn-primary ajax-modal" data-modal-url="modals/mit_timesheets/leave_bank.php"><i class="fas fa-plus me-2"></i>New leave bank</button>
+            </div>
         <?php } ?>
     </div>
     <div class="card-body pb-0">
         <ul class="nav nav-tabs">
             <li class="nav-item"><a class="nav-link <?= $tab === 'settings' ? 'active' : '' ?>" href="?tab=settings"><i class="fas fa-sliders-h me-2"></i>Settings</a></li>
             <li class="nav-item"><a class="nav-link <?= $tab === 'codes' ? 'active' : '' ?>" href="?tab=codes"><i class="fas fa-tags me-2"></i>Charge codes</a></li>
+            <li class="nav-item"><a class="nav-link <?= $tab === 'leave' ? 'active' : '' ?>" href="?tab=leave"><i class="fas fa-umbrella-beach me-2"></i>Leave</a></li>
             <li class="nav-item"><a class="nav-link <?= $tab === 'people' ? 'active' : '' ?>" href="?tab=people"><i class="fas fa-users me-2"></i>People</a></li>
         </ul>
     </div>
@@ -272,6 +278,53 @@ $company_week = mitTsCompanySchedule();
             </table>
         </div>
 
+    <?php } elseif ($tab === 'leave') {
+        $banks = mitLeaveBanks(true);
+        $codes_all = mitTsCodes(true); ?>
+        <div class="card-body pb-0">
+            <p class="text-muted">Leave banks hold PTO, sick time and the like. Hours on a bank's charge codes come out of it; it fills up the way you choose below.
+                Each person's balance, own rate and adjustments are on the People tab.</p>
+        </div>
+        <?php if (!mitLeaveReady()) { ?>
+            <div class="card-body"><div class="alert alert-warning mb-0">Leave balances need the database update - Admin > Update.</div></div>
+        <?php } else { ?>
+            <div class="table-responsive-sm">
+                <table class="table table-striped table-borderless table-hover mb-0 align-middle">
+                    <thead class="text-dark">
+                        <tr><th class="ps-3">Bank</th><th>Uses up</th><th>Earned</th><th>Most</th><th>Year end</th><th>Other</th><th class="text-center">Action</th></tr>
+                    </thead>
+                    <tbody>
+                        <?php if (!$banks) { ?>
+                            <tr><td colspan="7" class="text-center text-muted py-4">No leave banks yet.</td></tr>
+                        <?php } ?>
+                        <?php foreach ($banks as $bank_id => $bank) {
+                            $other = [];
+                            if (intval($bank['bank_waiting_days'])) {
+                                $other[] = 'From ' . intval($bank['bank_waiting_days']) . ' days after hire';
+                            }
+                            $other[] = intval($bank['bank_allow_negative']) ? 'Can go below 0' : 'Not below 0'; ?>
+                            <tr class="<?= $bank['bank_archived_at'] !== null ? 'text-muted' : '' ?>">
+                                <td class="ps-3"><a class="text-dark text-bold ajax-modal" href="#" data-modal-url="modals/mit_timesheets/leave_bank.php?id=<?= intval($bank_id) ?>"><?= escapeHtml($bank['bank_name']) ?></a><?= $bank['bank_archived_at'] !== null ? ' <span class="badge text-bg-light border">Archived</span>' : '' ?></td>
+                                <td class="small"><?= $bank['codes'] ? escapeHtml(implode(', ', array_map(function ($id) use ($codes_all) { return $codes_all[$id]['code_name'] ?? "Code $id"; }, $bank['codes']))) : '<span class="text-danger">No codes</span>' ?></td>
+                                <td class="small"><?= escapeHtml(mitLeaveRuleText($bank)) ?></td>
+                                <td class="small"><?= $bank['bank_max'] !== null ? mitTsHours($bank['bank_max'], false, 'decimal') . ' h' : '-' ?></td>
+                                <td class="small"><?= $bank['bank_carryover_max'] === null ? 'Keep all' : (intval($bank['bank_carryover_max']) ? 'Keep up to ' . mitTsHours($bank['bank_carryover_max'], false, 'decimal') . ' h' : 'Use it or lose it') ?>
+                                    <span class="text-muted">(<?= $bank['bank_year_start'] === 'hire' ? 'hire anniversary' : '1 Jan' ?>)</span></td>
+                                <td class="small"><?= escapeHtml(implode(' · ', $other)) ?></td>
+                                <td class="text-center">
+                                    <?php if ($bank['bank_archived_at'] === null) { ?>
+                                        <a class="btn btn-light btn-sm confirm-link" href="post.php?mit_leave_bank_archive=<?= intval($bank_id) ?>&csrf_token=<?= $csrf ?>" title="Archive - balances stop showing"><i class="fas fa-archive"></i></a>
+                                    <?php } else { ?>
+                                        <a class="btn btn-light btn-sm" href="post.php?mit_leave_bank_restore=<?= intval($bank_id) ?>&csrf_token=<?= $csrf ?>" title="Restore"><i class="fas fa-redo-alt"></i></a>
+                                    <?php } ?>
+                                </td>
+                            </tr>
+                        <?php } ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php } ?>
+
     <?php } else {
         $people = mitTsUsers();
         $result = mysqli_query($mysqli, "SELECT user_id, role_name FROM users LEFT JOIN user_roles ON role_id = user_role_id WHERE user_type = 1");
@@ -285,7 +338,7 @@ $company_week = mitTsCompanySchedule();
         <div class="table-responsive-sm">
             <table class="table table-striped table-borderless table-hover mb-0 align-middle">
                 <thead class="text-dark">
-                    <tr><th class="ps-3">Person</th><th>Role</th><th>Normal week</th><th>Approver</th><th>Employee ID</th><th>Pay</th></tr>
+                    <tr><th class="ps-3">Person</th><th>Role</th><th>Normal week</th><th>Approver</th><th>Employee ID</th><th>Pay</th><th>Leave</th></tr>
                 </thead>
                 <tbody>
                     <?php foreach ($people as $user_id => $person) {
@@ -303,6 +356,15 @@ $company_week = mitTsCompanySchedule();
                             <td class="small"><?= $approver !== '' ? escapeHtml($approver) : '<span class="text-muted">Anyone with Full access</span>' ?></td>
                             <td class="small font-monospace"><?= escapeHtml($details['employee_id'] ?: '-') ?></td>
                             <td class="small"><?= $details['pay_type'] === 'salary' ? 'Salaried' : 'Hourly' ?></td>
+                            <td class="small text-nowrap">
+                                <?php foreach (mitLeaveBanksFor($user_id) as $bank) {
+                                    $balance = mitLeaveBalance($user_id, $bank); ?>
+                                    <span class="me-2 <?= $balance['booked'] < 0 ? 'text-danger' : '' ?>"><?= escapeHtml($bank['bank_name']) ?> <strong><?= mitTsHours($balance['booked'], false, 'decimal') ?></strong></span>
+                                <?php } ?>
+                                <?php if (mitLeaveReady()) { ?>
+                                    <a href="#" class="ajax-modal" data-modal-url="modals/mit_timesheets/person_leave.php?id=<?= intval($user_id) ?>" data-modal-size="lg" title="Balances, own rates and adjustments"><i class="fas fa-pen"></i></a>
+                                <?php } ?>
+                            </td>
                         </tr>
                     <?php } ?>
                 </tbody>

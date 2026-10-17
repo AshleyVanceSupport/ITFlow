@@ -7,6 +7,7 @@
  * end). Everything is set in Admin > Timesheets (admin/mit_timesheets.php): company settings in
  * mit_settings (ts_*, mitTsSettings), charge codes, and each person's schedule, approver, employee ID
  * and pay type (mit_timesheet_people); personal choices in mit_user_preferences (timesheet.*).
+ * PTO / sick balances are in functions/mit_leave.php (required at the end).
  * A day's hours are:
  *   - ticket time, filled in on its own from the time logged on ticket replies that day - billable
  *     when the ticket is billable, the rest "other ticket time";
@@ -321,6 +322,18 @@ function mitTsParseHours($text) {
         return (int) round((float) $text * 60);
     }
     return null;
+}
+
+/** Hours of any size for settings ("80", "3.33", "7:30") -> minutes; '' -> 0; null when it cannot be read. */
+function mitTsParseHoursAny($text) {
+    $text = trim(str_replace(',', '.', (string) $text));
+    if ($text === '') {
+        return 0;
+    }
+    if (is_numeric($text) && (float) $text >= 0 && (float) $text <= 10000) {
+        return (int) round((float) $text * 60);
+    }
+    return mitTsParseHours($text);
 }
 
 /*
@@ -767,6 +780,15 @@ function mitTsSaveCells(array $sheet, array $period, array $cells, array $notes 
     if ($problems) {
         return [false, 'Not saved - ' . implode('; ', array_slice($problems, 0, 4)) . (count($problems) > 4 ? ' (and ' . (count($problems) - 4) . ' more)' : '') . '.'];
     }
+    $leave_wanted = [];
+    foreach ($wanted as $date => $by_code) {
+        foreach ($by_code as $code_id => [$minutes]) {
+            $leave_wanted[$date][$code_id] = $minutes;
+        }
+    }
+    if (($short = mitLeaveCheckSave($user_id, $leave_wanted, $current)) !== '') {
+        return [false, "Not saved - $short."];
+    }
     foreach ($wanted as $date => $by_code) {
         $day = array_sum(array_column($by_code, 0)) + ($tickets[$date]['billable'] ?? 0) + ($tickets[$date]['other'] ?? 0);
         foreach ($current[$date] ?? [] as $code_id => $entry) {
@@ -959,6 +981,7 @@ function mitTsDecide(array $sheet, array $period, $decision, $note = '') {
         }
         $sheet = mitTsSheetSaved($sheet['user_id'], $period);
         mitTsSnapshotTickets($sheet['user_id'], $period);
+        mitLeaveAccruePeriod($sheet['user_id'], $period);
         mysqli_query($mysqli, "UPDATE mit_timesheets SET status = 'approved', decided_by = " . intval($session_user_id) . ", decided_at = NOW(),
             decision_note = " . ($note === '' ? 'NULL' : "'" . escapeSql(mb_substr($note, 0, 255)) . "'") . " WHERE sheet_id = " . intval($sheet['sheet_id']));
         $text = 'approved';
@@ -987,6 +1010,7 @@ function mitTsReopen(array $sheet, array $period) {
     mysqli_query($mysqli, "DELETE FROM mit_time_entries WHERE user_id = " . intval($sheet['user_id']) . " AND source IN ('ticket_billable', 'ticket_other')
         AND entry_date BETWEEN '" . escapeSql($period['start']) . "' AND '" . escapeSql($period['end']) . "'");
     mysqli_query($mysqli, "UPDATE mit_timesheets SET status = 'open', submitted_at = NULL, decided_by = 0, decided_at = NULL, decision_note = NULL WHERE sheet_id = " . intval($sheet['sheet_id']));
+    mitLeaveUnaccruePeriod($sheet['user_id'], $period);
     $user = mitTsUsers([$sheet['user_id']])[intval($sheet['user_id'])] ?? ['user_name' => 'user ' . intval($sheet['user_id'])];
     logAudit('Timesheet', 'Edit', escapeSql(mitTsWho() . ' reopened the approved timesheet of ' . $user['user_name'] . ' for ' . $period['label']), 0, intval($sheet['user_id']));
     return [true, 'Reopened - approve it again when it is right'];
@@ -1101,3 +1125,5 @@ function mitTsSendReminders() {
     }
     return $log;
 }
+
+require_once __DIR__ . '/mit_leave.php';

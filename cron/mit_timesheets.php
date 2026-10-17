@@ -1,8 +1,9 @@
 <?php
 /*
- * Mountaineer IT - timesheet reminders (functions/mit_timesheets.php): on a pay period's last day, and
- * when the last period is still not submitted a set number of days after it ended - both set in
- * Admin > Timesheets, each sent once. People can turn them off in Account > Preferences.
+ * Mountaineer IT - the timesheet job (functions/mit_timesheets.php, functions/mit_leave.php), hourly:
+ * reminders on a pay period's last day and when the last one is late (each sent once; people can turn
+ * them off in Account > Preferences), leave earned for ended periods when timesheets are not approved,
+ * and the start of each leave year (carry-over limit, yearly grant).
  */
 
 // Set working directory to the directory this cron script lives at.
@@ -31,6 +32,6 @@ if (!mitTsReady()) {
     cronJobStop();
 }
 
-foreach (mitTsSendReminders() as $mit_ts_line) {
+foreach (array_merge(mitTsSendReminders(), mitLeaveAccrueEnded(), mitLeaveReady() ? mitLeaveYearEnds() : []) as $mit_ts_line) {
     echo "$mit_ts_line\n";
 }
