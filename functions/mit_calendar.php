@@ -59,10 +59,49 @@ function mitIsHexColor($color) {
     return is_string($color) && preg_match('/^#[0-9a-fA-F]{6}$/', $color) === 1;
 }
 
-/** May the signed-in agent change this agent's calendar colour? Their own, or anyone's for an admin. */
-function mitCanSetAgentColor($user_id) {
-    global $session_user_id, $session_is_admin;
-    return intval($user_id) > 0 && (intval($user_id) === intval($session_user_id) || !empty($session_is_admin));
+/**
+ * The Calendar colour field - Account > Preferences (your own) and Admin > Users > Edit (anyone's).
+ * Posts mit_calendar_color ('#rrggbb') and mit_calendar_color_auto; mitSaveAgentColor() reads them.
+ */
+function mitCalendarColorField($user_id, $col = 'col-md-6') {
+    $user_id = intval($user_id);
+    $chosen = mitAgentChosenColors()[$user_id] ?? '';
+    $color = mitAgentColor($user_id);
+    $id = 'mitCalendarColor' . $user_id;
+    $html = '<div class="' . $col . '" data-mit-color-field><label class="form-label" for="' . $id . '">Calendar colour</label>'
+        . '<div class="d-flex flex-wrap align-items-center gap-2">'
+        . '<input type="color" class="form-control form-control-color" id="' . $id . '" name="mit_calendar_color" value="' . $color . '" title="Pick any colour">';
+    foreach (MIT_AGENT_COLORS as $preset) {
+        $html .= '<button type="button" class="btn p-0 rounded-circle border" style="width:1.5rem;height:1.5rem;background:' . $preset . '" data-mit-color="' . $preset . '" title="' . $preset . '"></button>';
+    }
+    $html .= '</div><div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="mit_calendar_color_auto" value="1" id="' . $id . 'Auto"' . ($chosen === '' ? ' checked' : '') . '>'
+        . '<label class="form-check-label" for="' . $id . 'Auto">Automatic (' . mitAgentDefaultColor($user_id) . ')</label></div>'
+        . '<div class="form-text">Booked tickets are drawn in this colour on the calendar.</div>'
+        . "<script>(function (f) { var c = f.querySelector('input[type=color]'), a = f.querySelector('[name=mit_calendar_color_auto]');"
+        . " f.querySelectorAll('[data-mit-color]').forEach(function (b) { b.addEventListener('click', function () { c.value = b.dataset.mitColor; a.checked = false; }); });"
+        . " c.addEventListener('input', function () { a.checked = false; }); })(document.currentScript.closest('[data-mit-color-field]'));</script>"
+        . '</div>';
+    return $html;
+}
+
+/** Save the Calendar colour field for an agent (a no-op when the form did not have it). */
+function mitSaveAgentColor($user_id, array $post) {
+    global $mysqli;
+    $user_id = intval($user_id);
+    if (!$user_id || !isset($post['mit_calendar_color'])) {
+        return;
+    }
+    $color = strtolower(trim((string) $post['mit_calendar_color']));
+    try {
+        if (!empty($post['mit_calendar_color_auto'])) {
+            mysqli_query($mysqli, "DELETE FROM mit_user_preferences WHERE user_id = $user_id AND preference = 'calendar.color'");
+        } elseif (mitIsHexColor($color)) {
+            mitSetUserPreference($user_id, 'calendar.color', $color);
+        }
+    } catch (Throwable $e) {
+        // mit_user_preferences not there yet (database update pending) - automatic colours
+    }
+    mitAgentChosenColors(true);
 }
 
 /** When booked work ends: its stored end, or ITFlow's default length after the start. */

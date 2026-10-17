@@ -2341,37 +2341,6 @@ if (isset($_GET['mit_timer_tickets'])) {
     exit;
 }
 
-/*
- * Mountaineer IT: a tech's calendar colour - their own, or anyone's for an admin.
- * Empty colour goes back to the automatic one.
- */
-if (isset($_POST['mit_agent_color'])) {
-
-    validateCSRFToken();
-
-    header('Content-Type: application/json');
-    $color_user_id = intval($_POST['user_id'] ?? 0);
-    $color = strtolower(trim((string) ($_POST['color'] ?? '')));
-    $is_agent = $color_user_id && mysqli_num_rows(mysqli_query($mysqli, "SELECT user_id FROM users WHERE user_id = $color_user_id AND user_type = 1 AND user_archived_at IS NULL")) === 1;
-    if (!$is_agent || !mitCanSetAgentColor($color_user_id)) {
-        http_response_code(403);
-        echo json_encode(['error' => 'You can only change your own calendar colour.']);
-        exit;
-    }
-    if ($color === '') {
-        mysqli_query($mysqli, "DELETE FROM mit_user_preferences WHERE user_id = $color_user_id AND preference = 'calendar.color'");
-    } elseif (mitIsHexColor($color)) {
-        mitSetUserPreference($color_user_id, 'calendar.color', $color);
-    } else {
-        http_response_code(400);
-        echo json_encode(['error' => 'That is not a colour.']);
-        exit;
-    }
-    mitAgentChosenColors(true);
-    echo json_encode(['ok' => true, 'color' => mitAgentColor($color_user_id)]);
-    exit;
-}
-
 if (isset($_GET['calendar_unscheduled'])) {
 
     header('Content-Type: application/json');

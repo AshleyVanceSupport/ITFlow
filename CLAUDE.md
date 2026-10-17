@@ -48,16 +48,18 @@ model: see DEPLOYMENT.md.
   times (`tickets.ticket_schedule_end`, M001), overlap conflicts. Hooks in
   `functions/ticket.php` (ticketSetSchedule/ticketCancelSchedule), `functions/app.php`
   (createiCalStr `$end`), `functions/calendar.php` (ticket items + feeds), `agent/ajax.php`
-  (calendar_move), `agent/calendar.php` + `agent/js/calendar.js` (Techs legend, opens on me),
+  (calendar_move), `agent/calendar.php` + `agent/js/calendar.js` (colour dots in Whose, opens on me),
   `agent/modals/ticket/ticket_edit_schedule.php` + `agent/js/ticket_schedule_modal.js`
   (Tech + How long), `agent/post/ticket.php` (edit_ticket_schedule), `agent/ticket.php`
   (start - end wording), `functions.php` (require), `scripts/update_cli.php`, `setup/index.php`,
   `scripts/setup_cli.php` (run our DB updates). Re-apply them if an upstream merge drops them.
   Calendar settings (view, whose, ticked) are also saved per user in `mit_user_preferences`
   (M002) via `ajax.php?mit_calendar_state` and loaded by `agent/calendar.php` (data-saved-state).
-  Each tech can pick their calendar colour (admins: anyone's) from the Techs legend - saved as
-  the `calendar.color` preference via `ajax.php?mit_agent_color`; `mitAgentColor()` falls back
-  to the automatic colour.
+  Each tech picks their calendar colour under Account > Preferences (`agent/user/user_preferences.php`
+  + `agent/user/post/profile.php`); admins can set anyone's in Admin > Users > Edit
+  (`admin/modals/user/user_form.php` + `admin/post/users.php` edit_user) - one-line hooks,
+  `mitCalendarColorField()` / `mitSaveAgentColor()`, saved as the `calendar.color` preference;
+  `mitAgentColor()` falls back to the automatic colour.
 - Microsoft 365 app (Oct 2026): `functions/mit_m365.php` (ours) creates ITFlow's own app in the
   tenant (device-code sign-in as Global Admin, Graph CLI client) or takes a hand-made one, with a
   certificate instead of a secret, renewed 30 days before expiry via Graph `addKey`. Settings in

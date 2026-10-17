@@ -443,47 +443,6 @@
         });
     });
 
-    // Mountaineer IT: a tech's colour dot changes their calendar colour (their own, or any for an admin)
-    root.querySelectorAll('.mit-tech-color').forEach(function (input) {
-        const swatch = input.closest('.mit-tech-swatch');
-        let before = input.value;
-        input.addEventListener('input', function () {
-            swatch.style.backgroundColor = input.value;
-        });
-        input.addEventListener('change', function () {
-            fetch('ajax.php', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                credentials: 'same-origin',
-                body: new URLSearchParams({mit_agent_color: 1, csrf_token: csrf, user_id: input.dataset.agent, color: input.value}).toString()
-            }).then(function (res) {
-                return res.json();
-            }).then(function (json) {
-                if (!json || !json.ok) {
-                    throw new Error(json && json.error ? json.error : 'That colour could not be saved.');
-                }
-                before = json.color;
-                swatch.style.backgroundColor = json.color;
-                itflowToast('Calendar colour saved', 'success');
-                calendar.refetchEvents();
-            }).catch(function (error) {
-                input.value = before;
-                swatch.style.backgroundColor = before;
-                itflowToast(error.message || 'That colour could not be saved.', 'error');
-            });
-        });
-    });
-
-    // Mountaineer IT: a tech in the Techs legend shows their calendar
-    root.querySelectorAll('.mit-tech-pick').forEach(function (button) {
-        button.addEventListener('click', function () {
-            if (agentSelect) {
-                agentSelect.value = button.dataset.agent;
-                agentSelect.dispatchEvent(new Event('change', {bubbles: true}));
-            }
-        });
-    });
-
     if (agentSelect) {
         agentSelect.addEventListener('change', function () {
             state.agent = agentId();
