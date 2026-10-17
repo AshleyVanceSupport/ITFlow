@@ -175,6 +175,19 @@ model: see DEPLOYMENT.md.
   expense (`mitPoRecordBill`, PO `expense_id`). Hooks: `mitProcInvoiceSummary` + `mitProcInvoiceLineStatus`
   in `agent/invoice.php` (above the items / under each line name), `mitProcProjectCard` in
   `agent/project.php` (left column, under the tabs card).
+- Timesheets (Oct 2026): `functions/mit_timesheets.php` (ours) - per pay period (semi-monthly default;
+  `mit_settings` timesheet_period / timesheet_anchor), ticket time auto from ticket replies (billable by
+  `ticket_billable`), hours on charge codes (`mit_charge_codes`: work / lost / leave, paid or not),
+  `mit_time_entries`, `mit_timesheets` (open / submitted / returned / approved; approving copies ticket
+  time in as source ticket_billable/ticket_other, code 0) - M012, plus module row `module_timesheets`
+  (everyone keeps their own; View 1 sees all + report, Edit 2 corrects, Full 3 approves). Pages
+  `agent/mit_timesheet.php`, `agent/mit_timesheets.php`, modals `agent/modals/mit_timesheet/`, handlers
+  `agent/post/mit_timesheets.php`, report `agent/reports/mit_payroll.php` (CSV summary + detail).
+  Admin > Charge codes `admin/mit_charge_codes.php` (+ pay period), modal `admin/modals/mit_timesheets/`,
+  handlers `admin/post/mit_timesheets.php`. Hooks: one line in `functions/reports.php` reportCatalog
+  (`'mit_payroll' => mitTsReportEntry()` after time_by_tech), require of `agent/includes/mit_timesheet_nav.php`
+  in `agent/includes/side_nav.php` (under Calendar), require of `admin/includes/mit_admin_nav.php` in
+  `admin/includes/side_nav.php` (after Categories), `functions.php` (require).
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files
   upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
   SSRF, broken tag links, Clients/Tickets/dashboard/search performance.

@@ -53,6 +53,7 @@
                         <p>Categories</p>
                     </a>
                 </li>
+                <?php require __DIR__ . '/mit_admin_nav.php'; // Mountaineer IT ?>
                 <?php if ($config_module_enable_accounting) { ?>
                     <li class="nav-item">
                         <a href="/admin/tax_rates.php" class="nav-link <?= (basename($_SERVER['PHP_SELF']) == 'tax_rates.php' ? 'active' : '') ?>">

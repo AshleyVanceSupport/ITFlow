@@ -86,6 +86,7 @@
                         <p>Calendar</p>
                     </a>
                 </li>
+                <?php require __DIR__ . '/mit_timesheet_nav.php'; // Mountaineer IT ?>
 
                 <?php if (lookupUserPermission("module_support") >= 1) { ?>
                     <?php if ($config_module_enable_ticketing == 1) { ?>

@@ -1,0 +1,221 @@
+<?php
+
+/*
+ * Mountaineer IT - Timesheets & Payroll (functions/mit_timesheets.php): each person's hours over a
+ * pay period (or any dates) by charge code - billable and other ticket time, admin and other work,
+ * lost time and leave - with paid and unpaid hours for payroll, and whether the timesheets are
+ * approved. Exports: the summary (a row per person) and the detail (a row per person, day and code).
+ */
+
+require_once "includes/inc_report.php";
+reportEnforce('mit_payroll');
+
+if (!mitTsReady()) {
+    exit('Timesheets need the database update - Admin > Update.');
+}
+
+// Default to the last finished pay period
+if (!isset($_GET['period'])) {
+    $last = mitTsPeriodShift(mitTsPeriodFor(), -1);
+    $_GET['period'] = 'custom';
+    $_GET['from'] = $last['start'];
+    $_GET['to'] = $last['end'];
+}
+$period = reportPeriod('custom');
+$agent_id = reportAgentId();
+$from = $period['start'];
+$to = $period['end'];
+
+$people = mitTsUsers();
+if ($agent_id) {
+    $people = array_intersect_key(mitTsUsers([$agent_id]), [$agent_id => true]);
+}
+$codes = mitTsCodes(true);
+$totals = mitTsTotals(array_keys($people), $from, $to);
+
+// Pay periods inside the dates, and how many of each person's are approved
+$periods = [];
+for ($p = mitTsPeriodFor($from), $guard = 0; $p['start'] <= $to && $guard < 120; $p = mitTsPeriodShift($p, 1), $guard++) {
+    $periods[] = $p;
+}
+$approved = [];
+if ($people) {
+    $result = mysqli_query($mysqli, "SELECT user_id, COUNT(*) AS n FROM mit_timesheets WHERE status = 'approved' AND user_id IN (" . implode(',', array_keys($people)) . ")
+        AND period_start >= '" . escapeSql($periods[0]['start'] ?? $from) . "' AND period_start <= '" . escapeSql($to) . "' GROUP BY user_id");
+    while ($row = mysqli_fetch_assoc($result)) {
+        $approved[intval($row['user_id'])] = intval($row['n']);
+    }
+}
+
+// Codes with hours in the range get a column
+$used = [];
+foreach ($totals as $t) {
+    foreach ($t['codes'] as $code_id => $m) {
+        if ($m) {
+            $used[$code_id] = true;
+        }
+    }
+}
+$code_columns = array_intersect_key($codes, $used);
+
+$rows = [];
+$sum = ['billable' => 0, 'other' => 0, 'work' => 0, 'lost' => 0, 'leave' => 0, 'unpaid' => 0, 'worked' => 0, 'paid' => 0, 'total' => 0];
+foreach ($people as $user_id => $person) {
+    $t = $totals[$user_id];
+    if (!$t['total'] && !$agent_id) {
+        continue;
+    }
+    $row = ['user_id' => $user_id, 'person' => $person['user_name'], 'email' => $person['user_email'], 'avatar' => $person['user_avatar'] ?? '',
+        'billable' => $t['billable'] * 60, 'other' => $t['other'] * 60, 'worked' => $t['worked'] * 60, 'leave' => $t['leave'] * 60,
+        'unpaid' => $t['unpaid'] * 60, 'paid' => $t['paid'] * 60, 'total' => $t['total'] * 60, 'lost' => $t['lost'] * 60,
+        'share' => $t['worked'] ? round($t['billable'] / $t['worked'] * 100, 1) : null,
+        'approved' => ($approved[$user_id] ?? 0) . ' of ' . count($periods)];
+    foreach ($code_columns as $code_id => $code) {
+        $row["code_$code_id"] = ($t['codes'][$code_id] ?? 0) * 60;
+    }
+    foreach ($sum as $key => $value) {
+        $sum[$key] += $t[$key];
+    }
+    $rows[] = $row;
+}
+
+$columns = [
+    'person' => ['label' => 'Person', 'html' => function ($r) {
+        return reportAgentCell($r['user_id'], $r['person'], $r['avatar']);
+    }],
+    'billable' => ['label' => 'Billable', 'type' => 'hours', 'decimals' => 2, 'title' => 'Ticket time on billable tickets'],
+    'other' => ['label' => 'Other tickets', 'type' => 'hours', 'decimals' => 2, 'title' => 'Ticket time on tickets that are not billable'],
+];
+foreach ($code_columns as $code_id => $code) {
+    $columns["code_$code_id"] = ['label' => $code['code_name'], 'type' => 'hours', 'decimals' => 2,
+        'title' => MIT_TS_KINDS[$code['code_kind']] . (intval($code['code_paid']) ? ', paid' : ', unpaid')];
+}
+$columns += [
+    'worked' => ['label' => 'Worked', 'type' => 'hours', 'decimals' => 2, 'title' => 'Ticket time, admin and other work, and lost time'],
+    'leave' => ['label' => 'Leave', 'type' => 'hours', 'decimals' => 2],
+    'unpaid' => ['label' => 'Unpaid', 'type' => 'hours', 'decimals' => 2],
+    'paid' => ['label' => 'Paid hours', 'type' => 'hours', 'decimals' => 2, 'class' => 'fw-semibold', 'title' => 'What payroll pays: worked and paid leave, less unpaid codes'],
+    'share' => ['label' => 'Billable %', 'type' => 'percent'],
+    'approved' => ['label' => 'Approved', 'title' => 'Pay periods approved', 'html' => function ($r) use ($periods) {
+        $all = intval($r['approved']) === count($periods);
+        return '<span class="badge ' . ($all ? 'text-bg-success' : 'text-bg-warning') . '">' . escapeHtml($r['approved']) . '</span>';
+    }],
+];
+$table_totals = ['person' => 'Total'];
+foreach ($columns as $key => $column) {
+    if ($key !== 'person' && reportColumnIsNumber($column) && $key !== 'share') {
+        $table_totals[$key] = array_sum(array_column($rows, $key));
+    }
+}
+$table_totals['share'] = $sum['worked'] ? round($sum['billable'] / $sum['worked'] * 100, 1) : null;
+
+if (reportExporting('detail')) {
+    $detail = [];
+    $entries = mitTsEntries(array_keys($people), $from, $to);
+    $tickets = mitTsTicketMinutes(array_keys($people), $from, $to);
+    foreach ($people as $user_id => $person) {
+        $days = [];
+        foreach ($tickets[$user_id] ?? [] as $date => $values) {
+            foreach (['billable' => 'Ticket time - billable', 'other' => 'Ticket time - other'] as $kind => $label) {
+                if ($values[$kind]) {
+                    $days[] = ['date' => $date, 'code' => $label, 'kind' => 'Work', 'paid' => 'Yes', 'hours' => $values[$kind] * 60];
+                }
+            }
+        }
+        foreach ($entries[$user_id] ?? [] as $date => $by_code) {
+            foreach ($by_code as $code_id => $entry) {
+                $code = $codes[$code_id] ?? ['code_name' => "Code $code_id", 'code_kind' => 'work', 'code_paid' => 1];
+                $days[] = ['date' => $date, 'code' => $code['code_name'], 'kind' => MIT_TS_KINDS[$code['code_kind']] ?? $code['code_kind'],
+                    'paid' => intval($code['code_paid']) ? 'Yes' : 'No', 'hours' => $entry['minutes'] * 60];
+            }
+        }
+        usort($days, function ($a, $b) {
+            return [$a['date'], $a['code']] <=> [$b['date'], $b['code']];
+        });
+        foreach ($days as $day) {
+            $detail[] = ['person' => $person['user_name'], 'email' => $person['user_email']] + $day;
+        }
+    }
+    reportCsv('Timesheet detail', [
+        'person' => ['label' => 'Person'], 'email' => ['label' => 'Email'], 'date' => ['label' => 'Date'], 'code' => ['label' => 'Charge code'],
+        'kind' => ['label' => 'Kind'], 'paid' => ['label' => 'Paid'], 'hours' => ['label' => 'Hours', 'type' => 'hours'],
+    ], $detail);
+}
+if (reportExporting()) {
+    $csv_columns = $columns;
+    $csv_columns['person'] = ['label' => 'Person'];
+    $csv_columns = ['person' => $csv_columns['person'], 'email' => ['label' => 'Email']] + $csv_columns;
+    $csv_columns['approved'] = ['label' => 'Pay periods approved'];
+    reportCsv('Payroll', $csv_columns, $rows, $table_totals + ['email' => '']);
+}
+
+require_once "includes/inc_report_layout.php";
+
+$pay_options = '<div class="col-sm-6 col-lg-auto"><div class="input-group"><span class="input-group-text"><i class="fas fa-fw fa-money-check-alt"></i></span>'
+    . '<select class="form-select" aria-label="Pay period" onchange="if (this.value) { location.href = this.value; }"><option value="">Pay period...</option>';
+for ($p = mitTsPeriodFor(), $i = 0; $i < 12; $p = mitTsPeriodShift($p, -1), $i++) {
+    $selected = $p['start'] === $from && $p['end'] === $to;
+    $pay_options .= '<option value="' . escapeHtml(reportUrl(['period' => 'custom', 'from' => $p['start'], 'to' => $p['end'], 'export' => null, 'table' => null])) . '"' . ($selected ? ' selected' : '') . '>' . escapeHtml($p['label']) . '</option>';
+}
+$pay_options .= '</select></div></div>';
+
+$not_approved = count(array_filter($rows, function ($r) use ($periods) {
+    return intval($r['approved']) < count($periods);
+}));
+$with_hours = array_values(array_filter($rows, function ($r) {
+    return $r['total'] > 0;
+}));
+
+?>
+
+<div class="itflow-report">
+
+    <?php reportHeader('mit_payroll', [
+        'period' => $period,
+        'agent' => $agent_id,
+        'controls' => $pay_options,
+        'export' => ['summary' => 'Payroll summary (a row per person)', 'detail' => 'Detail (a row per person, day and code)'],
+    ]); ?>
+
+    <?= reportStats([
+        ['label' => 'Paid hours', 'value' => reportHours($sum['paid'] * 60, 2) . ' h', 'sub' => '<span class="text-body-tertiary">' . count($rows) . ' ' . (count($rows) === 1 ? 'person' : 'people') . '</span>'],
+        ['label' => 'Billable', 'value' => reportPercent($table_totals['share'] === null ? null : round($table_totals['share'])), 'sub' => escapeHtml(reportHours($sum['billable'] * 60, 2)) . ' h <span class="text-body-tertiary">of ' . escapeHtml(reportHours($sum['worked'] * 60, 2)) . ' h worked</span>'],
+        ['label' => 'Lost time', 'value' => reportHours($sum['lost'] * 60, 2) . ' h', 'tone' => $sum['lost'] ? 'danger' : '', 'sub' => '<span class="text-body-tertiary">' . ($sum['worked'] ? round($sum['lost'] / $sum['worked'] * 100) : 0) . '% of hours worked</span>'],
+        ['label' => 'Leave', 'value' => reportHours($sum['leave'] * 60, 2) . ' h', 'sub' => $sum['unpaid'] ? escapeHtml(reportHours($sum['unpaid'] * 60, 2)) . ' h <span class="text-body-tertiary">unpaid</span>' : '<span class="text-body-tertiary">All paid</span>'],
+        ['label' => 'Not approved', 'value' => reportCount($not_approved), 'tone' => $not_approved ? 'warning' : 'success',
+            'sub' => '<span class="text-body-tertiary">' . ($not_approved ? 'people with a period still open' : 'Every timesheet approved') . '</span>', 'url' => '/agent/mit_timesheets.php?start=' . $from],
+    ]) ?>
+
+    <?php if ($with_hours) { ?>
+        <?= reportSectionOpen('Where the hours went', 'Each person') ?>
+            <div class="card-body">
+                <?= reportChart([
+                    'type' => 'bar', 'horizontal' => true, 'stacked' => true,
+                    'labels' => array_column($with_hours, 'person'),
+                    'series' => [
+                        ['label' => 'Billable', 'data' => array_map(function ($r) { return round($r['billable'] / 3600, 2); }, $with_hours), 'tone' => 'success', 'stack' => 'h'],
+                        ['label' => 'Other tickets', 'data' => array_map(function ($r) { return round($r['other'] / 3600, 2); }, $with_hours), 'tone' => 'accent', 'stack' => 'h'],
+                        ['label' => 'Admin & work', 'data' => array_map(function ($r) { return round(($r['worked'] - $r['billable'] - $r['other'] - $r['lost']) / 3600, 2); }, $with_hours), 'tone' => 'purple', 'stack' => 'h'],
+                        ['label' => 'Lost', 'data' => array_map(function ($r) { return round($r['lost'] / 3600, 2); }, $with_hours), 'tone' => 'danger', 'stack' => 'h'],
+                        ['label' => 'Leave', 'data' => array_map(function ($r) { return round($r['leave'] / 3600, 2); }, $with_hours), 'tone' => 'warning', 'stack' => 'h'],
+                    ],
+                    'format' => 'hours', 'legend' => true,
+                ], '', 'Hours per person by kind') ?>
+            </div>
+        </div>
+    <?php } ?>
+
+    <?= reportSectionOpen('Payroll', count($periods) . ' pay period' . (count($periods) === 1 ? '' : 's') . ' in these dates') ?>
+        <?= reportTable($columns, $rows, ['empty' => 'No hours in these dates.', 'totals' => $table_totals,
+            'totals_html' => ['approved' => '', 'share' => $table_totals['share'] === null ? '' : reportPercent(round($table_totals['share']))]]) ?>
+        <div class="card-footer small text-body-secondary">
+            Ticket time is the time logged on ticket replies each day (billable when the ticket is billable) - as it was when the period was approved,
+            or as it is now for periods not approved yet. Paid hours are hours worked plus paid leave, less hours on unpaid codes.
+            Charge codes are set in Admin > Charge codes.
+        </div>
+    </div>
+
+</div>
+
+<?php require_once "../../includes/footer.php"; ?>
+<script src="/js/reports.js"></script>

@@ -135,6 +135,10 @@ $n = $count("SELECT COUNT(*) FROM mit_purchase_orders");
 if ($n || $count("SELECT COUNT(*) FROM modules WHERE module_name = 'module_procurement'")) {
     $after[] = "Procurement: $n purchase order" . ($n === 1 ? '' : 's') . " and the items to order are not shown by stock ITFlow (they stay in the mit_ tables; PO PDFs in uploads/mit_po). Admin > Roles keeps an unused \"Procurement\" permission - delete its row from the modules table if it bothers you. Assets, stock and vendor-bill expenses made when receiving are ordinary ITFlow records and stay.";
 }
+$n = $count("SELECT COUNT(*) FROM mit_timesheets");
+if ($n || $count("SELECT COUNT(*) FROM modules WHERE module_name = 'module_timesheets'")) {
+    $after[] = "Timesheets: $n timesheet" . ($n === 1 ? '' : 's') . " and the hours on charge codes are not shown by stock ITFlow (they stay in mit_timesheets / mit_time_entries / mit_charge_codes) - export the Timesheets & Payroll report first. Ticket time itself is ITFlow's and stays. Admin > Roles keeps an unused \"Timesheets\" permission.";
+}
 if ($n = $count("SELECT COUNT(*) FROM mit_ticket_parts")) {
     $after[] = "Ticket parts: $n part" . ($n === 1 ? '' : 's') . " on tickets are not shown by stock ITFlow (billed ones are ordinary invoice lines and stay). Products' \"Order from\" vendor is not shown either.";
 }

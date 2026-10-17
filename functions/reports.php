@@ -130,6 +130,7 @@ function reportCatalog() {
                     'title' => 'Technician Performance', 'icon' => 'fa-user-clock', 'module' => 'module_support', 'feature' => ['ticketing'],
                     'description' => 'Hours logged, billable share, utilization and tickets for each agent.',
                 ],
+                'mit_payroll' => mitTsReportEntry(), // Mountaineer IT - functions/mit_timesheets.php
                 'sla_summary' => [
                     'title' => 'SLA Performance', 'icon' => 'fa-tachometer-alt', 'module' => 'module_support', 'feature' => ['ticketing'],
                     'description' => 'Response and resolution targets met, by month, priority and agent.',
