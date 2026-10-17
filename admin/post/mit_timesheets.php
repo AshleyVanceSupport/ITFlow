@@ -136,6 +136,15 @@ if (isset($_POST['mit_ts_settings_save'])) {
     foreach ($values as $key => $value) {
         mitSetSetting("ts_$key", $value);
     }
+    if (isset($_POST['mileage_rate'])) {
+        $rate = trim(str_replace([',', '$'], '', (string) $_POST['mileage_rate']));
+        mitSetSetting('ts_mileage_rate', is_numeric($rate) && (float) $rate >= 0 && (float) $rate < 100 ? (string) round((float) $rate, 4) : '0');
+        $category_id = intval($_POST['reimb_category'] ?? 0);
+        $category_ok = $category_id && mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM categories WHERE category_id = $category_id AND category_type = 'Expense'"));
+        mitSetSetting('ts_reimb_category', $category_ok ? $category_id : 0);
+        $account_id = intval($_POST['reimb_account'] ?? 0);
+        mitSetSetting('ts_reimb_account', $account_id && getFieldById('accounts', $account_id, 'account_name') ? $account_id : 0);
+    }
     logAudit('Settings', 'Edit', "$session_name edited timesheet settings");
     if ($kept) {
         flashAlert('Timesheet settings saved. The pay period changed: timesheets already kept stay on their old dates, so finish (approve) the current one before the change takes hold.', 'warning');

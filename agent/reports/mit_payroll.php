@@ -34,6 +34,7 @@ if ($agent_id) {
 $codes = mitTsCodes(true);
 $banks = mitLeaveReady() ? mitLeaveBanks() : [];
 $totals = mitTsTotals(array_keys($people), $from, $to);
+$reimb = mitReimbOn() ? mitReimbTotals(array_keys($people), $from, $to) : [];
 $settings = mitTsSettings();
 $approval = $settings['approval'];
 $overtime = $settings['ot_day'] || $settings['ot_week'];
@@ -70,13 +71,15 @@ $rows = [];
 $sum = ['billable' => 0, 'other' => 0, 'work' => 0, 'lost' => 0, 'auto_lost' => 0, 'break_paid' => 0, 'leave' => 0, 'leave_paid' => 0, 'unpaid' => 0, 'worked' => 0, 'paid' => 0, 'total' => 0, 'overtime' => 0, 'regular' => 0];
 foreach ($people as $user_id => $person) {
     $t = $totals[$user_id];
-    if (!$t['total'] && !$agent_id) {
+    $r = $reimb[$user_id] ?? ['miles' => 0, 'mileage' => 0, 'purchases' => 0, 'total' => 0, 'count' => 0];
+    if (!$t['total'] && !$r['count'] && !$agent_id) {
         continue;
     }
     $details = mitTsPerson($user_id);
     $row = ['user_id' => $user_id, 'person' => $person['user_name'], 'email' => $person['user_email'], 'avatar' => $person['user_avatar'] ?? '',
         'employee_id' => $details['employee_id'], 'pay_type' => $details['pay_type'] === 'salary' ? 'Salaried' : 'Hourly',
         'regular' => $t['regular'] * 60, 'overtime' => $t['overtime'] * 60, 'auto_lost' => $t['auto_lost'] * 60, 'break_paid' => $t['break_paid'] * 60,
+        'miles' => $r['miles'], 'mileage' => $r['mileage'], 'purchases' => $r['purchases'], 'reimburse' => $r['total'],
         'billable' => $t['billable'] * 60, 'other' => $t['other'] * 60, 'work' => $t['work'] * 60, 'worked' => $t['worked'] * 60, 'leave' => $t['leave'] * 60,
         'unpaid' => $t['unpaid'] * 60, 'paid' => $t['paid'] * 60, 'total' => $t['total'] * 60, 'lost' => $t['lost'] * 60,
         'share' => $t['worked'] ? round($t['billable'] / $t['worked'] * 100, 1) : null,
@@ -118,6 +121,14 @@ $columns += [
     'overtime' => ['label' => 'Overtime', 'type' => 'hours', 'decimals' => 2, 'screen' => $overtime, 'title' => 'Over the daily / weekly limit set in Admin > Timesheets (hourly people)'],
     'share' => ['label' => 'Billable %', 'type' => 'percent'],
 ];
+// Reimbursements logged on tickets (functions/mit_reimbursements.php) - shown when there are any
+$any_reimb = array_sum(array_column($reimb, 'count')) > 0;
+$columns += [
+    'miles' => ['label' => 'Miles', 'type' => 'decimal', 'decimals' => 1, 'screen' => $any_reimb, 'title' => 'Miles logged on tickets'],
+    'mileage' => ['label' => 'Mileage', 'type' => 'money', 'screen' => $any_reimb, 'title' => 'Miles at the rate each was logged at'],
+    'purchases' => ['label' => 'Purchases', 'type' => 'money', 'screen' => $any_reimb, 'title' => 'Things bought for tickets and paid for by the person'],
+    'reimburse' => ['label' => 'Reimburse', 'type' => 'money', 'screen' => $any_reimb, 'class' => 'fw-semibold', 'title' => 'Mileage plus purchases - paid back with this payroll'],
+];
 foreach ($banks as $bank_id => $bank) {
     $columns["bank_$bank_id"] = ['label' => $bank['bank_name'] . ' left', 'type' => 'hours', 'decimals' => 2, 'title' => $bank['bank_name'] . ' balance at the end of these dates'];
 }
@@ -140,6 +151,7 @@ if (reportExporting('detail')) {
     // The days carry ticket and unaccounted time; the entries are read again only for their notes
     $all_days = mitTsDays(array_keys($people), $from, $to);
     $entries = mitTsEntries(array_keys($people), $from, $to);
+    $reimb_rows = mitReimbOn() ? mitReimbForUsers(array_keys($people), $from, $to) : [];
     foreach ($people as $user_id => $person) {
         $days = [];
         foreach ($all_days[$user_id] ?? [] as $date => $d) {
@@ -165,6 +177,10 @@ if (reportExporting('detail')) {
                     'paid' => intval($code['code_paid']) ? 'Yes' : 'No', 'hours' => $entry['minutes'] * 60, 'note' => (string) $entry['note']];
             }
         }
+        foreach ($reimb_rows[$user_id] ?? [] as $entry) {
+            $days[] = ['date' => $entry['entry_date'], 'code' => ($entry['kind'] === 'mileage' ? 'Mileage' : 'Purchase') . ' - ' . mitReimbTicketText($entry),
+                'kind' => 'Reimbursement', 'paid' => 'Yes', 'hours' => null, 'amount' => (float) $entry['amount'], 'note' => mitReimbWhat($entry)];
+        }
         usort($days, function ($a, $b) {
             return [$a['date'], $a['code']] <=> [$b['date'], $b['code']];
         });
@@ -174,7 +190,7 @@ if (reportExporting('detail')) {
     }
     reportCsv('Timesheet detail', [
         'person' => ['label' => 'Person'], 'employee_id' => ['label' => 'Employee ID'], 'email' => ['label' => 'Email'], 'date' => ['label' => 'Date'], 'code' => ['label' => 'Charge code'],
-        'kind' => ['label' => 'Kind'], 'paid' => ['label' => 'Paid'], 'hours' => ['label' => 'Hours', 'type' => 'hours'], 'note' => ['label' => 'Note'],
+        'kind' => ['label' => 'Kind'], 'paid' => ['label' => 'Paid'], 'hours' => ['label' => 'Hours', 'type' => 'hours'], 'amount' => ['label' => 'Amount', 'type' => 'money'], 'note' => ['label' => 'Note'],
     ], $detail);
 }
 if (reportExporting()) {
@@ -226,7 +242,9 @@ $with_hours = array_values(array_filter($rows, function ($r) {
     ] + ($overtime ? [5 => ['label' => 'Overtime', 'value' => reportHours($sum['overtime'] * 60, 2) . ' h', 'tone' => $sum['overtime'] ? 'warning' : '',
             'sub' => '<span class="text-body-tertiary">' . escapeHtml(reportHours($sum['regular'] * 60, 2)) . ' h regular</span>']] : [])
         + ($approval ? [6 => ['label' => 'Not approved', 'value' => reportCount($not_approved), 'tone' => $not_approved ? 'warning' : 'success',
-            'sub' => '<span class="text-body-tertiary">' . ($not_approved ? 'people with a period still open' : 'Every timesheet approved') . '</span>', 'url' => '/agent/mit_timesheets.php?start=' . $from]] : [])) ?>
+            'sub' => '<span class="text-body-tertiary">' . ($not_approved ? 'people with a period still open' : 'Every timesheet approved') . '</span>', 'url' => '/agent/mit_timesheets.php?start=' . $from]] : [])
+        + ($any_reimb ? [7 => ['label' => 'Reimburse', 'value' => reportMoney(array_sum(array_column($rows, 'reimburse'))),
+            'sub' => escapeHtml(rtrim(rtrim(number_format(array_sum(array_column($rows, 'miles')), 1), '0'), '.')) . ' <span class="text-body-tertiary">miles, plus purchases</span>']] : [])) ?>
 
     <?php if ($with_hours) { ?>
         <?= reportSectionOpen('Where the hours went', 'Each person') ?>

@@ -219,6 +219,13 @@ model: see DEPLOYMENT.md.
   lost) but not worked; paid short breaks are automatic, `mitTsBreakFor` from ts_break_minutes / ts_break_per (or a
   person's `mit_timesheet_people.break_minutes` / `break_per`), counted in paid hours, the total and overtime, not in
   worked / billable %; stored on approval as source `break_paid` (approved periods without them = none).
+  Reimbursements (M017): `functions/mit_reimbursements.php` (ours, required from mit_timesheets.php) - mileage
+  (makes an ITFlow trip, rate `ts_mileage_rate` kept on the entry) and purchases (receipt in `uploads/mit_receipts/`,
+  served by `agent/mit_receipt.php`; optional ticket part via `mitTicketPartSave`, which now also returns the part id)
+  in `mit_reimbursements`; by date in the pay period, locked with the timesheet; approving records purchases as ITFlow
+  expenses (`mitReimbRecordExpenses`, `ts_reimb_category` / `ts_reimb_account`). Box `mitReimbTicketCard` - one line in
+  `agent/ticket.php` under Parts (layout box `reimburse`, fa-receipt) - modal `agent/modals/mit_reimburse/reimburse.php`,
+  handlers `agent/post/mit_reimbursements.php`; payroll report columns Miles / Mileage / Purchases / Reimburse.
   Cron job `mit_timesheets` (`cron/mit_timesheets.php`, entry in `includes/cron_jobs.php`, hourly: closure days
   of the period just ended, reminders - `mit_timesheets.reminded_due_at` / `reminded_late_at` -, leave earned
   when approval is off (once the period has settled: auto-lock days, else 7), leave year ends - carry-over

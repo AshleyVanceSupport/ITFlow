@@ -1,0 +1,399 @@
+<?php
+
+/*
+ * Mountaineer IT - reimbursements on tickets (database update M017), required from functions/mit_timesheets.php.
+ *
+ * An agent logs, on the ticket they worked:
+ *   - mileage: from, to, miles, round trip - an ordinary ITFlow trip is made for it (Trips, the Mileage
+ *     report), and it is reimbursed at the company's rate per mile, kept on the entry as it was that day;
+ *   - a purchase they paid for: what, where, the price and a receipt - added to the ticket's Parts (to bill
+ *     the customer, the price paid as our cost) when they tick it and procurement is on.
+ * Reimbursements belong to the pay period of their date: they show on the person's timesheet and the payroll
+ * report, and are locked with the timesheet. Approving it records each purchase as an ITFlow expense (with the
+ * receipt) when a category and account are set (Admin > Timesheets > Settings - ts_mileage_rate,
+ * ts_reimb_category, ts_reimb_account).
+ *
+ * Who: anyone who can edit the ticket logs their own; the person, or someone who may correct their timesheet,
+ * changes or removes one while the period is open (mitTsWhyLocked). Follows the Timesheets switch.
+ * Pages: the Reimbursements box on the ticket (mitReimbTicketCard, layout box "reimburse", icon fa-receipt),
+ * modal agent/modals/mit_reimburse/reimburse.php, handlers agent/post/mit_reimbursements.php, receipts served
+ * by agent/mit_receipt.php from uploads/mit_receipts/.
+ */
+
+const MIT_REIMB_KINDS = ['mileage' => 'Mileage', 'purchase' => 'Purchase'];
+const MIT_REIMB_RECEIPT_DIR = 'uploads/mit_receipts';
+
+/** Has database update M017 run? */
+function mitReimbReady() {
+    global $mysqli;
+    static $ready = null;
+    if ($ready === null) {
+        try {
+            $ready = mysqli_num_rows(mysqli_query($mysqli, "SHOW TABLES LIKE 'mit_reimbursements'")) === 1;
+        } catch (Throwable $e) {
+            $ready = false;
+        }
+    }
+    return $ready;
+}
+
+/** Are reimbursements in use? They come with timesheets (and their on/off switch). */
+function mitReimbOn() {
+    return mitReimbReady() && mitTsOn();
+}
+
+/** The settings: rate per mile (0 = not set), and the expense category and account purchases are recorded under. */
+function mitReimbSettings() {
+    return [
+        'rate' => max(0, round((float) mitSetting('ts_mileage_rate', '0'), 4)),
+        'category_id' => intval(mitSetting('ts_reimb_category', '0')),
+        'account_id' => intval(mitSetting('ts_reimb_account', '0')),
+    ];
+}
+
+/** A money value posted from a form ("1,234.50", "$12"), or null when it cannot be read. */
+function mitReimbAmount($text) {
+    $text = trim(str_replace([',', '$'], '', (string) $text));
+    return $text !== '' && is_numeric($text) ? round((float) $text, 2) : null;
+}
+
+/*
+ * ---------- reading ----------
+ */
+
+const MIT_REIMB_COLUMNS = "r.reimb_id, r.ticket_id, r.client_id, r.user_id, r.entry_date, r.kind, r.description, r.vendor, r.source, r.destination,
+    r.miles, r.round_trip, r.rate, r.amount, r.trip_id, r.part_id, r.receipt, r.receipt_name, r.expense_id, r.created_by, r.created_at";
+
+/** One entry with its ticket's reference and the agent's name, or null. */
+function mitReimbRow($reimb_id) {
+    global $mysqli;
+    if (!mitReimbReady()) {
+        return null;
+    }
+    return mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT " . MIT_REIMB_COLUMNS . ", ticket_prefix, ticket_number, ticket_subject, user_name
+        FROM mit_reimbursements r LEFT JOIN tickets ON tickets.ticket_id = r.ticket_id LEFT JOIN users ON users.user_id = r.user_id
+        WHERE r.reimb_id = " . intval($reimb_id))) ?: null;
+}
+
+/** A ticket's entries, newest first. */
+function mitReimbForTicket($ticket_id) {
+    global $mysqli;
+    if (!mitReimbReady()) {
+        return [];
+    }
+    return mysqli_fetch_all(mysqli_query($mysqli, "SELECT " . MIT_REIMB_COLUMNS . ", user_name FROM mit_reimbursements r LEFT JOIN users ON users.user_id = r.user_id
+        WHERE r.ticket_id = " . intval($ticket_id) . " ORDER BY r.entry_date DESC, r.reimb_id DESC"), MYSQLI_ASSOC);
+}
+
+/** People's entries in dates: user_id => [rows, oldest first], with the ticket's reference. */
+function mitReimbForUsers(array $user_ids, $from, $to) {
+    global $mysqli;
+    $user_ids = array_filter(array_map('intval', $user_ids));
+    $out = [];
+    if (!$user_ids || !mitReimbReady()) {
+        return $out;
+    }
+    $result = mysqli_query($mysqli, "SELECT " . MIT_REIMB_COLUMNS . ", ticket_prefix, ticket_number, ticket_subject, client_name
+        FROM mit_reimbursements r LEFT JOIN tickets ON tickets.ticket_id = r.ticket_id LEFT JOIN clients ON clients.client_id = r.client_id
+        WHERE r.user_id IN (" . implode(',', $user_ids) . ") AND r.entry_date BETWEEN '" . escapeSql($from) . "' AND '" . escapeSql($to) . "'
+        ORDER BY r.entry_date, r.reimb_id");
+    while ($row = mysqli_fetch_assoc($result)) {
+        $out[intval($row['user_id'])][] = $row;
+    }
+    return $out;
+}
+
+/** Totals for people in dates: user_id => [miles, mileage, purchases, total, count] (money in the company currency). */
+function mitReimbTotals(array $user_ids, $from, $to) {
+    $totals = [];
+    foreach (array_filter(array_map('intval', $user_ids)) as $user_id) {
+        $totals[$user_id] = ['miles' => 0.0, 'mileage' => 0.0, 'purchases' => 0.0, 'total' => 0.0, 'count' => 0];
+    }
+    foreach (mitReimbForUsers($user_ids, $from, $to) as $user_id => $rows) {
+        foreach ($rows as $row) {
+            $t = &$totals[$user_id];
+            if ($row['kind'] === 'mileage') {
+                $t['miles'] += (float) $row['miles'];
+                $t['mileage'] += (float) $row['amount'];
+            } else {
+                $t['purchases'] += (float) $row['amount'];
+            }
+            $t['total'] += (float) $row['amount'];
+            $t['count']++;
+            unset($t);
+        }
+    }
+    return $totals;
+}
+
+/** A ticket's reference for an entry ("TCK-12"), or "a deleted ticket". */
+function mitReimbTicketText(array $row) {
+    return $row['ticket_number'] !== null && $row['ticket_number'] !== '' ? ticketReference($row) : 'a deleted ticket';
+}
+
+/** What an entry is, in a line: "42 mi round trip, Office - Acme" or "Cable kit at Best Buy". */
+function mitReimbWhat(array $row) {
+    if ($row['kind'] === 'mileage') {
+        return rtrim(rtrim(number_format((float) $row['miles'], 1), '0'), '.') . ' mi' . (intval($row['round_trip']) ? ' round trip' : '')
+            . ($row['source'] || $row['destination'] ? ', ' . trim($row['source'] . ' - ' . $row['destination'], ' -') : '');
+    }
+    return $row['description'] . ($row['vendor'] ? ' at ' . $row['vendor'] : '');
+}
+
+/*
+ * ---------- who may change one ----------
+ */
+
+/** Why the signed-in agent may not change or remove an entry - '' when they may (the timesheet rules for its date). */
+function mitReimbWhyLocked(array $row) {
+    global $session_user_id;
+    $user_id = intval($row['user_id']);
+    if ($user_id !== intval($session_user_id) && !mitTsMayCorrect($user_id)) {
+        return 'Only ' . ($row['user_name'] ?? 'they') . ', or whoever corrects their timesheet, can change it.';
+    }
+    return mitTsWhyLocked(mitTsSheet($user_id, mitTsPeriodFor($row['entry_date'])));
+}
+
+/*
+ * ---------- saving ----------
+ */
+
+/**
+ * Add or change an entry from the modal. $ticket is the ticket row (ticketRow), $row the entry being changed or null.
+ * Mileage makes or updates its ITFlow trip; a purchase can add a ticket part and keeps its receipt.
+ * Returns [ok, message - plain text].
+ */
+function mitReimbSave(array $ticket, ?array $row, array $post, array $files) {
+    global $mysqli, $session_user_id, $session_name;
+    $kind = $row ? $row['kind'] : (($post['kind'] ?? '') === 'purchase' ? 'purchase' : 'mileage');
+    $ticket_id = intval($ticket['ticket_id']);
+    $client_id = intval($ticket['ticket_client_id']);
+    $user_id = $row ? intval($row['user_id']) : intval($session_user_id);
+    $reference = ticketReference($ticket);
+    $date = (string) ($post['date'] ?? '');
+    if (!calendarIsDate($date)) {
+        return [false, 'Pick the date.'];
+    }
+    // The period the entry lands in must be open to this agent - and the one it leaves, when the date moves
+    $why = mitTsWhyLocked(mitTsSheet($user_id, mitTsPeriodFor($date)));
+    if ($why === '' && $row) {
+        $why = mitReimbWhyLocked($row);
+    }
+    if ($why !== '') {
+        return [false, $why];
+    }
+    $who = stripslashes((string) $session_name);
+
+    if ($kind === 'mileage') {
+        $miles = round((float) str_replace(',', '', (string) ($post['miles'] ?? '0')), 1);
+        $source = trim((string) ($post['source'] ?? ''));
+        $destination = trim((string) ($post['destination'] ?? ''));
+        $round_trip = empty($post['round_trip']) ? 0 : 1;
+        if ($miles <= 0 || $miles > 5000) {
+            return [false, 'Enter the miles driven.'];
+        }
+        $rate = $row ? (float) $row['rate'] : mitReimbSettings()['rate'];
+        if (!$row && $rate <= 0) {
+            return [false, 'No rate per mile is set yet - ask an admin (Admin > Timesheets > Settings).'];
+        }
+        $amount = round($miles * $rate, 2);
+        $purpose = mb_substr("$reference - " . $ticket['ticket_subject'], 0, 200);
+        $trip_set = "trip_date = '$date', trip_purpose = '" . escapeSql($purpose) . "', trip_source = '" . escapeSql(mb_substr($source, 0, 200)) . "',
+            trip_destination = '" . escapeSql(mb_substr($destination, 0, 200)) . "', trip_miles = $miles, round_trip = $round_trip, trip_user_id = $user_id, trip_client_id = $client_id";
+        $trip_id = intval($row['trip_id'] ?? 0);
+        if ($trip_id && mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM trips WHERE trip_id = $trip_id"))) {
+            mysqli_query($mysqli, "UPDATE trips SET $trip_set WHERE trip_id = $trip_id");
+        } else {
+            mysqli_query($mysqli, "INSERT INTO trips SET $trip_set");
+            $trip_id = mysqli_insert_id($mysqli);
+            logAudit('Trip', 'Create', escapeSql("$who logged trip from $source to $destination for ticket $reference"), $client_id, $trip_id);
+        }
+        $set = "entry_date = '$date', description = '" . escapeSql(mb_substr("Mileage for $reference", 0, 255)) . "', source = '" . escapeSql(mb_substr($source, 0, 200)) . "',
+            destination = '" . escapeSql(mb_substr($destination, 0, 200)) . "', miles = $miles, round_trip = $round_trip, rate = $rate, amount = $amount, trip_id = $trip_id";
+        $what = rtrim(rtrim(number_format($miles, 1), '0'), '.') . ' mi (' . mitMoney($amount) . ')';
+    } else {
+        $description = trim((string) ($post['description'] ?? ''));
+        $vendor = trim((string) ($post['vendor'] ?? ''));
+        $amount = mitReimbAmount($post['amount'] ?? '');
+        if ($description === '' || $amount === null || $amount <= 0) {
+            return [false, 'Say what was bought and what it cost.'];
+        }
+        $set = "entry_date = '$date', description = '" . escapeSql(mb_substr($description, 0, 255)) . "', vendor = " . ($vendor === '' ? 'NULL' : "'" . escapeSql(mb_substr($vendor, 0, 200)) . "'") . ", amount = $amount";
+        // A receipt - an image or a PDF, kept under an unguessable name
+        $file = $files['receipt'] ?? null;
+        if (is_array($file) && ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+            $stored = checkFileUpload($file, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'heic']);
+            $dir = dirname(__DIR__) . '/' . MIT_REIMB_RECEIPT_DIR;
+            if (!is_dir($dir) && @mkdir($dir, 0750, true)) {
+                // Receipts are only handed out by agent/mit_receipt.php, which checks who is asking
+                @file_put_contents("$dir/.htaccess", "Require all denied\n");
+            }
+            if (!$stored || !is_dir($dir) || !move_uploaded_file($file['tmp_name'], "$dir/$stored")) {
+                return [false, 'The receipt could not be saved - use a picture or a PDF.'];
+            }
+            if (!empty($row['receipt'])) {
+                @unlink("$dir/" . basename($row['receipt']));
+            }
+            $set .= ", receipt = '" . escapeSql($stored) . "', receipt_name = '" . escapeSql(mb_substr(basename((string) $file['name']), 0, 255)) . "'";
+        }
+        $what = "$description (" . mitMoney($amount) . ')';
+    }
+
+    if ($row) {
+        mysqli_query($mysqli, "UPDATE mit_reimbursements SET $set WHERE reimb_id = " . intval($row['reimb_id']));
+        $reimb_id = intval($row['reimb_id']);
+    } else {
+        mysqli_query($mysqli, "INSERT INTO mit_reimbursements SET ticket_id = $ticket_id, client_id = $client_id, user_id = $user_id, kind = '$kind', $set, created_by = " . intval($session_user_id));
+        $reimb_id = mysqli_insert_id($mysqli);
+    }
+
+    // A purchase on the ticket's Parts, to bill: added once, and kept in step while it is not billed
+    $note = '';
+    if ($kind === 'purchase' && function_exists('mitProcOn') && mitProcOn()) {
+        $part = !empty($row['part_id']) ? (mitTicketParts($ticket_id)[intval($row['part_id'])] ?? null) : null;
+        if ($part && !intval($part['invoice_id'])) {
+            mysqli_query($mysqli, "UPDATE mit_ticket_parts SET name = '" . escapeSql(mb_substr($description, 0, 255)) . "', unit_cost = $amount WHERE part_id = " . intval($part['part_id']));
+        } elseif (!$row && !empty($post['add_part'])) {
+            $price = mitReimbAmount($post['sell_price'] ?? '') ?? $amount;
+            [$ok, , $part_id] = mitTicketPartSave($ticket, ['name' => $description, 'quantity' => 1, 'unit_cost' => $amount, 'unit_price' => max(0, $price), 'source' => 'other',
+                'description' => 'Bought' . ($vendor !== '' ? " at $vendor" : '') . " by " . (getFieldById('users', $user_id, 'user_name') ?: 'the agent') . ' - reimbursed']) + [2 => 0];
+            if ($ok && $part_id) {
+                mysqli_query($mysqli, "UPDATE mit_reimbursements SET part_id = " . intval($part_id) . " WHERE reimb_id = $reimb_id");
+                $note = ' It is on the ticket\'s Parts to bill.';
+            }
+        }
+    }
+
+    $label = $kind === 'mileage' ? 'mileage' : 'a purchase';
+    logTicketHistory($ticket_id, escapeSql("$who " . ($row ? "changed $label for reimbursement: " : "logged $label for reimbursement: ") . $what));
+    logAudit('Ticket', 'Edit', escapeSql("$who " . ($row ? 'changed' : 'logged') . " $label for reimbursement on ticket $reference: $what"), $client_id, $ticket_id);
+    return [true, ($row ? 'Saved' : ($kind === 'mileage' ? 'Mileage logged' : 'Purchase logged')) . " - $what." . $note];
+}
+
+/** Remove an entry: its trip goes too (it was made for it); a part added to the ticket stays, to bill or remove there. */
+function mitReimbDelete(array $row) {
+    global $mysqli, $session_name;
+    $why = mitReimbWhyLocked($row);
+    if ($why !== '') {
+        return [false, $why];
+    }
+    if (intval($row['trip_id'])) {
+        mysqli_query($mysqli, "DELETE FROM trips WHERE trip_id = " . intval($row['trip_id']));
+    }
+    if (!empty($row['receipt']) && !intval($row['expense_id'])) {
+        @unlink(dirname(__DIR__) . '/' . MIT_REIMB_RECEIPT_DIR . '/' . basename($row['receipt']));
+    }
+    mysqli_query($mysqli, "DELETE FROM mit_reimbursements WHERE reimb_id = " . intval($row['reimb_id']));
+    $text = stripslashes((string) $session_name) . ' removed ' . ($row['kind'] === 'mileage' ? 'mileage' : 'a purchase') . ' for reimbursement: ' . mitReimbWhat($row) . ' (' . mitMoney($row['amount']) . ')';
+    if (intval($row['ticket_id'])) {
+        logTicketHistory(intval($row['ticket_id']), escapeSql($text));
+    }
+    logAudit('Ticket', 'Edit', escapeSql($text), intval($row['client_id']), intval($row['ticket_id']));
+    return [true, 'Removed' . (intval($row['part_id']) ? ' - the part it added is still on the ticket.' : '.')];
+}
+
+/**
+ * Hook when a timesheet is approved (mitTsDecide): each purchase in the period not recorded yet becomes an ITFlow
+ * expense, with a copy of its receipt - when invoicing is on and a category and account are set. Returns how many.
+ */
+function mitReimbRecordExpenses($user_id, array $period) {
+    global $mysqli, $config_module_enable_accounting, $session_company_currency;
+    $settings = mitReimbSettings();
+    if (!mitReimbReady() || intval($config_module_enable_accounting ?? 0) !== 1 || !$settings['category_id'] || !$settings['account_id']) {
+        return 0;
+    }
+    $currency = $session_company_currency ?: (string) mysqli_fetch_row(mysqli_query($mysqli, "SELECT company_currency FROM companies WHERE company_id = 1"))[0];
+    $user_name = (string) getFieldById('users', $user_id, 'user_name');
+    $done = 0;
+    foreach (mitReimbForUsers([$user_id], $period['start'], $period['end'])[intval($user_id)] ?? [] as $row) {
+        if ($row['kind'] !== 'purchase' || intval($row['expense_id'])) {
+            continue;
+        }
+        $receipt = '';
+        if (!empty($row['receipt'])) {
+            $from = dirname(__DIR__) . '/' . MIT_REIMB_RECEIPT_DIR . '/' . basename($row['receipt']);
+            $copy = randomString(32) . '.' . strtolower(pathinfo($row['receipt'], PATHINFO_EXTENSION));
+            $receipt = is_file($from) && @copy($from, dirname(__DIR__) . "/uploads/expenses/$copy") ? $copy : '';
+        }
+        $description = "Reimbursed to $user_name: " . $row['description'] . ($row['vendor'] ? ' (' . $row['vendor'] . ')' : '') . ' - ticket ' . mitReimbTicketText($row);
+        mysqli_query($mysqli, "INSERT INTO expenses SET expense_date = '" . escapeSql($row['entry_date']) . "', expense_amount = " . round((float) $row['amount'], 2) . ",
+            expense_currency_code = '" . escapeSql($currency) . "', expense_account_id = " . intval($settings['account_id']) . ", expense_vendor_id = 0,
+            expense_client_id = " . intval($row['client_id']) . ", expense_category_id = " . intval($settings['category_id']) . ",
+            expense_description = '" . escapeSql($description) . "', expense_reference = 'Reimbursement " . intval($row['reimb_id']) . "'"
+            . ($receipt !== '' ? ", expense_receipt = '" . escapeSql($receipt) . "'" : ''));
+        $expense_id = mysqli_insert_id($mysqli);
+        mysqli_query($mysqli, "UPDATE mit_reimbursements SET expense_id = $expense_id WHERE reimb_id = " . intval($row['reimb_id']));
+        logAudit('Expense', 'Create', escapeSql(mitTsWho() . " recorded expense $description from an approved timesheet"), intval($row['client_id']), $expense_id);
+        $done++;
+    }
+    return $done;
+}
+
+/*
+ * ---------- on the page ----------
+ */
+
+/** A list of entries as rows (for the ticket box and the timesheet). $show: 'ticket' | 'agent' - what to name besides. */
+function mitReimbListHtml(array $rows, $show, $can_change = null) {
+    $html = '<div class="list-group list-group-flush">';
+    foreach ($rows as $row) {
+        $icon = $row['kind'] === 'mileage' ? 'fa-car' : 'fa-shopping-bag';
+        $by = $show === 'ticket' ? escapeHtml(mitReimbTicketText($row)) . ($row['ticket_subject'] ?? '' ? ' · ' . escapeHtml($row['ticket_subject']) : '')
+            : escapeHtml($row['user_name'] ?? '');
+        $change = $can_change === null ? mitReimbWhyLocked($row) === '' : $can_change;
+        $html .= '<div class="list-group-item px-3 py-2"><div class="d-flex align-items-start gap-2"><i class="fas fa-fw ' . $icon . ' text-muted mt-1"></i>'
+            . '<div class="flex-grow-1" style="min-width:0"><div class="text-truncate" title="' . escapeHtml(mitReimbWhat($row)) . '">' . escapeHtml(mitReimbWhat($row)) . '</div>'
+            . '<div class="small text-muted">' . escapeHtml(date('M j', strtotime($row['entry_date']))) . ' · ' . $by
+            . ($row['kind'] === 'mileage' && $row['rate'] !== null ? ' · ' . mitMoney($row['rate']) . '/mi' : '')
+            . (!empty($row['receipt']) ? ' · <a href="/agent/mit_receipt.php?id=' . intval($row['reimb_id']) . '" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>receipt</a>' : '')
+            . (intval($row['expense_id']) ? ' · <span class="badge text-bg-light border">Expense recorded</span>' : '')
+            . '</div></div><div class="text-end small text-nowrap fw-semibold">' . mitMoney($row['amount']) . '</div>';
+        if ($change) {
+            $html .= '<button type="button" class="btn btn-sm btn-light ajax-modal" title="Change" data-modal-url="/agent/modals/mit_reimburse/reimburse.php?id=' . intval($row['reimb_id']) . '"><i class="fas fa-pen"></i></button>';
+        }
+        $html .= '</div></div>';
+    }
+    return $html . '</div>';
+}
+
+/** The ticket's Reimbursements box (agent/ticket.php, side column under Parts). */
+function mitReimbTicketCard(array $ticket, $can_edit) {
+    if (!mitReimbOn()) {
+        return '';
+    }
+    $ticket_id = intval($ticket['ticket_id']);
+    $rows = mitReimbForTicket($ticket_id);
+    if (!$rows && !$can_edit) {
+        return '';
+    }
+    $html = '<div class="card mb-3"><div class="card-header px-3 py-2"><h5 class="card-title mt-1"><i class="fas fa-fw fa-receipt me-2"></i>Reimbursements'
+        . ($rows ? ' <span class="badge text-bg-light border ms-1">' . count($rows) . '</span>' : '') . '</h5><div class="card-tools">';
+    if ($can_edit) {
+        $html .= '<button type="button" class="btn btn-tool ajax-modal" title="Log mileage" data-modal-url="/agent/modals/mit_reimburse/reimburse.php?ticket_id=' . $ticket_id . '&kind=mileage"><i class="fas fa-car"></i></button>'
+            . '<button type="button" class="btn btn-tool ajax-modal" title="Add a purchase" data-modal-url="/agent/modals/mit_reimburse/reimburse.php?ticket_id=' . $ticket_id . '&kind=purchase"><i class="fas fa-shopping-bag"></i></button>';
+    }
+    $html .= '</div></div><div class="card-body p-0">';
+    if (!$rows) {
+        return $html . '<div class="px-3 py-3 small text-muted">Drove to the client, or paid for something? Log mileage or a purchase to be paid back.</div></div></div>';
+    }
+    $html .= mitReimbListHtml($rows, 'agent');
+    $total = array_sum(array_column($rows, 'amount'));
+    return $html . '<div class="px-3 py-2 border-top small text-muted d-flex"><span>Total</span><span class="ms-auto fw-semibold">' . mitMoney($total) . '</span></div></div></div>';
+}
+
+/** The person's reimbursements on their timesheet (agent/mit_timesheet.php), with the period's total. */
+function mitReimbTimesheetBox($user_id, array $period) {
+    if (!mitReimbOn()) {
+        return '';
+    }
+    $rows = mitReimbForUsers([$user_id], $period['start'], $period['end'])[intval($user_id)] ?? [];
+    if (!$rows) {
+        return '';
+    }
+    $t = mitReimbTotals([$user_id], $period['start'], $period['end'])[intval($user_id)];
+    return '<div class="card mb-3"><div class="card-header px-3 py-2"><h5 class="card-title mt-1"><i class="fas fa-fw fa-receipt me-2"></i>Reimbursements</h5>'
+        . '<div class="card-tools small text-muted pt-1">' . ($t['miles'] ? rtrim(rtrim(number_format($t['miles'], 1), '0'), '.') . ' mi · ' : '')
+        . '<strong>' . mitMoney($t['total']) . '</strong></div></div>'
+        . '<div class="card-body p-0">' . mitReimbListHtml($rows, 'ticket') . '</div>'
+        . '<div class="card-footer small text-muted py-2">Logged on tickets. Paid with this period and locked when it is approved.</div></div>';
+}

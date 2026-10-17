@@ -8,7 +8,8 @@
  * column) lets you drag them about, then save it for yourself or, as an admin, as the company default.
  * The page's markup is ITFlow's own; nothing here changes it server-side, so a box this script does
  * not know simply stays where ITFlow put it. Boxes are found by their title icon (ICONS below) -
- * ITFlow's, plus our Parts box (fa-microchip, functions/mit_procurement_parts.php).
+ * ITFlow's, plus our Parts box (fa-microchip, functions/mit_procurement_parts.php) and Reimbursements box
+ * (fa-receipt, functions/mit_reimbursements.php).
  */
 (function () {
     'use strict';
@@ -59,18 +60,18 @@
     // ITFlow's boxes, known by the icon in their title
     const ICONS = {
         'fa-align-left': 'description', 'fa-sliders-h': 'details', 'fa-user': 'contact', 'fa-layer-group': 'also_open',
-        'fa-map-marker-alt': 'site', 'fa-tasks': 'tasks', 'fa-microchip': 'parts', 'fa-link': 'linked', 'fa-history': 'history'
+        'fa-map-marker-alt': 'site', 'fa-tasks': 'tasks', 'fa-microchip': 'parts', 'fa-receipt': 'reimburse', 'fa-link': 'linked', 'fa-history': 'history'
     };
     const NAMES = {
         description: 'Description', reply: 'Reply box', conversation: 'Conversation', details: 'Details', contact: 'Contact',
-        also_open: 'Also open', site: 'Site', tasks: 'Tasks', parts: 'Parts', linked: 'Linked', history: 'History'
+        also_open: 'Also open', site: 'Site', tasks: 'Tasks', parts: 'Parts', reimburse: 'Reimbursements', linked: 'Linked', history: 'History'
     };
     // ITFlow's own layout - where a box goes back to, and where a saved layout slots a box it never saw
     const DEFAULT = {
         columns: '',
         left: [],
         main: ['description', 'reply', 'conversation'],
-        side: ['details', 'contact', 'also_open', 'site', 'tasks', 'parts', 'linked', 'history'],
+        side: ['details', 'contact', 'also_open', 'site', 'tasks', 'parts', 'reimburse', 'linked', 'history'],
         collapsed: ['history'],
         half: []
     };

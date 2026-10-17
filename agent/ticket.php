@@ -1394,6 +1394,7 @@ if (isset($_GET['ticket_id'])) {
                 <?php } ?>
 
                 <?= mitTicketPartsCard($ticket, $can_edit_ticket && !$ticket_is_closed) // Mountaineer IT: parts used / to order ?>
+                <?= mitReimbTicketCard($ticket, $can_edit_ticket && !$ticket_is_closed) // Mountaineer IT: mileage and purchases to pay back ?>
 
                 <!--
                     Everything else this ticket is attached to, in one card instead of

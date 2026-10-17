@@ -132,6 +132,7 @@ if ($settings['ot_day'] || $settings['ot_week']) {
         </div>
 
         <?= mitLeaveTimesheetBox($user_id, $period) ?>
+        <?= mitReimbTimesheetBox($user_id, $period) ?>
 
         <form action="post.php" method="post" autocomplete="off" id="mitTsForm" data-format="<?= $format ?>" data-today="<?= $today ?>" data-auto-lost="<?= $settings['auto_lost'] ?>" data-started="<?= escapeHtml(mitTsStartDate($user_id)) ?>"
             data-break-minutes="<?= $break_rule[0] ?>" data-break-per="<?= $break_rule[1] ?>">

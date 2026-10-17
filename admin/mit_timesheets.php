@@ -233,6 +233,43 @@ $company_week = mitTsCompanySchedule();
                     </div>
                 </div>
 
+                <?php if (mitReimbReady()) {
+                    $reimb = mitReimbSettings();
+                    $expense_categories = mysqli_fetch_all(mysqli_query($mysqli, "SELECT category_id, category_name FROM categories WHERE category_type = 'Expense' AND (category_archived_at IS NULL OR category_id = " . intval($reimb['category_id']) . ") ORDER BY category_name"), MYSQLI_ASSOC);
+                    $accounts = mysqli_fetch_all(mysqli_query($mysqli, "SELECT account_id, account_name FROM accounts WHERE account_archived_at IS NULL OR account_id = " . intval($reimb['account_id']) . " ORDER BY account_name"), MYSQLI_ASSOC); ?>
+                    <h6 class="text-muted text-uppercase small mb-3">Reimbursements</h6>
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-4">
+                            <label class="form-label">Mileage rate</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><?= escapeHtml($session_company_currency) ?></span>
+                                <input type="text" inputmode="decimal" class="form-control" name="mileage_rate" value="<?= $reimb['rate'] ? escapeHtml(rtrim(rtrim(number_format($reimb['rate'], 4, '.', ''), '0'), '.')) : '' ?>" placeholder="0.70" aria-label="Rate per mile">
+                                <span class="input-group-text">a mile</span>
+                            </div>
+                            <div class="form-text">Mileage logged on tickets keeps the rate of the day it was logged.</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Record purchases as expenses in</label>
+                            <select class="form-select" name="reimb_category">
+                                <option value="0">- Don't record them -</option>
+                                <?php foreach ($expense_categories as $category) { ?>
+                                    <option value="<?= intval($category['category_id']) ?>" <?= intval($category['category_id']) === $reimb['category_id'] ? 'selected' : '' ?>><?= escapeHtml($category['category_name']) ?></option>
+                                <?php } ?>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Paid from account</label>
+                            <select class="form-select" name="reimb_account">
+                                <option value="0">- Pick an account -</option>
+                                <?php foreach ($accounts as $account) { ?>
+                                    <option value="<?= intval($account['account_id']) ?>" <?= intval($account['account_id']) === $reimb['account_id'] ? 'selected' : '' ?>><?= escapeHtml($account['account_name']) ?></option>
+                                <?php } ?>
+                            </select>
+                            <div class="form-text">When a timesheet is approved its purchases are added to Finance &gt; Expenses with their receipts (with Invoicing on).</div>
+                        </div>
+                    </div>
+                <?php } ?>
+
                 <button type="submit" name="mit_ts_settings_save" class="btn btn-primary mb-3"><i class="fas fa-check me-2"></i>Save settings</button>
             </form>
         </div>

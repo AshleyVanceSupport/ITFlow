@@ -345,7 +345,7 @@ function mitProductStock($product_id) {
 }
 
 /**
- * Add a part to a ticket, or change one not billed yet. Returns [ok, message]. A part from stock
+ * Add a part to a ticket, or change one not billed yet. Returns [ok, message, part_id]. A part from stock
  * comes off the product's stock; a part to order goes on the procurement list.
  */
 function mitTicketPartSave(array $ticket, array $post, $part_id = 0) {
@@ -426,7 +426,7 @@ function mitTicketPartSave(array $ticket, array $post, $part_id = 0) {
         ticket_reply_by = " . intval($session_user_id) . ", ticket_reply_ticket_id = $ticket_id");
     logTicketHistory($ticket_id, escapeSql(mitProcWho() . ($old ? ' changed part ' : ' added part ') . $what));
     logAudit('Ticket', 'Edit', escapeSql(mitProcWho() . ($old ? ' changed part ' : ' added part ') . "$what on ticket $reference"), $client_id, $ticket_id);
-    return [true, ($old ? 'Part saved' : 'Part added') . ($source === 'order' ? ' - it is on the list to order' : '') . '.' . $warning];
+    return [true, ($old ? 'Part saved' : 'Part added') . ($source === 'order' ? ' - it is on the list to order' : '') . '.' . $warning, intval($part_id)];
 }
 
 /** Take a part off a ticket (not billed): stock goes back, a part still waiting to order comes off the list. */

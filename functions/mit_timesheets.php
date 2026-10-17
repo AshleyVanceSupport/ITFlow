@@ -7,7 +7,8 @@
  * end). Everything is set in Admin > Timesheets (admin/mit_timesheets.php): company settings in
  * mit_settings (ts_*, mitTsSettings), charge codes, and each person's schedule, approver, employee ID
  * and pay type (mit_timesheet_people); personal choices in mit_user_preferences (timesheet.*).
- * PTO / sick balances are in functions/mit_leave.php (required at the end).
+ * PTO / sick balances are in functions/mit_leave.php, mileage and purchases to pay back in
+ * functions/mit_reimbursements.php (both required at the end).
  * A day's hours are:
  *   - ticket time, filled in on its own from the time logged on ticket replies that day - billable
  *     when the ticket is billable, the rest "other ticket time";
@@ -498,7 +499,8 @@ function mitTsUsersWithActivity($from, $to) {
     $from = escapeSql($from);
     $to = escapeSql($to);
     $result = mysqli_query($mysqli, "SELECT DISTINCT user_id FROM mit_time_entries WHERE entry_date BETWEEN '$from' AND '$to' AND minutes > 0
-        UNION SELECT user_id FROM mit_timesheets WHERE period_end >= '$from' AND period_start <= '$to' AND status <> 'open'");
+        UNION SELECT user_id FROM mit_timesheets WHERE period_end >= '$from' AND period_start <= '$to' AND status <> 'open'"
+        . (mitReimbReady() ? " UNION SELECT user_id FROM mit_reimbursements WHERE entry_date BETWEEN '$from' AND '$to'" : ''));
     while ($row = mysqli_fetch_row($result)) {
         $ids[] = intval($row[0]);
     }
@@ -1162,6 +1164,7 @@ function mitTsDecide(array $sheet, array $period, $decision, $note = '') {
         $sheet = mitTsSheetSaved($sheet['user_id'], $period);
         mitTsSnapshotTickets($sheet['user_id'], $period);
         mitLeaveAccruePeriod($sheet['user_id'], $period);
+        mitReimbRecordExpenses($sheet['user_id'], $period);
         mysqli_query($mysqli, "UPDATE mit_timesheets SET status = 'approved', decided_by = " . intval($session_user_id) . ", decided_at = NOW(),
             decision_note = " . ($note === '' ? 'NULL' : "'" . escapeSql(mb_substr($note, 0, 255)) . "'") . " WHERE sheet_id = " . intval($sheet['sheet_id']));
         $text = 'approved';
@@ -1328,3 +1331,4 @@ function mitTsSendReminders() {
 }
 
 require_once __DIR__ . '/mit_leave.php';
+require_once __DIR__ . '/mit_reimbursements.php';

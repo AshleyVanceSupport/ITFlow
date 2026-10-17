@@ -212,6 +212,10 @@ break stock ITFlow, and lists what stops working after a move.
   ordinary ITFlow ticket fields and stay). Use Calendar and each ticket's Schedule instead.
 - **Module switches** for Procurement, Timesheets and Dispatch (Settings > Modules) – stored in
   `mit_settings` (`module_*`), unused by stock ITFlow.
+- **Reimbursements** (mileage and purchases logged on tickets) – the ticket's Reimbursements box, the
+  timesheet list and the payroll columns go; the entries stay in `mit_reimbursements` and receipts in
+  `uploads/mit_receipts/`. Export the payroll report first. The ITFlow trips (mileage) and expenses
+  (approved purchases) they made are ordinary ITFlow records and stay.
 - **Ticket parts** – the Parts box is ours (`mit_ticket_parts`); parts already billed are ordinary
   invoice lines and stay. Products' "Order from" vendor (`products.product_vendor_id`) is ignored.
 - **Additional agents on tickets** – stock ITFlow keeps only the assigned agent. The others, their
