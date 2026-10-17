@@ -1652,6 +1652,8 @@ if (isset($_GET['ticket_id'])) {
 
         </div> <!-- End ticket-layout -->
 
+        <?= mitTicketLayoutHtml() // Mountaineer IT: the saved box layout (functions/mit_ticket_layout.php) ?>
+
     <?php
     }
 }

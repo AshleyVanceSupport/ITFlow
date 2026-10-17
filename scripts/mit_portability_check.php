@@ -139,7 +139,7 @@ if ($n) {
     $after[] = "Quote pricing and images: $n quote lines / products have our cost or an image - stock ITFlow shows the customer prices only, without the images (the files stay in uploads/mit_images).";
 }
 if ($n = $count("SELECT COUNT(*) FROM mit_user_preferences")) {
-    $after[] = "Per-person calendar settings and tech colours ($n saved) are not used by stock ITFlow.";
+    $after[] = "Per-person settings - calendar view, tech colours, ticket page layout ($n saved) - are not used by stock ITFlow.";
 }
 
 echo "Stock ITFlow portability check - database $version, ITFlow schema " . LATEST_DATABASE_VERSION . " (db.sql)\n\n";

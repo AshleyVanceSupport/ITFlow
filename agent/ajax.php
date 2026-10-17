@@ -2391,6 +2391,12 @@ if (isset($_GET['calendar_unscheduled'])) {
  * the ticket's Schedule dialog, so a visit is not booked on top of another.
  * $_GET: date, user_id, ticket_id (the ticket being scheduled, left out).
  */
+// Mountaineer IT: save / reset the ticket page layout (functions/mit_ticket_layout.php)
+if (isset($_POST['mit_ticket_layout'])) {
+    validateCSRFToken();
+    mitTicketLayoutAjax($_POST);
+}
+
 if (isset($_GET['calendar_day'])) {
 
     header('Content-Type: application/json');
