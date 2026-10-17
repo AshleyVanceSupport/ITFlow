@@ -158,22 +158,85 @@
         }
     }
 
+    /** The picture box around an image field: preview, "no image" placeholder, file and link inputs. */
+    function imageBox(el) {
+        var box = el.closest('[data-mit-image-box]') || el.closest('tr, label, .d-flex') || el.parentNode;
+        return {
+            img: box.querySelector('[data-mit-image-preview]'),
+            empty: box.querySelector('[data-mit-image-empty]'),
+            file: box.querySelector('[data-mit-image-input]'),
+            url: box.querySelector('[data-mit-image-url]')
+        };
+    }
+
+    function showImage(b, src, label) {
+        if (!b.img) {
+            return;
+        }
+        if (!b.img.dataset.mitOriginal) {
+            b.img.dataset.mitOriginal = b.img.getAttribute('src') || '-';
+        }
+        var original = b.img.dataset.mitOriginal === '-' ? '' : b.img.dataset.mitOriginal;
+        src = src || original;
+        b.img.onerror = null;
+        if (b.empty && b.empty.dataset.mitText === undefined) {
+            b.empty.dataset.mitText = b.empty.textContent;
+        }
+        var placeholder = function (text) {
+            b.img.style.display = 'none';
+            if (b.empty) {
+                if (b.empty.dataset.mitText) {
+                    b.empty.textContent = text || b.empty.dataset.mitText;
+                }
+                b.empty.hidden = false;
+                b.empty.style.display = 'block';
+            }
+        };
+        if (!src) {
+            placeholder();
+            return;
+        }
+        // A product page is not an image itself - say a link is waiting instead
+        b.img.onerror = function () { placeholder(label); };
+        b.img.src = src;
+        b.img.style.display = '';
+        if (b.empty) {
+            b.empty.hidden = true;
+            b.empty.style.display = 'none';
+        }
+    }
+
     function bindImage(input) {
         if (input.dataset.mitBound) {
             return;
         }
         input.dataset.mitBound = '1';
         input.addEventListener('change', function () {
-            var box = input.closest('label, .d-flex') || input.parentNode;
-            var img = box.querySelector('[data-mit-image-preview]') || (box.parentNode && box.parentNode.querySelector('[data-mit-image-preview]'));
-            var empty = box.querySelector('[data-mit-image-empty]') || (box.parentNode && box.parentNode.querySelector('[data-mit-image-empty]'));
-            if (img && input.files && input.files[0]) {
-                img.src = URL.createObjectURL(input.files[0]);
-                img.style.display = '';
-                if (empty) {
-                    empty.hidden = true;
-                    empty.style.display = 'none';
+            var b = imageBox(input);
+            if (input.files && input.files[0]) {
+                if (b.url) {
+                    b.url.value = '';
                 }
+                showImage(b, URL.createObjectURL(input.files[0]));
+            }
+        });
+    }
+
+    function bindImageUrl(input) {
+        if (input.dataset.mitBound) {
+            return;
+        }
+        input.dataset.mitBound = '1';
+        input.addEventListener('input', function () {
+            var b = imageBox(input);
+            var url = input.value.trim();
+            if (/^https?:\/\/[^\s]+\.[^\s]+/i.test(url)) {
+                if (b.file) {
+                    b.file.value = '';
+                }
+                showImage(b, url, 'Link added');
+            } else if (!url && !(b.file && b.file.files && b.file.files.length)) {
+                showImage(b, '');
             }
         });
     }
@@ -181,6 +244,7 @@
     function scan(root) {
         (root || document).querySelectorAll('[data-mit-cost]').forEach(bind);
         (root || document).querySelectorAll('[data-mit-image-input]').forEach(bindImage);
+        (root || document).querySelectorAll('[data-mit-image-url]').forEach(bindImageUrl);
     }
 
     // The add-item row's script sits before the row's price field: wait for the whole page

@@ -506,13 +506,13 @@ function mitPricingFields(array $names, $cost, $method, $percent, $price_name = 
 /** The image field: the current picture, upload, pull from a link, remove. $name = the file field's name. */
 function mitImageField($name, $current) {
     $url = mitImageUrl($current);
-    return '<div class="mb-3"><label class="form-label">Image</label><div class="d-flex gap-3 align-items-start">'
+    return '<div class="mb-3" data-mit-image-box><label class="form-label">Image</label><div class="d-flex gap-3 align-items-start">'
         . '<div style="width:110px;height:110px;flex-shrink:0" class="border rounded bg-body-tertiary d-flex align-items-center justify-content-center overflow-hidden">'
         . '<img alt="" data-mit-image-preview src="' . escapeHtml($url) . '" style="max-width:100%;max-height:100%;' . ($url ? '' : 'display:none') . '">'
         . '<i class="fas fa-image fa-2x text-body-secondary" data-mit-image-empty' . ($url ? ' hidden' : '') . '></i></div>'
         . '<div class="flex-grow-1">'
         . '<input type="file" class="form-control mb-2" name="' . escapeHtml($name) . '" accept="image/jpeg,image/png,image/gif,image/webp" data-mit-image-input>'
-        . '<input type="url" class="form-control mb-1" name="' . escapeHtml($name) . '_url" placeholder="Or paste a link - an image, or the product\'s web page">'
+        . '<input type="url" class="form-control mb-1" name="' . escapeHtml($name) . '_url" data-mit-image-url placeholder="Or paste a link - an image, or the product\'s web page">'
         . '<div class="form-text">From a product page it takes the page\'s main picture. ITFlow keeps its own copy.</div>'
         . ($url ? '<div class="form-check mt-1"><input class="form-check-input" type="checkbox" name="' . escapeHtml($name) . '_remove" value="1" id="' . escapeHtml($name) . '_remove"><label class="form-check-label" for="' . escapeHtml($name) . '_remove">Remove the image</label></div>' : '')
         . '</div></div></div>';
@@ -569,15 +569,27 @@ function mitQuoteCellPricing($quote_id, $item_id, $currency_format, $currency_co
         . '<td class="d-print-none" style="background:#fffcf2">' . mitPricingBadge($cost, $extra['item_price_method'] ?? '', $extra['item_price_percent'] ?? '', $extra['item_price'] ?? 0) . '</td>';
 }
 
-/** Quote page add-item row: the image cell (upload; a product's image comes along by itself). */
+/**
+ * Quote page add-item row: the image cell - a box that opens a small menu to upload a picture or
+ * paste a link (an image or a product page, fetched when the line is added). A product's image
+ * comes along by itself.
+ */
 function mitQuoteAddCellImage() {
     if (!mitQuoteSettings()['show_images']) {
         return '';
     }
-    return '<td><label class="d-block border border-primary-subtle rounded text-center small text-primary" style="width:56px;height:56px;cursor:pointer;border-style:dashed!important;overflow:hidden" title="Add an image">'
+    return '<td><div class="dropdown" data-mit-image-box>'
+        . '<button type="button" class="d-block p-0 bg-transparent border border-primary-subtle rounded text-center small text-primary" style="width:56px;height:56px;border-style:dashed!important;overflow:hidden" title="Add an image"'
+        . ' data-bs-toggle="dropdown" data-bs-auto-close="outside" data-bs-popper-config=\'{"strategy":"fixed"}\' aria-expanded="false">'
         . '<img alt="" data-mit-image-preview style="width:100%;height:100%;object-fit:contain;display:none">'
-        . '<span data-mit-image-empty style="display:block;padding-top:9px">+ Image</span>'
-        . '<input type="file" name="item_image" accept="image/jpeg,image/png,image/gif,image/webp" class="d-none" data-mit-image-input></label></td>';
+        . '<span data-mit-image-empty style="display:block">+ Image</span></button>'
+        . '<div class="dropdown-menu p-3" style="width:320px">'
+        . '<label class="btn btn-sm btn-outline-primary w-100 mb-3"><i class="fas fa-fw fa-upload me-1"></i>Upload from this computer'
+        . '<input type="file" name="item_image" accept="image/jpeg,image/png,image/gif,image/webp" class="d-none" data-mit-image-input></label>'
+        . '<label class="form-label small mb-1">Or paste a link - an image, or the product\'s web page</label>'
+        . '<input type="url" class="form-control form-control-sm" name="item_image_url" placeholder="https://" data-mit-image-url>'
+        . '<div class="form-text">ITFlow fetches it and keeps its own copy when you add the line.</div>'
+        . '</div></div></td>';
 }
 
 /** Quote page add-item row: our cost and pricing cells, wired to the row's price field. */
