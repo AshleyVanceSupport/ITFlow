@@ -10,6 +10,9 @@
     const today = form.dataset.today;
     const autoLost = form.dataset.autoLost === '1';
     const started = form.dataset.started || '';
+    // Paid breaks: breakMinutes for every breakPer minutes worked (functions/mit_timesheets.php mitTsBreakFor)
+    const breakMinutes = +form.dataset.breakMinutes || 0;
+    const breakPer = Math.max(30, +form.dataset.breakPer || 240);
     // "7.5", "7:30", "7h30", "450m" -> minutes, as mitTsParseHours() reads them on the server
     function minutes(text) {
         text = String(text || '').trim().replace(',', '.');
@@ -28,6 +31,7 @@
         form.querySelectorAll('details').forEach(function (week) {
             const table = week.querySelector('.mit-ts-table');
             const days = {};
+            const worked = {};
             let total = 0;
             table.querySelectorAll('tbody tr').forEach(function (row) {
                 const totalCell = row.querySelector('[data-mit-ts-row-total]');
@@ -36,6 +40,9 @@
                 row.querySelectorAll('[data-mit-ts-auto], input[data-date]').forEach(function (cell) {
                     const m = cell.matches('input') ? minutes(cell.value) : +cell.dataset.minutes;
                     days[cell.dataset.date] = (days[cell.dataset.date] || 0) + m;
+                    if (cell.dataset.worked === '1') {
+                        worked[cell.dataset.date] = (worked[cell.dataset.date] || 0) + m;
+                    }
                     rowTotal += m;
                     if (cell.matches('input')) {
                         const max = +cell.dataset.max;
@@ -46,9 +53,19 @@
                 total += rowTotal;
             });
             let unaccounted = 0;
+            let breaks = 0;
             table.querySelectorAll('[data-mit-ts-day]').forEach(function (cell) {
                 const date = cell.dataset.mitTsDay;
-                const m = days[date] || 0;
+                // Paid breaks count in the day, as accounted-for time (as stored, on an approved period)
+                const breakCell = table.querySelector('[data-mit-ts-breaks="' + date + '"]');
+                let paidBreak = 0;
+                if (breakCell) {
+                    paidBreak = breakCell.dataset.fixed !== undefined ? +breakCell.dataset.fixed
+                        : (breakMinutes > 0 ? Math.floor((worked[date] || 0) / breakPer) * breakMinutes : 0);
+                    breakCell.textContent = hours(paidBreak);
+                    breaks += paidBreak;
+                }
+                const m = (days[date] || 0) + paidBreak;
                 const expected = +cell.dataset.expected;
                 cell.textContent = hours(m, expected > 0 && date <= today);
                 cell.classList.toggle('text-warning', expected > 0 && date <= today && m < expected);
@@ -62,6 +79,9 @@
                     unaccounted += gap;
                 }
             });
+            const breakTotal = table.querySelector('[data-mit-ts-breaks-total]');
+            if (breakTotal) breakTotal.textContent = hours(breaks);
+            total += breaks;
             const gapTotal = table.querySelector('[data-mit-ts-unaccounted-total]');
             if (gapTotal) gapTotal.textContent = hours(unaccounted);
             table.querySelector('[data-mit-ts-week-total]').textContent = hours(total);

@@ -205,7 +205,7 @@ break stock ITFlow, and lists what stops working after a move.
 - **Timesheets** – not in stock ITFlow. Timesheets, hours on charge codes and the codes stay in
   `mit_timesheets` / `mit_time_entries` / `mit_charge_codes` / `mit_timesheet_people` (schedules,
   approvers, employee IDs, hire dates), PTO / sick balances in `mit_leave_banks` / `mit_leave_ledger` /
-  `mit_leave_rates`, settings in `mit_settings` (ts_*); export the Timesheets & Payroll
+  `mit_leave_rates`, settings in `mit_settings` (ts_*, including the paid-break rule; lunch is a charge code); export the Timesheets & Payroll
   report (both CSVs) before moving. Ticket time is ITFlow's own (ticket replies) and stays. Admin >
   Roles keeps an unused "Timesheets" permission (`module_timesheets` row) – harmless.
 - **Dispatch** – the page goes away; it keeps nothing of its own (schedules and assignments it made are

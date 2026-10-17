@@ -98,6 +98,9 @@ if (isset($_POST['mit_ts_settings_save'])) {
     if ($ot_week !== null && $ot_week > 168 * 60) {
         $ot_week = null;
     }
+    $break_minutes = max(0, min(120, intval($_POST['break_minutes'] ?? 0)));
+    $break_per = mitTsParseHoursAny($_POST['break_per'] ?? '') ?: 240;
+    $break_per = max(30, min(1440, $break_per));
     if (!isset(MIT_TS_PERIODS[$type]) || ($type === 'biweekly' && !calendarIsDate($anchor)) || $schedule === null || $ot_day === null || $ot_week === null) {
         flashAlert('Not saved - check the pay period (and its first day for every two weeks), the normal week and the overtime hours.', 'error');
         redirect();
@@ -127,6 +130,8 @@ if (isset($_POST['mit_ts_settings_save'])) {
         'ot_week' => $ot_week,
         'auto_lost' => empty($_POST['auto_lost']) ? 0 : 1,
         'auto_lost_paid' => empty($_POST['auto_lost_paid']) ? 0 : 1,
+        'break_minutes' => $break_minutes,
+        'break_per' => $break_per,
     ];
     foreach ($values as $key => $value) {
         mitSetSetting("ts_$key", $value);
@@ -164,6 +169,13 @@ if (isset($_POST['mit_ts_person_save'])) {
     }
     if (mitTsKeepsColumn()) {
         $set .= ", keeps_timesheet = " . (empty($_POST['keeps_timesheet']) ? 0 : 1);
+    }
+    if (mitTsBreakColumns()) {
+        // Their own paid-break rule, or the company's when the minutes are left empty
+        $own_break = trim((string) ($_POST['break_minutes'] ?? '')) !== '';
+        $own_per = $own_break ? (mitTsParseHoursAny($_POST['break_per'] ?? '') ?: 240) : null;
+        $set .= ", break_minutes = " . ($own_break ? max(0, min(120, intval($_POST['break_minutes']))) : 'NULL')
+            . ", break_per = " . ($own_break ? max(30, min(1440, $own_per)) : 'NULL');
     }
     mysqli_query($mysqli, "INSERT INTO mit_timesheet_people SET user_id = $user_id, $set ON DUPLICATE KEY UPDATE $set");
     logAudit('Settings', 'Edit', "$session_name edited the timesheet details of user $user_id");

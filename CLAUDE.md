@@ -215,6 +215,10 @@ model: see DEPLOYMENT.md.
   overtime, keeps_timesheet - M015); personal `mit_user_preferences` timesheet.format / .view / .hidden_codes / .reminders.
   Closure days fill in the closure code on save / submit / approve / cron; a filled day cleared by hand keeps a
   0 row so it is not filled again. Grid script `agent/js/mit_timesheet.js`.
+  Lunch and breaks (M016): charge-code kind `break` (Lunch seeded, unpaid) - logged by people, accounted for (not
+  lost) but not worked; paid short breaks are automatic, `mitTsBreakFor` from ts_break_minutes / ts_break_per (or a
+  person's `mit_timesheet_people.break_minutes` / `break_per`), counted in paid hours, the total and overtime, not in
+  worked / billable %; stored on approval as source `break_paid` (approved periods without them = none).
   Cron job `mit_timesheets` (`cron/mit_timesheets.php`, entry in `includes/cron_jobs.php`, hourly: closure days
   of the period just ended, reminders - `mit_timesheets.reminded_due_at` / `reminded_late_at` -, leave earned
   when approval is off (once the period has settled: auto-lock days, else 7), leave year ends - carry-over

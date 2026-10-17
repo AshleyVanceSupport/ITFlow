@@ -69,8 +69,10 @@ $url = function (array $p, $uid = null) use ($user_id) {
 $approval = $settings['approval'];
 $can_submit = $approval && !$locked && in_array($sheet['status'], ['open', 'returned'], true) && ($own || mitTsMayCorrect($user_id));
 $csrf = $_SESSION['csrf_token'];
+$break_rule = mitTsBreakRule($user_id);
+$show_breaks = $break_rule[0] > 0 || $totals['break_paid'] > 0;
 $tiles = [
-    ['Total hours', mitTsHours($totals['total'], false), 'Worked plus leave'],
+    ['Total hours', mitTsHours($totals['total'], false), 'Worked plus leave' . ($totals['break_paid'] ? ', incl. ' . mitTsHours($totals['break_paid']) . ' paid breaks' : '')],
     ['Billable', mitTsHours($totals['billable'], false), mitTsBillableShare($totals) . ' of hours worked'],
     ['Other ticket time', mitTsHours($totals['other'], false), 'Tickets not billable'],
     ['Admin & other work', mitTsHours($totals['work'], false), 'Charge codes'],
@@ -131,7 +133,8 @@ if ($settings['ot_day'] || $settings['ot_week']) {
 
         <?= mitLeaveTimesheetBox($user_id, $period) ?>
 
-        <form action="post.php" method="post" autocomplete="off" id="mitTsForm" data-format="<?= $format ?>" data-today="<?= $today ?>" data-auto-lost="<?= $settings['auto_lost'] ?>" data-started="<?= escapeHtml(mitTsStartDate($user_id)) ?>">
+        <form action="post.php" method="post" autocomplete="off" id="mitTsForm" data-format="<?= $format ?>" data-today="<?= $today ?>" data-auto-lost="<?= $settings['auto_lost'] ?>" data-started="<?= escapeHtml(mitTsStartDate($user_id)) ?>"
+            data-break-minutes="<?= $break_rule[0] ?>" data-break-per="<?= $break_rule[1] ?>">
             <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
             <input type="hidden" name="user_id" value="<?= $user_id ?>">
             <input type="hidden" name="start" value="<?= $period['start'] ?>">
@@ -163,7 +166,7 @@ if ($settings['ot_day'] || $settings['ot_week']) {
                                             <td><i class="fas fa-fw fa-life-ring <?= $class ?> me-1"></i><?= $label ?> <span class="small text-muted">(auto)</span></td>
                                             <?php foreach ($week as $date) {
                                                 $m = intval($days[$date][$kind] ?? 0); ?>
-                                                <td class="text-center <?= mitTsExpected($user_id, $date) ? '' : 'bg-body-tertiary' ?>" data-mit-ts-auto data-date="<?= $date ?>" data-minutes="<?= $m ?>">
+                                                <td class="text-center <?= mitTsExpected($user_id, $date) ? '' : 'bg-body-tertiary' ?>" data-mit-ts-auto data-worked="1" data-date="<?= $date ?>" data-minutes="<?= $m ?>">
                                                     <?php if ($m) { ?>
                                                         <a href="#" class="ajax-modal" data-modal-url="modals/mit_timesheet/day.php?user_id=<?= $user_id ?>&date=<?= $date ?>" title="The tickets"><?= mitTsHours($m) ?></a>
                                                     <?php } ?>
@@ -193,6 +196,7 @@ if ($settings['ot_day'] || $settings['ot_week']) {
                                                 <input type="text" inputmode="decimal" class="form-control form-control-sm text-center" name="cells[<?= $date ?>][<?= $code_id ?>]"
                                                     value="<?= mitTsHours($m) ?>" <?= $hint !== '' ? 'placeholder="' . $hint . '" title="Closed - ' . escapeHtml(mitTsClosure($date)) . ' (filled in when you save)"' : '' ?>
                                                     data-date="<?= $date ?>" data-code="<?= escapeHtml($code['code_name']) ?>" data-note-required="<?= $note_required ?>" data-max="<?= $max ?>"
+                                                    data-worked="<?= in_array($code['code_kind'], ['work', 'lost'], true) && intval($code['code_paid']) ? 1 : 0 ?>"
                                                     aria-label="<?= escapeHtml($code['code_name'] . ' ' . date('M j', strtotime($date))) ?>" <?= $locked || ($future !== '' && !$m) ? 'disabled' : '' ?>
                                                     <?= $future !== '' && !$m ? 'title="' . escapeHtml($future) . '"' : '' ?>>
                                                 <input type="hidden" name="notes[<?= $date ?>][<?= $code_id ?>]" value="<?= escapeHtml((string) $entry['note']) ?>" <?= $locked ? 'disabled' : '' ?>>
@@ -200,6 +204,16 @@ if ($settings['ot_day'] || $settings['ot_week']) {
                                             </td>
                                         <?php } ?>
                                         <td class="text-center fw-semibold" data-mit-ts-row-total></td>
+                                    </tr>
+                                <?php } ?>
+                                <?php if ($show_breaks) { ?>
+                                    <tr class="text-success">
+                                        <td><i class="fas fa-fw fa-coffee me-1"></i>Breaks <span class="small text-muted">(paid, auto)</span></td>
+                                        <?php foreach ($week as $date) { ?>
+                                            <td class="text-center <?= mitTsExpected($user_id, $date) ? '' : 'bg-body-tertiary' ?>" data-mit-ts-breaks="<?= $date ?>"
+                                                <?= $sheet['status'] === 'approved' ? 'data-fixed="' . intval($days[$date]['break_paid'] ?? 0) . '"' : '' ?>></td>
+                                        <?php } ?>
+                                        <td class="text-center fw-semibold" data-mit-ts-breaks-total></td>
                                     </tr>
                                 <?php } ?>
                                 <?php if ($settings['auto_lost'] || $totals['auto_lost']) { ?>
@@ -233,7 +247,7 @@ if ($settings['ot_day'] || $settings['ot_week']) {
 
             <p class="small text-muted">
                 Type hours as 7.5 or 7:30; click into a box to add a note. Ticket time comes from the time logged on ticket replies each day.
-                A day under its normal hours is shown in orange.
+                A day under its normal hours is shown in orange. Put lunch on its own line (it is not paid, and not lost time)<?= $break_rule[0] > 0 ? '; short paid breaks - ' . intval($break_rule[0]) . ' minutes for every ' . mitTsHours($break_rule[1], false, 'decimal') . ' hours worked - are added for you' : '' ?>.
             </p>
 
             <div class="d-flex flex-wrap align-items-center gap-2 p-3 rounded bg-body-tertiary border">

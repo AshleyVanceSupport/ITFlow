@@ -11,8 +11,12 @@
  * A day's hours are:
  *   - ticket time, filled in on its own from the time logged on ticket replies that day - billable
  *     when the ticket is billable, the rest "other ticket time";
- *   - hours put against charge codes (mit_charge_codes): work (Admin, Training ...), lost time, and
- *     leave (PTO, Holiday, Sick ...), each paid or unpaid.
+ *   - hours put against charge codes (mit_charge_codes): work (Admin, Training ...), lost time,
+ *     leave (PTO, Holiday, Sick ...) and breaks (Lunch - logged by the person; not worked, unpaid unless
+ *     the code is paid), each paid or unpaid;
+ *   - paid short breaks, worked out from the hours worked (Admin > Timesheets, e.g. 15 minutes for every
+ *     4 hours; a person can have their own rule) - nothing to log; they count as paid time and toward
+ *     overtime, not toward the billable share.
  * The person submits the period, someone with Full Timesheets access approves it (or sends it
  * back), and an approved period is locked. Approving copies the period's ticket time and unaccounted
  * time in as entries (source ticket_billable / ticket_other / auto_lost, code 0), so payroll does not
@@ -35,7 +39,8 @@
  * grid script agent/js/mit_timesheet.js.
  */
 
-const MIT_TS_KINDS = ['work' => 'Work', 'lost' => 'Lost time', 'leave' => 'Leave'];
+// break: lunch and the like - accounted for (not lost) but not worked; unpaid unless the code says paid (M016)
+const MIT_TS_KINDS = ['work' => 'Work', 'lost' => 'Lost time', 'leave' => 'Leave', 'break' => 'Break / lunch (not worked)'];
 const MIT_TS_PERIODS = ['semi_monthly' => 'Semi-monthly (1st-15th, 16th-end)', 'monthly' => 'Monthly', 'biweekly' => 'Every two weeks', 'weekly' => 'Weekly'];
 const MIT_TS_PAY_TYPES = ['hourly' => 'Hourly', 'salary' => 'Salaried (no overtime)'];
 const MIT_TS_WEEKDAYS = [1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat', 7 => 'Sun'];
@@ -93,14 +98,15 @@ function mitTsReportEntry() {
  *   rounding 0 | 6 | 15 | 30 (ticket time per day); ticket_time 1/0; ticket_internal 1/0 (internal
  *   notes' time counts); billable flag | client; schedule '' (from Admin > SLA) or minutes Mon..Sun;
  *   ot_day / ot_week minutes (0 = off); auto_lost 1/0; auto_lost_paid 1/0 (unaccounted time is
- *   unpaid unless this is on).
+ *   unpaid unless this is on); break_minutes / break_per - paid breaks, break_minutes for every break_per
+ *   minutes worked (0 = off; a person can have their own - mitTsBreakRule).
  */
 function mitTsSettings() {
     static $settings = null;
     if ($settings === null) {
         $defaults = ['week_start' => 1, 'approval' => 1, 'future' => 'all', 'autolock_days' => 0, 'remind_due' => 0, 'remind_late_days' => 0,
             'format' => 'decimal', 'rounding' => 0, 'ticket_time' => 1, 'ticket_internal' => 1, 'billable' => 'flag', 'schedule' => '',
-            'ot_day' => 0, 'ot_week' => 0, 'auto_lost' => 0, 'auto_lost_paid' => 0];
+            'ot_day' => 0, 'ot_week' => 0, 'auto_lost' => 0, 'auto_lost_paid' => 0, 'break_minutes' => 0, 'break_per' => 240];
         $settings = [];
         foreach ($defaults as $key => $default) {
             $value = mitSetting("ts_$key", $default);
@@ -189,7 +195,25 @@ function mitTsPerson($user_id) {
         'approver_id' => intval($row['approver_id'] ?? 0),
         'employee_id' => (string) ($row['employee_id'] ?? ''),
         'pay_type' => isset(MIT_TS_PAY_TYPES[$row['pay_type'] ?? '']) ? $row['pay_type'] : 'hourly',
+        // Their own paid-break rule (M016) - null = the company's
+        'break_minutes' => isset($row['break_minutes']) ? intval($row['break_minutes']) : null,
+        'break_per' => isset($row['break_per']) ? intval($row['break_per']) : null,
     ];
+}
+
+/** A person's paid-break rule: [minutes, for every so many minutes worked] - their own, else the company's. [0, x] = none. */
+function mitTsBreakRule($user_id) {
+    $person = mitTsPerson($user_id);
+    $settings = mitTsSettings();
+    $minutes = $person['break_minutes'] ?? $settings['break_minutes'];
+    $per = $person['break_per'] ?? $settings['break_per'];
+    return [max(0, intval($minutes)), max(30, intval($per))];
+}
+
+/** Paid break minutes earned by a day's worked minutes under a rule, e.g. 15 for every 240 -> 30 for 8 hours. */
+function mitTsBreakFor($worked, array $rule) {
+    [$minutes, $per] = $rule;
+    return $minutes > 0 && $worked > 0 ? intdiv(intval($worked), $per) * $minutes : 0;
 }
 
 /** Does this person keep a timesheet? (People tab - on unless turned off; M015.) */
@@ -205,6 +229,20 @@ function mitTsKeepsColumn() {
     if ($ready === null) {
         try {
             $ready = mysqli_num_rows(mysqli_query($mysqli, "SHOW COLUMNS FROM mit_timesheet_people LIKE 'keeps_timesheet'")) === 1;
+        } catch (Throwable $e) {
+            $ready = false;
+        }
+    }
+    return $ready;
+}
+
+/** Has database update M016 added the per-person break columns yet? */
+function mitTsBreakColumns() {
+    global $mysqli;
+    static $ready = null;
+    if ($ready === null) {
+        try {
+            $ready = mysqli_num_rows(mysqli_query($mysqli, "SHOW COLUMNS FROM mit_timesheet_people LIKE 'break_per'")) === 1;
         } catch (Throwable $e) {
             $ready = false;
         }
@@ -655,11 +693,12 @@ function mitTsTicketMinutes(array $user_ids, $from, $to) {
         $lost_stored = mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM mit_time_entries WHERE user_id = $u AND source = 'auto_lost'
             AND entry_date BETWEEN '" . escapeSql($sheet['period_start']) . "' AND '" . escapeSql($sheet['period_end']) . "' LIMIT 1")) > 0;
         foreach (mitTsDates(['start' => max($from, $sheet['period_start']), 'end' => min($to, $sheet['period_end'])]) as $date) {
-            $minutes[$u][$date] = ['billable' => 0, 'other' => 0, 'approved' => true] + ($lost_stored ? ['auto_lost' => 0] : []);
+            // Paid breaks: as stored on approval - none for periods approved before they existed
+            $minutes[$u][$date] = ['billable' => 0, 'other' => 0, 'break_paid' => 0, 'approved' => true] + ($lost_stored ? ['auto_lost' => 0] : []);
         }
-        $stored = mysqli_query($mysqli, "SELECT entry_date, source, minutes FROM mit_time_entries WHERE user_id = $u AND source IN ('ticket_billable', 'ticket_other', 'auto_lost')
+        $stored = mysqli_query($mysqli, "SELECT entry_date, source, minutes FROM mit_time_entries WHERE user_id = $u AND source IN ('ticket_billable', 'ticket_other', 'auto_lost', 'break_paid')
             AND entry_date BETWEEN '" . escapeSql(max($from, $sheet['period_start'])) . "' AND '" . escapeSql(min($to, $sheet['period_end'])) . "'");
-        $keys = ['ticket_billable' => 'billable', 'ticket_other' => 'other', 'auto_lost' => 'auto_lost'];
+        $keys = ['ticket_billable' => 'billable', 'ticket_other' => 'other', 'auto_lost' => 'auto_lost', 'break_paid' => 'break_paid'];
         while ($row = mysqli_fetch_assoc($stored)) {
             $minutes[$u][$row['entry_date']][$keys[$row['source']]] = intval($row['minutes']);
         }
@@ -680,12 +719,14 @@ function mitTsDays(array $user_ids, $from, $to) {
     $auto = mitTsSettings()['auto_lost'];
     $auto_paid = mitTsSettings()['auto_lost_paid'];
     $today = date('Y-m-d');
-    $blank = ['billable' => 0, 'other' => 0, 'work' => 0, 'lost' => 0, 'auto_lost' => 0, 'leave_paid' => 0, 'leave_unpaid' => 0, 'unpaid_work' => 0, 'codes' => []];
+    $blank = ['billable' => 0, 'other' => 0, 'work' => 0, 'lost' => 0, 'auto_lost' => 0, 'leave_paid' => 0, 'leave_unpaid' => 0, 'unpaid_work' => 0,
+        'break' => 0, 'break_code_paid' => 0, 'break_paid' => 0, 'codes' => []];
     $days = [];
     foreach ($user_ids as $user_id) {
         $user_id = intval($user_id);
         $days[$user_id] = [];
         $started = mitTsStartDate($user_id);
+        $break_rule = mitTsBreakRule($user_id);
         foreach (mitTsDates(['start' => $from, 'end' => $to]) as $date) {
             $d = $blank;
             $d['billable'] = $tickets[$user_id][$date]['billable'] ?? 0;
@@ -696,6 +737,11 @@ function mitTsDays(array $user_ids, $from, $to) {
                 $d['codes'][$code_id] = $m;
                 if ($code['code_kind'] === 'leave') {
                     $d[intval($code['code_paid']) ? 'leave_paid' : 'leave_unpaid'] += $m;
+                } elseif ($code['code_kind'] === 'break') {
+                    $d['break'] += $m;
+                    if (intval($code['code_paid'])) {
+                        $d['break_code_paid'] += $m;
+                    }
                 } else {
                     $d[$code['code_kind'] === 'lost' ? 'lost' : 'work'] += $m;
                     if (!intval($code['code_paid'])) {
@@ -703,10 +749,17 @@ function mitTsDays(array $user_ids, $from, $to) {
                     }
                 }
             }
+            // Paid breaks for the hours worked that day (as stored, on an approved period)
+            if (isset($tickets[$user_id][$date]['break_paid'])) {
+                $d['break_paid'] = $tickets[$user_id][$date]['break_paid'];
+            } else {
+                $d['break_paid'] = mitTsBreakFor($d['billable'] + $d['other'] + $d['work'] + $d['lost'] - $d['unpaid_work'], $break_rule);
+            }
             if (isset($tickets[$user_id][$date]['auto_lost'])) {
                 $d['auto_lost'] = $tickets[$user_id][$date]['auto_lost'];
             } elseif ($auto && $date < $today && $date >= $started) {
-                $accounted = $d['billable'] + $d['other'] + $d['work'] + $d['lost'] + $d['leave_paid'] + $d['leave_unpaid'];
+                // Lunch and breaks are accounted for - they are not lost time
+                $accounted = $d['billable'] + $d['other'] + $d['work'] + $d['lost'] + $d['leave_paid'] + $d['leave_unpaid'] + $d['break'] + $d['break_paid'];
                 $d['auto_lost'] = max(0, mitTsExpected($user_id, $date) - $accounted);
             }
             $d['lost'] += $d['auto_lost'];
@@ -719,14 +772,16 @@ function mitTsDays(array $user_ids, $from, $to) {
     return $days;
 }
 
-/** Hours worked that are paid, for a day from mitTsDays(). */
+/** Hours worked that are paid, for a day from mitTsDays() - paid breaks count (short breaks are work time for overtime). */
 function mitTsDayWorked(array $d) {
-    return $d['billable'] + $d['other'] + $d['work'] + $d['lost'] - $d['unpaid_work'];
+    return $d['billable'] + $d['other'] + $d['work'] + $d['lost'] - $d['unpaid_work'] + $d['break_paid'] + $d['break_code_paid'];
 }
 
 /**
  * Totals for people over dates: user_id => ['billable', 'other', 'codes' => [code_id => minutes], 'work', 'lost', 'auto_lost',
- * 'leave_paid', 'unpaid', 'worked', 'leave', 'paid', 'total', 'overtime', 'regular'] - all minutes. Leave is paid and unpaid.
+ * 'leave_paid', 'unpaid', 'worked', 'leave', 'break' (lunch etc. logged), 'break_paid' (paid breaks, automatic and on paid break
+ * codes), 'paid', 'total', 'overtime', 'regular'] - all minutes. Leave is paid and unpaid. Worked (and the billable share) leaves
+ * breaks out; paid hours and the total count paid breaks.
  * Overtime (hourly people, when set): over the daily limit on each day, plus, going through each week day by day,
  * the hours past the weekly limit - so a week that crosses into the next pay period splits its overtime by date.
  */
@@ -737,7 +792,8 @@ function mitTsTotals(array $user_ids, $from, $to) {
     $totals = [];
     foreach ($user_ids as $user_id) {
         $user_id = intval($user_id);
-        $t = ['billable' => 0, 'other' => 0, 'codes' => [], 'work' => 0, 'lost' => 0, 'auto_lost' => 0, 'leave_paid' => 0, 'unpaid' => 0, 'overtime' => 0];
+        $t = ['billable' => 0, 'other' => 0, 'codes' => [], 'work' => 0, 'lost' => 0, 'auto_lost' => 0, 'leave_paid' => 0, 'unpaid' => 0, 'overtime' => 0,
+            'break' => 0, 'break_paid' => 0];
         $leave_unpaid = 0;
         $unpaid_work = 0;
         foreach ($all_days[$user_id] as $date => $d) {
@@ -752,12 +808,14 @@ function mitTsTotals(array $user_ids, $from, $to) {
             }
             $leave_unpaid += $d['leave_unpaid'];
             $unpaid_work += $d['unpaid_work'];
+            $t['break'] += $d['break'];
+            $t['break_paid'] += $d['break_paid'] + $d['break_code_paid'];
         }
         $t['unpaid'] = $leave_unpaid + $unpaid_work;
         $t['worked'] = $t['billable'] + $t['other'] + $t['work'] + $t['lost'];
         $t['leave'] = $t['leave_paid'] + $leave_unpaid;
-        $t['paid'] = $t['worked'] - $unpaid_work + $t['leave_paid'];
-        $t['total'] = $t['worked'] + $t['leave'];
+        $t['paid'] = $t['worked'] - $unpaid_work + $t['leave_paid'] + $t['break_paid'];
+        $t['total'] = $t['worked'] + $t['leave'] + $t['break_paid'];
 
         if (($settings['ot_day'] || $settings['ot_week']) && mitTsPerson($user_id)['pay_type'] === 'hourly') {
             $week_regular = [];  // week start => regular minutes so far that week
@@ -1062,16 +1120,20 @@ function mitTsWithdraw(array $sheet) {
 }
 
 /**
- * Copy the period's ticket time and unaccounted time in as entries (on approval, before the status
- * changes - so both are still worked out live), replacing any copied before.
+ * Copy the period's ticket time, unaccounted time and paid breaks in as entries (on approval, before the
+ * status changes - so they are still worked out live), replacing any copied before.
  */
 function mitTsSnapshotTickets($user_id, array $period) {
     global $mysqli, $session_user_id;
     $user_id = intval($user_id);
     $days = mitTsDays([$user_id], $period['start'], $period['end'])[$user_id] ?? [];
-    mysqli_query($mysqli, "DELETE FROM mit_time_entries WHERE user_id = $user_id AND source IN ('ticket_billable', 'ticket_other', 'auto_lost')
+    mysqli_query($mysqli, "DELETE FROM mit_time_entries WHERE user_id = $user_id AND source IN ('ticket_billable', 'ticket_other', 'auto_lost', 'break_paid')
         AND entry_date BETWEEN '" . escapeSql($period['start']) . "' AND '" . escapeSql($period['end']) . "'");
     foreach ($days as $date => $d) {
+        if ($d['break_paid'] > 0) {
+            mysqli_query($mysqli, "INSERT INTO mit_time_entries SET user_id = $user_id, entry_date = '" . escapeSql($date) . "', code_id = 0, source = 'break_paid',
+                minutes = " . intval($d['break_paid']) . ", updated_by = " . intval($session_user_id));
+        }
         // Every day with some, and the first day always (a 0 there marks the period as stored - see mitTsTicketMinutes)
         if ($d['auto_lost'] > 0 || $date === $period['start']) {
             mysqli_query($mysqli, "INSERT INTO mit_time_entries SET user_id = $user_id, entry_date = '" . escapeSql($date) . "', code_id = 0, source = 'auto_lost',
@@ -1125,7 +1187,7 @@ function mitTsReopen(array $sheet, array $period) {
     if ($sheet['status'] !== 'approved') {
         return [false, 'Only an approved timesheet can be reopened.'];
     }
-    mysqli_query($mysqli, "DELETE FROM mit_time_entries WHERE user_id = " . intval($sheet['user_id']) . " AND source IN ('ticket_billable', 'ticket_other', 'auto_lost')
+    mysqli_query($mysqli, "DELETE FROM mit_time_entries WHERE user_id = " . intval($sheet['user_id']) . " AND source IN ('ticket_billable', 'ticket_other', 'auto_lost', 'break_paid')
         AND entry_date BETWEEN '" . escapeSql($period['start']) . "' AND '" . escapeSql($period['end']) . "'");
     mysqli_query($mysqli, "UPDATE mit_timesheets SET status = 'open', submitted_at = NULL, decided_by = 0, decided_at = NULL, decision_note = NULL WHERE sheet_id = " . intval($sheet['sheet_id']));
     mitLeaveUnaccruePeriod($sheet['user_id'], $period);

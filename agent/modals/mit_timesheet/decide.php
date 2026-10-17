@@ -41,7 +41,7 @@ ob_start();
         <p class="mb-2"><?= escapeHtml($period['label']) ?> · <?= mitTsBadge($sheet['status']) ?></p>
         <p class="small text-muted">
             <?= mitTsHours($t['total'], false) ?> hours: <?= mitTsHours($t['billable'], false) ?> billable, <?= mitTsHours($t['other'], false) ?> other ticket time,
-            <?= mitTsHours($t['work'], false) ?> admin &amp; other work, <?= mitTsHours($t['lost'], false) ?> lost, <?= mitTsHours($t['leave_paid'], false) ?> paid leave<?= $t['unpaid'] ? ', ' . mitTsHours($t['unpaid']) . ' unpaid (leave and codes' . ($t['auto_lost'] && !mitTsSettings()['auto_lost_paid'] ? ', unaccounted time' : '') . ')' : '' ?><?= $t['overtime'] ? ', ' . mitTsHours($t['overtime']) . ' overtime' : '' ?>.
+            <?= mitTsHours($t['work'], false) ?> admin &amp; other work, <?= mitTsHours($t['lost'], false) ?> lost, <?= mitTsHours($t['leave_paid'], false) ?> paid leave<?= $t['unpaid'] ? ', ' . mitTsHours($t['unpaid']) . ' unpaid (leave and codes' . ($t['auto_lost'] && !mitTsSettings()['auto_lost_paid'] ? ', unaccounted time' : '') . ')' : '' ?><?= $t['break_paid'] ? ', ' . mitTsHours($t['break_paid']) . ' paid breaks' : '' ?><?= $t['overtime'] ? ', ' . mitTsHours($t['overtime']) . ' overtime' : '' ?>.
         </p>
         <?php if ($decision === 'approve' && $sheet['status'] !== 'submitted') { ?>
             <div class="alert alert-warning py-2 small">It has not been submitted - approving locks it as it is now.</div>
@@ -49,7 +49,7 @@ ob_start();
         <label class="form-label"><?= $decision === 'approve' ? 'Note (optional)' : 'Why - they see this on the timesheet' ?></label>
         <input type="text" class="form-control" name="note" maxlength="255" <?= $decision === 'return' ? 'required' : '' ?>>
         <?php if ($decision === 'approve') { ?>
-            <div class="form-text">Approving locks the period and keeps its ticket time and unaccounted time as they are now.</div>
+            <div class="form-text">Approving locks the period and keeps its ticket time, unaccounted time and paid breaks as they are now.</div>
         <?php } ?>
     </div>
     <div class="modal-footer">

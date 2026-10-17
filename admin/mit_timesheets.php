@@ -215,6 +215,24 @@ $company_week = mitTsCompanySchedule();
                     </div>
                 </div>
 
+                <h6 class="text-muted text-uppercase small mb-3">Lunch and breaks</h6>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6">
+                        <label class="form-label">Paid breaks</label>
+                        <div class="input-group">
+                            <input type="number" min="0" max="120" class="form-control" name="break_minutes" value="<?= intval($settings['break_minutes']) ?>" aria-label="Break minutes">
+                            <span class="input-group-text">minutes for every</span>
+                            <input type="text" inputmode="decimal" class="form-control" name="break_per" value="<?= $hours($settings['break_per']) ?>" aria-label="Hours worked">
+                            <span class="input-group-text">h worked</span>
+                        </div>
+                        <div class="form-text">Nothing to log: added to each day from the hours worked, paid, and counted toward overtime. 0 = off. A person can have their own on the People tab.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Lunch</label>
+                        <div class="form-text mt-0">People log lunch on a charge code of the kind <em>Break / lunch</em> (Charge codes tab) - it counts as accounted for, not as lost time, and is unpaid unless the code is set to paid.</div>
+                    </div>
+                </div>
+
                 <button type="submit" name="mit_ts_settings_save" class="btn btn-primary mb-3"><i class="fas fa-check me-2"></i>Save settings</button>
             </form>
         </div>
