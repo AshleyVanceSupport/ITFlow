@@ -523,9 +523,9 @@ function mitQuoteHeadImage() {
     return mitQuoteSettings()['show_images'] ? '<th style="width:72px">Image</th>' : '';
 }
 
-/** Quote page: the staff-only Our cost / Pricing header cells (not printed). */
+/** Quote page: the staff-only Our cost header cell (cost, and the pricing under it - not printed). */
 function mitQuoteHeadPricing() {
-    return '<th class="text-end d-print-none" style="background:#fff8e1;color:#6b4e00">Our cost</th><th class="d-print-none" style="background:#fff8e1;color:#6b4e00">Pricing</th>';
+    return '<th class="d-print-none" style="background:#fff8e1;color:#6b4e00">Our cost</th>';
 }
 
 function mitQuoteThumb($relative, $size = 56) {
@@ -561,12 +561,12 @@ function mitPricingBadge($cost, $method, $percent, $price) {
     return $badge . '<div class="small ' . ($margin < 0 ? 'text-danger' : 'text-body-secondary') . '">' . $other . '</div>';
 }
 
-/** Quote page: a line's staff-only cost and pricing cells. */
+/** Quote page: a line's staff-only cell - our cost, with the pricing under it. */
 function mitQuoteCellPricing($quote_id, $item_id, $currency_format, $currency_code) {
     $extra = mitQuoteItemExtra($quote_id, $item_id);
     $cost = $extra['item_cost'] ?? null;
-    return '<td class="text-end d-print-none" style="background:#fffcf2">' . ($cost === null ? '<span class="text-body-secondary">-</span>' : numfmt_format_currency($currency_format, (float) $cost, $currency_code)) . '</td>'
-        . '<td class="d-print-none" style="background:#fffcf2">' . mitPricingBadge($cost, $extra['item_price_method'] ?? '', $extra['item_price_percent'] ?? '', $extra['item_price'] ?? 0) . '</td>';
+    return '<td class="d-print-none" style="background:#fffcf2">' . ($cost === null ? '<span class="text-body-secondary">-</span>' : numfmt_format_currency($currency_format, (float) $cost, $currency_code))
+        . '<div>' . mitPricingBadge($cost, $extra['item_price_method'] ?? '', $extra['item_price_percent'] ?? '', $extra['item_price'] ?? 0) . '</div></td>';
 }
 
 /**
@@ -592,16 +592,20 @@ function mitQuoteAddCellImage() {
         . '</div></div></td>';
 }
 
-/** Quote page add-item row: our cost and pricing cells, wired to the row's price field. */
+/** Quote page add-item row: our cost with the pricing under it, wired to the row's price field. */
 function mitQuoteAddCellPricing() {
     $settings = mitQuoteSettings();
-    $html = '<td class="d-print-none" style="background:#fffcf2"><input type="text" class="form-control text-end" inputmode="decimal" name="item_cost" placeholder="Our cost" data-mit-cost data-mit-price-field="price"></td>'
-        . '<td class="d-print-none" style="background:#fffcf2"><select class="form-select mb-1" name="item_price_method" data-mit-method>';
+    $html = '<td class="d-print-none" style="background:#fffcf2;min-width:150px"><input type="text" class="form-control text-end mb-1" inputmode="decimal" name="item_cost" placeholder="Our cost" data-mit-cost data-mit-price-field="price">'
+        . '<div class="input-group flex-nowrap"><select class="form-select" style="padding-left:.5rem;padding-right:1.5rem;background-position:right .35rem center" name="item_price_method" data-mit-method>';
     foreach (MIT_PRICE_METHODS as $value => $label) {
         $html .= '<option value="' . $value . '"' . ($value === $settings['method'] ? ' selected' : '') . '>' . $label . '</option>';
     }
-    return $html . '</select><input type="text" class="form-control text-end" inputmode="decimal" name="item_price_percent" value="' . escapeHtml(rtrim(rtrim(number_format($settings['percent'], 2, '.', ''), '0'), '.')) . '" placeholder="%" data-mit-pct>'
-        . '<div class="small text-body-secondary" data-mit-hint></div>'
+    return $html . '</select><input type="text" class="form-control text-end" style="max-width:52px" inputmode="decimal" name="item_price_percent" value="' . escapeHtml(rtrim(rtrim(number_format($settings['percent'], 2, '.', ''), '0'), '.')) . '" placeholder="%" title="%" data-mit-pct></div>'
+        . '<div class="small text-body-secondary" data-mit-hint data-mit-quiet></div>'
+        // The extra columns would squeeze the row's own fields to nothing on a narrower screen - keep
+        // them usable (the table scrolls sideways instead)
+        . '<style>tr:has([data-mit-cost]) #name{min-width:100px}tr:has([data-mit-cost]) #desc{min-width:100px}'
+        . 'tr:has([data-mit-cost]) #qty{min-width:60px}tr:has([data-mit-cost]) #price{min-width:80px}tr:has([data-mit-cost]) #tax{min-width:90px}</style>'
         . '<script>window.mitProductPricing = ' . mitProductsPricingJson() . ';</script><script src="/js/mit_quote_pricing.js"></script></td>';
 }
 
@@ -629,14 +633,14 @@ function mitQuoteProfitBox($quote_id, $currency_format, $currency_code) {
     $money = function ($n) use ($currency_format, $currency_code) {
         return numfmt_format_currency($currency_format, $n, $currency_code);
     };
-    return '<div class="row mb-3 d-print-none"><div class="col-md-5 col-lg-4 ms-auto"><div class="border rounded p-3" style="background:#fffcf2;border-color:#f3e3b0!important">'
+    return '<div class="border rounded p-3 mt-3 small d-print-none" style="background:#fffcf2;border-color:#f3e3b0!important">'
         . '<div class="small fw-bold mb-2" style="color:#6b4e00;letter-spacing:.04em">PROFIT - ONLY STAFF SEE THIS</div>'
         . '<div class="d-flex justify-content-between"><span>Our cost</span><span>' . $money($cost) . '</span></div>'
-        . '<div class="d-flex justify-content-between"><span>Customer subtotal</span><span>' . $money($priced) . '</span></div>'
+        . '<div class="d-flex justify-content-between"><span>Customer price</span><span>' . $money($priced) . '</span></div>'
         . '<div class="d-flex justify-content-between fw-bold border-top mt-1 pt-1 ' . ($profit < 0 ? 'text-danger' : 'text-success-emphasis') . '"><span>Profit</span><span>' . $money($profit) . '</span></div>'
         . '<div class="d-flex justify-content-between ' . ($profit < 0 ? 'text-danger' : 'text-success-emphasis') . '"><span>Margin</span><span>' . number_format($profit / $priced * 100, 1) . '%</span></div>'
         . ($missing ? '<div class="small text-body-secondary mt-1">' . $missing . ' line' . ($missing === 1 ? ' has' : 's have') . ' no cost entered - counted as all profit.</div>' : '')
-        . '</div></div></div>';
+        . '</div>';
 }
 
 /*

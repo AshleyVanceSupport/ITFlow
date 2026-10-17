@@ -455,8 +455,6 @@ if (isset($_GET['quote_id'])) {
                 </div>
             </div>
 
-            <?= mitQuoteProfitBox($quote_id, $currency_format, $quote_currency_code) // Mountaineer IT: staff only, not printed ?>
-
             <div class="row mb-3">
                 <div class="col-sm-7">
                     <div class="card">
@@ -508,6 +506,8 @@ if (isset($_GET['quote_id'])) {
                             </tr>
                         </tbody>
                     </table>
+
+                    <?= mitQuoteProfitBox($quote_id, $currency_format, $quote_currency_code) // Mountaineer IT: staff only, not printed ?>
 
                 </div>
             </div>

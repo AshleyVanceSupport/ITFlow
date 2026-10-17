@@ -76,7 +76,7 @@
         }
         var p = num(g.price.value);
         if (cost === null || cost <= 0 || p === null || p <= 0) {
-            g.hint.textContent = cost === null && !setPrice ? 'Enter our cost to work the price out.' : '';
+            g.hint.textContent = cost === null && !setPrice && !g.hint.hasAttribute('data-mit-quiet') ? 'Enter our cost to work the price out.' : '';
             return;
         }
         var profit = p - cost;
