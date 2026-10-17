@@ -7,24 +7,33 @@
 
 require_once "includes/inc_all.php";
 
-enforceUserPermission('module_timesheets');
+if (!mitTsReady() || (mitTsLevel() < 1 && !mitTsMyReports())) {
+    enforceUserPermission('module_timesheets');
+}
 
-$level = mitTsLevel();
+$settings = mitTsSettings();
+$approval = $settings['approval'];
+$overtime = $settings['ot_day'] || $settings['ot_week'];
 $period = mitTsPeriodFromRequest($_GET['start'] ?? '');
-$people = mitTsUsers();
+$people = mitTsVisibleUsers();
 $sheets = mitTsSheets(array_keys($people), $period);
 $totals = mitTsTotals(array_keys($people), $period['start'], $period['end']);
 $prev = mitTsPeriodShift($period, -1);
 $next = mitTsPeriodShift($period, 1);
-$sum = ['billable' => 0, 'other' => 0, 'work' => 0, 'lost' => 0, 'leave_paid' => 0, 'unpaid' => 0, 'worked' => 0, 'leave' => 0, 'total' => 0];
+$sum = ['billable' => 0, 'other' => 0, 'work' => 0, 'lost' => 0, 'leave_paid' => 0, 'unpaid' => 0, 'worked' => 0, 'leave' => 0, 'total' => 0, 'overtime' => 0];
 foreach ($totals as $t) {
     foreach ($sum as $key => $value) {
         $sum[$key] += $t[$key];
     }
 }
-$waiting = count(array_filter($sheets, function ($sheet) {
+$waiting = $approval ? count(array_filter($sheets, function ($sheet) {
     return $sheet['status'] === 'submitted';
-}));
+})) : 0;
+$can_approve = [];
+foreach ($people as $user_id => $person) {
+    $can_approve[$user_id] = $approval && mitTsMayApprove($user_id) && ($user_id !== intval($session_user_id) || mitTsLevel() >= 3);
+}
+$bulk = in_array(true, $can_approve, true);
 
 ?>
 
@@ -49,7 +58,7 @@ $waiting = count(array_filter($sheets, function ($sheet) {
                 <table class="table table-hover align-middle mb-0">
                     <thead class="text-nowrap small">
                         <tr>
-                            <?php if ($level >= 3) { ?><th style="width: 36px"></th><?php } ?>
+                            <?php if ($bulk) { ?><th style="width: 36px"></th><?php } ?>
                             <th>Person</th>
                             <th class="text-end">Billable</th>
                             <th class="text-end">Other tickets</th>
@@ -57,8 +66,9 @@ $waiting = count(array_filter($sheets, function ($sheet) {
                             <th class="text-end">Lost</th>
                             <th class="text-end">Leave</th>
                             <th class="text-end">Total</th>
+                            <?php if ($overtime) { ?><th class="text-end">Overtime</th><?php } ?>
                             <th class="text-end">Billable %</th>
-                            <th>Status</th>
+                            <?php if ($approval) { ?><th>Status</th><?php } ?>
                         </tr>
                     </thead>
                     <tbody>
@@ -66,8 +76,8 @@ $waiting = count(array_filter($sheets, function ($sheet) {
                             $t = $totals[$user_id];
                             $status = $sheets[$user_id]['status'] ?? 'open'; ?>
                             <tr>
-                                <?php if ($level >= 3) { ?>
-                                    <td><input class="form-check-input" type="checkbox" name="user_ids[]" value="<?= intval($user_id) ?>" <?= $status === 'submitted' ? '' : 'disabled' ?> aria-label="Approve <?= escapeHtml($person['user_name']) ?>"></td>
+                                <?php if ($bulk) { ?>
+                                    <td><input class="form-check-input" type="checkbox" name="user_ids[]" value="<?= intval($user_id) ?>" <?= $status === 'submitted' && $can_approve[$user_id] ? '' : 'disabled' ?> aria-label="Approve <?= escapeHtml($person['user_name']) ?>"></td>
                                 <?php } ?>
                                 <td><a href="mit_timesheet.php?user_id=<?= intval($user_id) ?>&start=<?= $period['start'] ?>"><?= escapeHtml($person['user_name']) ?></a></td>
                                 <td class="text-end"><?= mitTsHours($t['billable'], false) ?></td>
@@ -76,14 +86,15 @@ $waiting = count(array_filter($sheets, function ($sheet) {
                                 <td class="text-end <?= $t['lost'] ? 'text-danger' : '' ?>"><?= mitTsHours($t['lost'], false) ?></td>
                                 <td class="text-end"><?= mitTsHours($t['leave'], false) ?></td>
                                 <td class="text-end fw-semibold"><?= mitTsHours($t['total'], false) ?></td>
+                                <?php if ($overtime) { ?><td class="text-end"><?= mitTsHours($t['overtime'], false) ?></td><?php } ?>
                                 <td class="text-end"><?= mitTsBillableShare($t) ?></td>
-                                <td><?= mitTsBadge($status) ?></td>
+                                <?php if ($approval) { ?><td><?= mitTsBadge($status) ?></td><?php } ?>
                             </tr>
                         <?php } ?>
                     </tbody>
                 </table>
             </div>
-            <?php if ($level >= 3 && $waiting) { ?>
+            <?php if ($bulk && $waiting) { ?>
                 <div class="d-flex mt-3">
                     <button type="submit" name="mit_ts_bulk_approve" class="btn btn-success ms-auto"><i class="fas fa-check-double me-2"></i>Approve ticked</button>
                 </div>

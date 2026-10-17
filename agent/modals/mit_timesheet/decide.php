@@ -6,10 +6,10 @@
 
 require_once '../../../includes/modal_header.php';
 
-if (!mitTsReady() || mitTsLevel() < 3) {
-    exit('<div class="modal-body">Approving timesheets needs Full Timesheets access.</div>');
-}
 $user_id = intval($_GET['user_id'] ?? 0);
+if (!mitTsReady() || !mitTsMayApprove($user_id) || ($user_id === intval($session_user_id) && mitTsLevel() < 3)) {
+    exit('<div class="modal-body">You cannot approve that timesheet.</div>');
+}
 $period = mitTsPeriodFromRequest($_GET['start'] ?? '');
 $decision = ($_GET['decision'] ?? '') === 'return' ? 'return' : 'approve';
 $person = mitTsUsers([$user_id])[$user_id] ?? null;
@@ -36,7 +36,7 @@ ob_start();
         <p class="mb-2"><?= escapeHtml($period['label']) ?> · <?= mitTsBadge($sheet['status']) ?></p>
         <p class="small text-muted">
             <?= mitTsHours($t['total'], false) ?> hours: <?= mitTsHours($t['billable'], false) ?> billable, <?= mitTsHours($t['other'], false) ?> other ticket time,
-            <?= mitTsHours($t['work'], false) ?> admin &amp; other work, <?= mitTsHours($t['lost'], false) ?> lost, <?= mitTsHours($t['leave_paid'], false) ?> paid leave<?= $t['unpaid'] ? ', ' . mitTsHours($t['unpaid']) . ' unpaid' : '' ?>.
+            <?= mitTsHours($t['work'], false) ?> admin &amp; other work, <?= mitTsHours($t['lost'], false) ?> lost, <?= mitTsHours($t['leave_paid'], false) ?> paid leave<?= $t['unpaid'] ? ', ' . mitTsHours($t['unpaid']) . ' unpaid' : '' ?><?= $t['overtime'] ? ', ' . mitTsHours($t['overtime']) . ' overtime' : '' ?>.
         </p>
         <?php if ($decision === 'approve' && $sheet['status'] !== 'submitted') { ?>
             <div class="alert alert-warning py-2 small">It has not been submitted - approving locks it as it is now.</div>

@@ -23,9 +23,9 @@ if (isset($_POST['mit_ts_save'])) {
         flashAlert(escapeHtml($locked), 'error');
         redirect();
     }
-    [$ok, $message] = mitTsSaveCells($sheet, $period, (array) ($_POST['cells'] ?? []));
+    [$ok, $message] = mitTsSaveCells($sheet, $period, (array) ($_POST['cells'] ?? []), (array) ($_POST['notes'] ?? []));
     if ($ok && $_POST['mit_ts_save'] === 'submit') {
-        if ($user_id !== intval($session_user_id) && mitTsLevel() < 2) {
+        if ($user_id !== intval($session_user_id) && !mitTsMayCorrect($user_id)) {
             [$ok, $message] = [false, 'Only they can submit their timesheet.'];
         } else {
             [$ok, $message] = mitTsSubmit(mitTsSheet($user_id, $period), $period);
@@ -52,11 +52,10 @@ if (isset($_GET['mit_ts_withdraw'])) {
 if (isset($_POST['mit_ts_decide'])) {
 
     validateCSRFToken();
-    enforceUserPermission('module_timesheets', 3);
 
     $user_id = intval($_POST['user_id'] ?? 0);
-    if (!(mitTsUsers([$user_id])[$user_id] ?? null)) {
-        flashAlert('That person does not keep a timesheet.', 'error');
+    if (!(mitTsUsers([$user_id])[$user_id] ?? null) || !mitTsMayApprove($user_id) || ($user_id === intval($session_user_id) && mitTsLevel() < 3)) {
+        flashAlert('You cannot approve that timesheet.', 'error');
         redirect();
     }
     $period = mitTsPeriodFromRequest($_POST['start'] ?? '');
@@ -68,9 +67,12 @@ if (isset($_POST['mit_ts_decide'])) {
 if (isset($_GET['mit_ts_reopen'])) {
 
     validateCSRFToken();
-    enforceUserPermission('module_timesheets', 3);
 
     [$sheet, $period] = mitTsSheetForRequest($_GET['mit_ts_reopen']);
+    if (!mitTsMayApprove($sheet['user_id']) || (intval($sheet['user_id']) === intval($session_user_id) && mitTsLevel() < 3)) {
+        flashAlert('You cannot reopen that timesheet.', 'error');
+        redirect();
+    }
     [$ok, $message] = mitTsReopen($sheet, $period);
     flashAlert(escapeHtml($message), $ok ? 'success' : 'error');
     redirect();
@@ -79,15 +81,14 @@ if (isset($_GET['mit_ts_reopen'])) {
 if (isset($_POST['mit_ts_bulk_approve'])) {
 
     validateCSRFToken();
-    enforceUserPermission('module_timesheets', 3);
 
     $period = mitTsPeriodFromRequest($_POST['start'] ?? '');
-    $people = mitTsUsers();
+    $people = mitTsVisibleUsers();
     $done = 0;
     foreach ((array) ($_POST['user_ids'] ?? []) as $user_id) {
         $user_id = intval($user_id);
         $sheet = mitTsSheet($user_id, $period);
-        if (isset($people[$user_id]) && $sheet['status'] === 'submitted') {
+        if (isset($people[$user_id]) && $sheet['status'] === 'submitted' && mitTsMayApprove($user_id) && ($user_id !== intval($session_user_id) || mitTsLevel() >= 3)) {
             [$ok] = mitTsDecide($sheet, $period, 'approve');
             $done += $ok ? 1 : 0;
         }

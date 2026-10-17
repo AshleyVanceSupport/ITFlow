@@ -1,7 +1,7 @@
 <?php
 
 /*
- * Mountaineer IT - add or change a charge code (admin/mit_charge_codes.php).
+ * Mountaineer IT - add or change a charge code (admin/mit_timesheets.php?tab=codes).
  */
 
 require_once '../../includes/modal_header.php';
@@ -11,7 +11,9 @@ $code = $code_id ? (mitTsCodes(true)[$code_id] ?? null) : null;
 if ($code_id && !$code) {
     exit('<div class="modal-body">That charge code does not exist.</div>');
 }
-$code = $code ?: ['code_name' => '', 'code_kind' => 'work', 'code_paid' => 1, 'code_color' => '#0d6efd'];
+$code = $code ?: ['code_name' => '', 'code_kind' => 'work', 'code_paid' => 1, 'code_color' => '#0d6efd', 'code_roles' => '', 'code_note_required' => 0, 'code_daily_max' => null, 'code_closure_fill' => 0];
+$code_roles = array_filter(array_map('intval', explode(',', (string) ($code['code_roles'] ?? ''))));
+$roles = mysqli_fetch_all(mysqli_query($mysqli, "SELECT role_id, role_name FROM user_roles WHERE role_archived_at IS NULL ORDER BY role_name"), MYSQLI_ASSOC);
 
 ob_start();
 
@@ -44,9 +46,40 @@ ob_start();
                 <input type="color" class="form-control form-control-color" name="color" value="<?= escapeHtml(preg_match('/^#[0-9a-f]{6}$/i', (string) $code['code_color']) ? $code['code_color'] : '#6c757d') ?>">
             </div>
         </div>
-        <div class="form-check">
+        <div class="form-check mb-3">
             <input class="form-check-input" type="checkbox" name="paid" value="1" id="mitCodePaid" <?= intval($code['code_paid']) ? 'checked' : '' ?>>
             <label class="form-check-label" for="mitCodePaid">Paid - counts toward paid hours for payroll</label>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Who can use it</label>
+            <div class="d-flex flex-wrap gap-3">
+                <?php foreach ($roles as $role) { ?>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="roles[]" value="<?= intval($role['role_id']) ?>" id="mitCodeRole<?= intval($role['role_id']) ?>" <?= in_array(intval($role['role_id']), $code_roles, true) ? 'checked' : '' ?>>
+                        <label class="form-check-label" for="mitCodeRole<?= intval($role['role_id']) ?>"><?= escapeHtml($role['role_name']) ?></label>
+                    </div>
+                <?php } ?>
+            </div>
+            <div class="form-text">None ticked = everyone.</div>
+        </div>
+        <div class="row g-3">
+            <div class="col-sm-6">
+                <label class="form-label">At most a day</label>
+                <div class="input-group">
+                    <input type="text" inputmode="decimal" class="form-control" name="daily_max" value="<?= intval($code['code_daily_max']) ? mitTsHours($code['code_daily_max'], true, 'decimal') : '' ?>" placeholder="no limit">
+                    <span class="input-group-text">hours</span>
+                </div>
+            </div>
+            <div class="col-sm-6">
+                <div class="form-check mt-sm-4">
+                    <input class="form-check-input" type="checkbox" name="note_required" value="1" id="mitCodeNote" <?= intval($code['code_note_required']) ? 'checked' : '' ?>>
+                    <label class="form-check-label" for="mitCodeNote">Needs a note (e.g. why time was lost)</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="closure_fill" value="1" id="mitCodeClosure" <?= intval($code['code_closure_fill']) ? 'checked' : '' ?>>
+                    <label class="form-check-label" for="mitCodeClosure">Fill in closure days (Admin > SLA) with each person's normal hours</label>
+                </div>
+            </div>
         </div>
     </div>
     <div class="modal-footer">

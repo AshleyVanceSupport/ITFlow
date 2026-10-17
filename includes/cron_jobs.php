@@ -129,6 +129,15 @@ function cronJobRegistry(): array
             'schedule' => 'Interval',
             'interval_minutes' => 1,
         ],
+        [
+            // Mountaineer IT (functions/mit_timesheets.php)
+            'name' => 'mit_timesheet_reminders',
+            'label' => 'Timesheet Reminders',
+            'script' => 'mit_timesheet_reminders.php',
+            'description' => 'Reminds people to fill in and submit their timesheets, as set in Admin > Timesheets.',
+            'schedule' => 'Interval',
+            'interval_minutes' => 60,
+        ],
     ];
 }
 

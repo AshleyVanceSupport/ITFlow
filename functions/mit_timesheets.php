@@ -1,10 +1,13 @@
 <?php
 
 /*
- * Mountaineer IT - timesheets (database update M012).
+ * Mountaineer IT - timesheets (database updates M012, M013).
  *
  * Every agent keeps a timesheet per pay period (semi-monthly by default - 1st to 15th, 16th to the
- * end; Admin > Charge codes can change it). A day's hours are:
+ * end). Everything is set in Admin > Timesheets (admin/mit_timesheets.php): company settings in
+ * mit_settings (ts_*, mitTsSettings), charge codes, and each person's schedule, approver, employee ID
+ * and pay type (mit_timesheet_people); personal choices in mit_user_preferences (timesheet.*).
+ * A day's hours are:
  *   - ticket time, filled in on its own from the time logged on ticket replies that day - billable
  *     when the ticket is billable, the rest "other ticket time";
  *   - hours put against charge codes (mit_charge_codes): work (Admin, Training ...), lost time, and
@@ -16,13 +19,19 @@
  * Permission module_timesheets: anyone can keep their own; View 1 sees everyone's and the payroll
  * report (agent/reports/mit_payroll.php), Edit 2 corrects them, Full 3 approves. Admins are Full.
  *
+ * A person's own approver (People tab) can see and approve their timesheets too.
+ * Optional: overtime over a day / week, unaccounted hours as lost time, reminders (cron job
+ * mit_timesheet_reminders), notes on hours (required on some codes), codes for some roles only.
+ *
  * Pages: agent/mit_timesheet.php (one person's period), agent/mit_timesheets.php (everyone, one
  * period), agent/modals/mit_timesheet/day.php (a day's tickets), handlers agent/post/mit_timesheets.php,
- * side menu agent/includes/mit_timesheet_nav.php, Admin > Charge codes (admin/mit_charge_codes.php).
+ * side menu agent/includes/mit_timesheet_nav.php, Admin > Timesheets (admin/mit_timesheets.php).
  */
 
 const MIT_TS_KINDS = ['work' => 'Work', 'lost' => 'Lost time', 'leave' => 'Leave'];
 const MIT_TS_PERIODS = ['semi_monthly' => 'Semi-monthly (1st-15th, 16th-end)', 'monthly' => 'Monthly', 'biweekly' => 'Every two weeks', 'weekly' => 'Weekly'];
+const MIT_TS_PAY_TYPES = ['hourly' => 'Hourly', 'salary' => 'Salaried (no overtime)'];
+const MIT_TS_WEEKDAYS = [1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat', 7 => 'Sun'];
 const MIT_TS_STATUSES = [
     'open' => ['Open', 'text-bg-light border'],
     'submitted' => ['Submitted', 'text-bg-warning'],
@@ -58,6 +67,136 @@ function mitTsReportEntry() {
 }
 
 /*
+ * ---------- settings ----------
+ */
+
+/**
+ * The company's timesheet settings, with today's behaviour as the defaults:
+ *   week_start 1 (Mon) | 7 (Sun); approval 1/0; future all | leave | none (days after today);
+ *   autolock_days (0 = never - otherwise a period locks that many days after it ends);
+ *   remind_due 1/0 (on a period's last day); remind_late_days (0 = off); format decimal | hm;
+ *   rounding 0 | 6 | 15 | 30 (ticket time per day); ticket_time 1/0; ticket_internal 1/0 (internal
+ *   notes' time counts); billable flag | client; schedule '' (from Admin > SLA) or minutes Mon..Sun;
+ *   ot_day / ot_week minutes (0 = off); auto_lost 1/0.
+ */
+function mitTsSettings() {
+    static $settings = null;
+    if ($settings === null) {
+        $defaults = ['week_start' => 1, 'approval' => 1, 'future' => 'all', 'autolock_days' => 0, 'remind_due' => 0, 'remind_late_days' => 0,
+            'format' => 'decimal', 'rounding' => 0, 'ticket_time' => 1, 'ticket_internal' => 1, 'billable' => 'flag', 'schedule' => '',
+            'ot_day' => 0, 'ot_week' => 0, 'auto_lost' => 0];
+        $settings = [];
+        foreach ($defaults as $key => $default) {
+            $value = mitSetting("ts_$key", $default);
+            $settings[$key] = is_int($default) ? intval($value) : (string) $value;
+        }
+        $settings['week_start'] = $settings['week_start'] === 7 ? 7 : 1;
+        $settings['future'] = in_array($settings['future'], ['all', 'leave', 'none'], true) ? $settings['future'] : 'all';
+        $settings['format'] = $settings['format'] === 'hm' ? 'hm' : 'decimal';
+        $settings['rounding'] = in_array($settings['rounding'], [0, 6, 15, 30], true) ? $settings['rounding'] : 0;
+        $settings['billable'] = $settings['billable'] === 'client' ? 'client' : 'flag';
+        $settings['schedule'] = mitTsScheduleClean($settings['schedule']) ?? '';
+    }
+    return $settings;
+}
+
+/** "480,480,480,480,480,0,0" if it is a valid week of minutes, else null. */
+function mitTsScheduleClean($text) {
+    $parts = explode(',', (string) $text);
+    if (count($parts) !== 7) {
+        return null;
+    }
+    foreach ($parts as $part) {
+        if (!preg_match('/^\d{1,4}$/', trim($part)) || intval($part) > 1440) {
+            return null;
+        }
+    }
+    return implode(',', array_map('intval', $parts));
+}
+
+/** Hours a day from a form's schedule[1..7] - "480,480,..." , '' when all empty, or null when one cannot be read. */
+function mitTsScheduleFromPost($input) {
+    $minutes = [];
+    $any = false;
+    foreach (range(1, 7) as $n) {
+        $text = trim((string) ($input[$n] ?? ''));
+        $any = $any || $text !== '';
+        $m = mitTsParseHours($text);
+        if ($m === null || $m > 1440) {
+            return null;
+        }
+        $minutes[] = $m;
+    }
+    return $any ? implode(',', $minutes) : '';
+}
+
+/** The company's normal week, [1..7 => minutes]: the setting, or the business days and hours in Admin > SLA. */
+function mitTsCompanySchedule() {
+    $schedule = mitTsSettings()['schedule'];
+    if ($schedule !== '') {
+        return array_combine(range(1, 7), array_map('intval', explode(',', $schedule)));
+    }
+    $sla = getSlaSettings();
+    $days = $sla['business_days'] ?: [1, 2, 3, 4, 5];
+    $minutes = (int) round(reportWorkdayHours() * 60);
+    $week = [];
+    foreach (range(1, 7) as $day) {
+        $week[$day] = in_array($day, $days, true) ? $minutes : 0;
+    }
+    return $week;
+}
+
+/** Each person's timesheet details (People tab): user_id => [schedule, approver_id, employee_id, pay_type]. */
+function mitTsPeople() {
+    global $mysqli;
+    static $people = null;
+    if ($people === null) {
+        $people = [];
+        try {
+            $result = mysqli_query($mysqli, "SELECT * FROM mit_timesheet_people");
+            while ($result && $row = mysqli_fetch_assoc($result)) {
+                $people[intval($row['user_id'])] = $row;
+            }
+        } catch (Throwable $e) {
+            // database update M013 not run yet
+        }
+    }
+    return $people;
+}
+
+/** One person's details, with the defaults. */
+function mitTsPerson($user_id) {
+    $row = mitTsPeople()[intval($user_id)] ?? [];
+    return [
+        'schedule' => mitTsScheduleClean($row['schedule'] ?? '') ?? '',
+        'approver_id' => intval($row['approver_id'] ?? 0),
+        'employee_id' => (string) ($row['employee_id'] ?? ''),
+        'pay_type' => isset(MIT_TS_PAY_TYPES[$row['pay_type'] ?? '']) ? $row['pay_type'] : 'hourly',
+    ];
+}
+
+/** A person's normal week, [1..7 => minutes]. */
+function mitTsSchedule($user_id) {
+    $own = mitTsPerson($user_id)['schedule'];
+    return $own !== '' ? array_combine(range(1, 7), array_map('intval', explode(',', $own))) : mitTsCompanySchedule();
+}
+
+/** The minutes a person is expected to work on a date - none on closure days. */
+function mitTsExpected($user_id, $date) {
+    if (mitTsClosure($date) !== '') {
+        return 0;
+    }
+    return mitTsSchedule($user_id)[intval(date('N', strtotime($date)))] ?? 0;
+}
+
+/** The hour format for this person: their choice, else the company's - decimal | hm. */
+function mitTsFormat($user_id = null) {
+    global $session_user_id;
+    $mine = (string) mitUserPreference($user_id ?? $session_user_id, 'timesheet.format', '');
+    return in_array($mine, ['decimal', 'hm'], true) ? $mine : mitTsSettings()['format'];
+}
+
+/*
  * ---------- pay periods ----------
  */
 
@@ -79,9 +218,12 @@ function mitTsPeriodFor($date = null) {
             $end = date('Y-m-t', $time);
             break;
         case 'weekly':
+            $start = mitTsWeekStart(date('Y-m-d', $time));
+            $end = date('Y-m-d', strtotime("$start +6 days"));
+            break;
         case 'biweekly':
-            $length = $type === 'weekly' ? 7 : 14;
-            $anchor_time = strtotime($type === 'weekly' ? 'monday this week' : $anchor, strtotime($anchor));
+            $length = 14;
+            $anchor_time = strtotime($anchor);
             $days = (int) round(($time - $anchor_time) / 86400);
             $offset = (($days % $length) + $length) % $length;
             $start = date('Y-m-d', strtotime("-$offset days", $time));
@@ -124,24 +266,19 @@ function mitTsDates(array $period) {
     return $dates;
 }
 
-/** The period's dates in weeks (Monday to Sunday), for the grid. */
+/** The first day of the week a date is in (weeks start on Monday or Sunday - a setting). */
+function mitTsWeekStart($date) {
+    $offset = (intval(date('N', strtotime($date))) - mitTsSettings()['week_start'] + 7) % 7;
+    return date('Y-m-d', strtotime("$date -$offset days"));
+}
+
+/** The period's dates in weeks, for the grid. */
 function mitTsWeeks(array $period) {
     $weeks = [];
     foreach (mitTsDates($period) as $date) {
-        $weeks[date('o-W', strtotime($date))][] = $date;
+        $weeks[mitTsWeekStart($date)][] = $date;
     }
     return array_values($weeks);
-}
-
-/** Is it a working day - one of the business days set in Admin > SLA, and not a closure day? */
-function mitTsWorkingDay($date) {
-    static $days = null, $holidays = null;
-    if ($days === null) {
-        $settings = getSlaSettings();
-        $days = $settings['business_days'] ?: [1, 2, 3, 4, 5];
-        $holidays = getBusinessHolidays();
-    }
-    return in_array(intval(date('N', strtotime($date))), $days, true) && !isset($holidays[$date]);
 }
 
 /** A closure day's name (Admin > SLA), or ''. */
@@ -153,11 +290,14 @@ function mitTsClosure($date) {
  * ---------- hours ----------
  */
 
-/** Minutes as hours for people: 450 -> "7.5", 0 -> "". */
-function mitTsHours($minutes, $blank_zero = true) {
+/** Minutes as hours for people: 450 -> "7.5" (or "7:30" in the hours-and-minutes format), 0 -> "". */
+function mitTsHours($minutes, $blank_zero = true, $format = null) {
     $minutes = intval($minutes);
     if ($minutes === 0 && $blank_zero) {
         return '';
+    }
+    if (($format ?? mitTsFormat()) === 'hm') {
+        return ($minutes < 0 ? '-' : '') . intdiv(abs($minutes), 60) . ':' . sprintf('%02d', abs($minutes) % 60);
     }
     return rtrim(rtrim(number_format($minutes / 60, 2, '.', ''), '0'), '.');
 }
@@ -204,6 +344,16 @@ function mitTsCodes($with_archived = false) {
     return $cache[$key];
 }
 
+/** The active codes a person may use - all, or those given to their role. */
+function mitTsCodesFor($user_id) {
+    global $mysqli;
+    $role = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT user_role_id FROM users WHERE user_id = " . intval($user_id)))[0] ?? 0);
+    return array_filter(mitTsCodes(), function ($code) use ($role) {
+        $roles = array_filter(array_map('intval', explode(',', (string) ($code['code_roles'] ?? ''))));
+        return !$roles || in_array($role, $roles, true);
+    });
+}
+
 /** A small colour dot for a code. */
 function mitTsCodeDot(array $code) {
     $color = preg_match('/^#[0-9a-f]{3,8}$/i', (string) $code['code_color']) ? $code['code_color'] : '#6c757d';
@@ -233,7 +383,7 @@ function mitTsSheet($user_id, array $period) {
     $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT s.*, u.user_name AS decided_by_name FROM mit_timesheets s LEFT JOIN users u ON u.user_id = s.decided_by
         WHERE s.user_id = " . intval($user_id) . " AND s.period_start = '" . escapeSql($period['start']) . "'"));
     return $row ?: ['sheet_id' => 0, 'user_id' => intval($user_id), 'period_start' => $period['start'], 'period_end' => $period['end'], 'status' => 'open',
-        'submitted_at' => null, 'decided_by' => 0, 'decided_by_name' => null, 'decided_at' => null, 'decision_note' => null];
+        'submitted_at' => null, 'decided_by' => 0, 'decided_by_name' => null, 'decided_at' => null, 'decision_note' => null, 'reminded_due_at' => null, 'reminded_late_at' => null];
 }
 
 /** The stored row, made if it is not there yet. */
@@ -263,26 +413,75 @@ function mitTsBadge($status) {
     return '<span class="badge ' . $class . '">' . $label . '</span>';
 }
 
-/** May the signed-in agent see this person's timesheets? */
+/** The people whose own approver (People tab) is the signed-in agent. */
+function mitTsMyReports() {
+    global $session_user_id;
+    $ids = [];
+    foreach (mitTsPeople() as $user_id => $row) {
+        if (intval($row['approver_id']) === intval($session_user_id) && $user_id !== intval($session_user_id)) {
+            $ids[] = $user_id;
+        }
+    }
+    return $ids;
+}
+
+/** May the signed-in agent see this person's timesheets? Their own, Timesheets View, or their approver. */
 function mitTsMaySee($user_id) {
     global $session_user_id;
-    return intval($user_id) === intval($session_user_id) || mitTsLevel() >= 1;
+    return intval($user_id) === intval($session_user_id) || mitTsLevel() >= 1 || in_array(intval($user_id), mitTsMyReports(), true);
+}
+
+/** May the signed-in agent approve this person's timesheets? Full access, or their approver. */
+function mitTsMayApprove($user_id) {
+    return mitTsLevel() >= 3 || in_array(intval($user_id), mitTsMyReports(), true);
+}
+
+/** May the signed-in agent correct this person's hours? Timesheets Edit, or their approver. */
+function mitTsMayCorrect($user_id) {
+    return mitTsLevel() >= 2 || in_array(intval($user_id), mitTsMyReports(), true);
+}
+
+/** The people the signed-in agent may look at on the Everyone page. user_id => row */
+function mitTsVisibleUsers() {
+    if (mitTsLevel() >= 1) {
+        return mitTsUsers();
+    }
+    return array_intersect_key(mitTsUsers(), array_flip(mitTsMyReports()));
+}
+
+/** Has the period locked itself (a set number of days after it ended)? */
+function mitTsAutoLocked(array $sheet) {
+    $days = mitTsSettings()['autolock_days'];
+    return $days > 0 && $sheet['status'] !== 'approved' && date('Y-m-d') > date('Y-m-d', strtotime($sheet['period_end'] . " +$days days"));
 }
 
 /** May the signed-in agent change this timesheet's hours? Returns '' or why not. */
 function mitTsWhyLocked(array $sheet) {
     global $session_user_id;
     $own = intval($sheet['user_id']) === intval($session_user_id);
+    $correct = mitTsMayCorrect($sheet['user_id']);
     if ($sheet['status'] === 'approved') {
-        return 'This period is approved and locked.' . (mitTsLevel() >= 3 ? ' Reopen it to change it.' : '');
+        return 'This period is approved and locked.' . (mitTsMayApprove($sheet['user_id']) ? ' Reopen it to change it.' : '');
     }
-    if ($own && $sheet['status'] === 'submitted' && mitTsLevel() < 2) {
-        return 'Submitted for approval - take it back to change it.';
-    }
-    if (!$own && mitTsLevel() < 2) {
+    if (!$own && !$correct) {
         return 'You can see this timesheet but not change it.';
     }
+    if ($own && !$correct && $sheet['status'] === 'submitted') {
+        return 'Submitted for approval - take it back to change it.';
+    }
+    if (!$correct && mitTsAutoLocked($sheet)) {
+        return 'This period closed ' . mitTsSettings()['autolock_days'] . ' days after it ended - ask your manager to change it.';
+    }
     return '';
+}
+
+/** Can hours go on this date with this code? '' or why not (future days, a setting). */
+function mitTsFutureBlock($date, array $code) {
+    $future = mitTsSettings()['future'];
+    if ($date <= date('Y-m-d') || $future === 'all' || ($future === 'leave' && $code['code_kind'] === 'leave')) {
+        return '';
+    }
+    return $future === 'leave' ? 'Only leave can go on days still to come.' : 'Hours go on once the day has come.';
 }
 
 /*
@@ -312,18 +511,29 @@ function mitTsTicketMinutesLive(array $user_ids, $from, $to) {
     if (!$user_ids) {
         return $minutes;
     }
+    $settings = mitTsSettings();
+    if (!$settings['ticket_time']) {
+        return $minutes;
+    }
+    $billable = $settings['billable'] === 'client' ? 'ticket_client_id > 0' : 'ticket_billable = 1';
     $result = mysqli_query($mysqli, "SELECT ticket_reply_by AS u, DATE(ticket_reply_created_at) AS d,
-            SUM(CASE WHEN ticket_billable = 1 THEN TIME_TO_SEC(ticket_reply_time_worked) ELSE 0 END) AS b,
-            SUM(CASE WHEN ticket_billable = 1 THEN 0 ELSE TIME_TO_SEC(ticket_reply_time_worked) END) AS o
+            SUM(CASE WHEN $billable THEN TIME_TO_SEC(ticket_reply_time_worked) ELSE 0 END) AS b,
+            SUM(CASE WHEN $billable THEN 0 ELSE TIME_TO_SEC(ticket_reply_time_worked) END) AS o
         FROM ticket_replies JOIN tickets ON ticket_id = ticket_reply_ticket_id
-        WHERE ticket_reply_archived_at IS NULL AND ticket_reply_time_worked > '00:00:00'
+        WHERE ticket_reply_archived_at IS NULL AND ticket_reply_time_worked > '00:00:00'" . ($settings['ticket_internal'] ? '' : " AND ticket_reply_type <> 'Internal'") . "
         AND ticket_reply_by IN (" . implode(',', $user_ids) . ")
         AND ticket_reply_created_at >= '" . escapeSql($from) . " 00:00:00' AND ticket_reply_created_at < '" . escapeSql(date('Y-m-d', strtotime($to . ' +1 day'))) . " 00:00:00'
         GROUP BY ticket_reply_by, DATE(ticket_reply_created_at)");
     while ($row = mysqli_fetch_assoc($result)) {
-        $minutes[intval($row['u'])][$row['d']] = ['billable' => (int) round($row['b'] / 60), 'other' => (int) round($row['o'] / 60)];
+        $minutes[intval($row['u'])][$row['d']] = ['billable' => mitTsRound($row['b'] / 60), 'other' => mitTsRound($row['o'] / 60)];
     }
     return $minutes;
+}
+
+/** Minutes rounded to the nearest 6, 15 or 30 when set (ticket time per day). */
+function mitTsRound($minutes) {
+    $step = mitTsSettings()['rounding'];
+    return $step ? (int) (round($minutes / $step) * $step) : (int) round($minutes);
 }
 
 /**
@@ -358,49 +568,109 @@ function mitTsTicketMinutes(array $user_ids, $from, $to) {
 }
 
 /**
- * Totals for people over dates: user_id => ['billable', 'other', 'codes' => [code_id => minutes], 'work', 'lost',
- * 'leave_paid', 'unpaid', 'worked', 'leave', 'paid', 'total'] - all minutes. Leave is paid and unpaid.
+ * Each person's days: [user_id][date] => ['billable', 'other', 'work', 'lost', 'auto_lost', 'leave_paid', 'leave_unpaid',
+ * 'unpaid_work', 'codes' => [code_id => minutes]] in minutes. auto_lost (when the setting is on) is the part of a
+ * finished day's expected hours that nothing accounts for.
  */
-function mitTsTotals(array $user_ids, $from, $to) {
+function mitTsDays(array $user_ids, $from, $to) {
     $codes = mitTsCodes(true);
     $entries = mitTsEntries($user_ids, $from, $to);
     $tickets = mitTsTicketMinutes($user_ids, $from, $to);
+    $auto = mitTsSettings()['auto_lost'];
+    $today = date('Y-m-d');
+    $blank = ['billable' => 0, 'other' => 0, 'work' => 0, 'lost' => 0, 'auto_lost' => 0, 'leave_paid' => 0, 'leave_unpaid' => 0, 'unpaid_work' => 0, 'codes' => []];
+    $days = [];
+    foreach ($user_ids as $user_id) {
+        $user_id = intval($user_id);
+        $days[$user_id] = [];
+        foreach (mitTsDates(['start' => $from, 'end' => $to]) as $date) {
+            $d = $blank;
+            $d['billable'] = $tickets[$user_id][$date]['billable'] ?? 0;
+            $d['other'] = $tickets[$user_id][$date]['other'] ?? 0;
+            foreach ($entries[$user_id][$date] ?? [] as $code_id => $entry) {
+                $m = $entry['minutes'];
+                $code = $codes[$code_id] ?? ['code_kind' => 'work', 'code_paid' => 1];
+                $d['codes'][$code_id] = $m;
+                if ($code['code_kind'] === 'leave') {
+                    $d[intval($code['code_paid']) ? 'leave_paid' : 'leave_unpaid'] += $m;
+                } else {
+                    $d[$code['code_kind'] === 'lost' ? 'lost' : 'work'] += $m;
+                    if (!intval($code['code_paid'])) {
+                        $d['unpaid_work'] += $m;
+                    }
+                }
+            }
+            if ($auto && $date < $today) {
+                $accounted = $d['billable'] + $d['other'] + $d['work'] + $d['lost'] + $d['leave_paid'] + $d['leave_unpaid'];
+                $d['auto_lost'] = max(0, mitTsExpected($user_id, $date) - $accounted);
+                $d['lost'] += $d['auto_lost'];
+            }
+            $days[$user_id][$date] = $d;
+        }
+    }
+    return $days;
+}
+
+/** Hours worked that are paid, for a day from mitTsDays(). */
+function mitTsDayWorked(array $d) {
+    return $d['billable'] + $d['other'] + $d['work'] + $d['lost'] - $d['unpaid_work'];
+}
+
+/**
+ * Totals for people over dates: user_id => ['billable', 'other', 'codes' => [code_id => minutes], 'work', 'lost', 'auto_lost',
+ * 'leave_paid', 'unpaid', 'worked', 'leave', 'paid', 'total', 'overtime', 'regular'] - all minutes. Leave is paid and unpaid.
+ * Overtime (hourly people, when set): over the daily limit on each day, plus a week's remaining hours over the weekly
+ * limit - a week counts in the dates its last day falls in.
+ */
+function mitTsTotals(array $user_ids, $from, $to) {
+    $settings = mitTsSettings();
+    $week_from = mitTsWeekStart($from);
+    $all_days = mitTsDays($user_ids, $week_from, $to);
     $totals = [];
     foreach ($user_ids as $user_id) {
         $user_id = intval($user_id);
-        $t = ['billable' => 0, 'other' => 0, 'codes' => [], 'work' => 0, 'lost' => 0, 'leave_paid' => 0, 'unpaid' => 0];
-        foreach ($tickets[$user_id] ?? [] as $values) {
-            $t['billable'] += $values['billable'];
-            $t['other'] += $values['other'];
-        }
-        foreach ($entries[$user_id] ?? [] as $by_code) {
-            foreach ($by_code as $code_id => $entry) {
-                $t['codes'][$code_id] = ($t['codes'][$code_id] ?? 0) + $entry['minutes'];
-                $code = $codes[$code_id] ?? ['code_kind' => 'work', 'code_paid' => 1];
-                if (!intval($code['code_paid'])) {
-                    $t['unpaid'] += $entry['minutes'];
-                } elseif ($code['code_kind'] === 'leave') {
-                    $t['leave_paid'] += $entry['minutes'];
-                }
-                if ($code['code_kind'] === 'lost') {
-                    $t['lost'] += $entry['minutes'];
-                } elseif ($code['code_kind'] === 'work') {
-                    $t['work'] += $entry['minutes'];
-                }
-            }
-        }
-        $t['worked'] = $t['billable'] + $t['other'] + $t['work'] + $t['lost'];
+        $t = ['billable' => 0, 'other' => 0, 'codes' => [], 'work' => 0, 'lost' => 0, 'auto_lost' => 0, 'leave_paid' => 0, 'unpaid' => 0, 'overtime' => 0];
+        $leave_unpaid = 0;
         $unpaid_work = 0;
-        foreach ($t['codes'] as $code_id => $m) {
-            if (!intval($codes[$code_id]['code_paid'] ?? 1) && ($codes[$code_id]['code_kind'] ?? 'work') !== 'leave') {
-                $unpaid_work += $m;
+        foreach ($all_days[$user_id] as $date => $d) {
+            if ($date < $from) {
+                continue;
+            }
+            foreach (['billable', 'other', 'work', 'lost', 'auto_lost', 'leave_paid'] as $key) {
+                $t[$key] += $d[$key];
+            }
+            foreach ($d['codes'] as $code_id => $m) {
+                $t['codes'][$code_id] = ($t['codes'][$code_id] ?? 0) + $m;
+            }
+            $leave_unpaid += $d['leave_unpaid'];
+            $unpaid_work += $d['unpaid_work'];
+        }
+        $t['unpaid'] = $leave_unpaid + $unpaid_work;
+        $t['worked'] = $t['billable'] + $t['other'] + $t['work'] + $t['lost'];
+        $t['leave'] = $t['leave_paid'] + $leave_unpaid;
+        $t['paid'] = $t['worked'] - $unpaid_work + $t['leave_paid'];
+        $t['total'] = $t['worked'] + $t['leave'];
+
+        if (($settings['ot_day'] || $settings['ot_week']) && mitTsPerson($user_id)['pay_type'] === 'hourly') {
+            $weeks = [];
+            foreach ($all_days[$user_id] as $date => $d) {
+                $worked = mitTsDayWorked($d);
+                $daily = $settings['ot_day'] ? max(0, $worked - $settings['ot_day']) : 0;
+                if ($date >= $from) {
+                    $t['overtime'] += $daily;
+                }
+                $weeks[mitTsWeekStart($date)] = ($weeks[mitTsWeekStart($date)] ?? 0) + $worked - $daily;
+            }
+            if ($settings['ot_week']) {
+                foreach ($weeks as $start => $regular) {
+                    $end = date('Y-m-d', strtotime("$start +6 days"));
+                    if ($end >= $from && $end <= $to) {
+                        $t['overtime'] += max(0, $regular - $settings['ot_week']);
+                    }
+                }
             }
         }
-        $t['paid'] = $t['worked'] - $unpaid_work + $t['leave_paid'];
-        $t['total'] = $t['worked'] + array_sum(array_map(function ($code_id) use ($codes, $t) {
-            return ($codes[$code_id]['code_kind'] ?? '') === 'leave' ? $t['codes'][$code_id] : 0;
-        }, array_keys($t['codes'])));
-        $t['leave'] = $t['total'] - $t['worked'];
+        $t['regular'] = $t['paid'] - $t['overtime'];
         $totals[$user_id] = $t;
     }
     return $totals;
@@ -414,10 +684,13 @@ function mitTsBillableShare(array $t) {
 /** A day's tickets with time on them: ticket rows with 'minutes' and 'ticket_billable'. */
 function mitTsDayTickets($user_id, $date) {
     global $mysqli;
-    $result = mysqli_query($mysqli, "SELECT ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_billable, ticket_client_id, client_name,
+    $settings = mitTsSettings();
+    $billable = $settings['billable'] === 'client' ? 'ticket_client_id > 0' : 'ticket_billable = 1';
+    $result = mysqli_query($mysqli, "SELECT ticket_id, ticket_prefix, ticket_number, ticket_subject, IF($billable, 1, 0) AS ticket_billable, ticket_client_id, client_name,
             SUM(TIME_TO_SEC(ticket_reply_time_worked)) AS seconds
         FROM ticket_replies JOIN tickets ON ticket_id = ticket_reply_ticket_id LEFT JOIN clients ON client_id = ticket_client_id
         WHERE ticket_reply_archived_at IS NULL AND ticket_reply_time_worked > '00:00:00' AND ticket_reply_by = " . intval($user_id) . "
+        " . ($settings['ticket_internal'] ? '' : "AND ticket_reply_type <> 'Internal'") . "
         AND ticket_reply_created_at >= '" . escapeSql($date) . " 00:00:00' AND ticket_reply_created_at < '" . escapeSql(date('Y-m-d', strtotime($date . ' +1 day'))) . " 00:00:00'
         GROUP BY ticket_id ORDER BY seconds DESC");
     $rows = [];
@@ -439,69 +712,91 @@ function mitTsWho() {
 }
 
 /**
- * Save the grid: $cells[date][code_id] = hours text. Returns [ok, message]. Days are limited to 24 hours
- * with the ticket time; codes must exist; dates must be in the period.
+ * Save the grid: $cells[date][code_id] = hours text, $notes[date][code_id] = a note. Returns [ok, message].
+ * Checks: dates in the period, codes the person may use (or already has hours on), days up to 24 hours with the
+ * ticket time, a code's daily limit, a note where the code needs one, and the days-to-come setting.
  */
-function mitTsSaveCells(array $sheet, array $period, array $cells) {
+function mitTsSaveCells(array $sheet, array $period, array $cells, array $notes = []) {
     global $mysqli, $session_user_id;
     $user_id = intval($sheet['user_id']);
     $codes = mitTsCodes(true);
+    $allowed = mitTsCodesFor($user_id);
     $dates = array_flip(mitTsDates($period));
     $tickets = mitTsTicketMinutes([$user_id], $period['start'], $period['end'])[$user_id] ?? [];
     $current = mitTsEntries([$user_id], $period['start'], $period['end'])[$user_id] ?? [];
     $wanted = [];
-    $bad = [];
+    $problems = [];
     foreach ($cells as $date => $by_code) {
         if (!isset($dates[$date]) || !is_array($by_code)) {
             continue;
         }
         foreach ($by_code as $code_id => $text) {
             $code_id = intval($code_id);
-            if (!isset($codes[$code_id])) {
+            $had = $current[$date][$code_id] ?? null;
+            if (!isset($codes[$code_id]) || (!isset($allowed[$code_id]) && !$had)) {
                 continue;
             }
+            $code = $codes[$code_id];
+            $label = date('M j', strtotime($date)) . ' ' . $code['code_name'];
             $minutes = mitTsParseHours($text);
+            $note = trim((string) ($notes[$date][$code_id] ?? ($had['note'] ?? '')));
             if ($minutes === null || $minutes > 1440) {
-                $bad[] = date('M j', strtotime($date)) . ' ' . $codes[$code_id]['code_name'];
+                $problems[] = "$label: use e.g. 7.5 or 7:30";
                 continue;
             }
-            // An archived code keeps what it had, but takes nothing new
-            if ($codes[$code_id]['code_archived_at'] !== null && $minutes > intval($current[$date][$code_id]['minutes'] ?? 0)) {
+            $was = intval($had['minutes'] ?? 0);
+            // An archived code (or one no longer given to their role) keeps what it had, but takes nothing new
+            if (($code['code_archived_at'] !== null || !isset($allowed[$code_id])) && $minutes > $was) {
                 continue;
             }
-            $wanted[$date][$code_id] = $minutes;
+            if ($minutes > $was && ($why = mitTsFutureBlock($date, $code)) !== '') {
+                $problems[] = "$label: $why";
+                continue;
+            }
+            if ($minutes && intval($code['code_daily_max'] ?? 0) > 0 && $minutes > intval($code['code_daily_max'] ?? 0)) {
+                $problems[] = "$label: at most " . mitTsHours($code['code_daily_max'], false) . ' hours a day';
+                continue;
+            }
+            if ($minutes && intval($code['code_note_required'] ?? 0) && $note === '') {
+                $problems[] = "$label: needs a note";
+                continue;
+            }
+            $wanted[$date][$code_id] = [$minutes, mb_substr($note, 0, 255)];
         }
     }
-    if ($bad) {
-        return [false, 'Could not read the hours for ' . implode(', ', array_slice($bad, 0, 5)) . ' - use e.g. 7.5 or 7:30.'];
+    if ($problems) {
+        return [false, 'Not saved - ' . implode('; ', array_slice($problems, 0, 4)) . (count($problems) > 4 ? ' (and ' . (count($problems) - 4) . ' more)' : '') . '.'];
     }
     foreach ($wanted as $date => $by_code) {
-        $day = array_sum($by_code) + ($tickets[$date]['billable'] ?? 0) + ($tickets[$date]['other'] ?? 0);
+        $day = array_sum(array_column($by_code, 0)) + ($tickets[$date]['billable'] ?? 0) + ($tickets[$date]['other'] ?? 0);
         foreach ($current[$date] ?? [] as $code_id => $entry) {
             if (!isset($by_code[$code_id])) {
                 $day += $entry['minutes'];
             }
         }
         if ($day > 1440) {
-            return [false, date('M j', strtotime($date)) . ' adds up to more than 24 hours.'];
+            return [false, 'Not saved - ' . date('M j', strtotime($date)) . ' adds up to more than 24 hours.'];
         }
     }
     $changed = 0;
     foreach ($wanted as $date => $by_code) {
-        foreach ($by_code as $code_id => $minutes) {
-            $was = intval($current[$date][$code_id]['minutes'] ?? 0);
-            if ($was === $minutes) {
+        foreach ($by_code as $code_id => [$minutes, $note]) {
+            $had = $current[$date][$code_id] ?? null;
+            if (intval($had['minutes'] ?? 0) === $minutes && (!$minutes || (string) ($had['note'] ?? '') === $note)) {
                 continue;
             }
+            $note_sql = $note === '' ? 'NULL' : "'" . escapeSql($note) . "'";
             if ($minutes === 0) {
                 mysqli_query($mysqli, "DELETE FROM mit_time_entries WHERE user_id = $user_id AND entry_date = '" . escapeSql($date) . "' AND code_id = $code_id AND source = 'manual'");
             } else {
                 mysqli_query($mysqli, "INSERT INTO mit_time_entries SET user_id = $user_id, entry_date = '" . escapeSql($date) . "', code_id = $code_id, source = 'manual',
-                    minutes = $minutes, updated_by = " . intval($session_user_id) . " ON DUPLICATE KEY UPDATE minutes = $minutes, updated_by = " . intval($session_user_id));
+                    minutes = $minutes, note = $note_sql, updated_by = " . intval($session_user_id) . "
+                    ON DUPLICATE KEY UPDATE minutes = $minutes, note = $note_sql, updated_by = " . intval($session_user_id));
             }
             $changed++;
         }
     }
+    $changed += mitTsFillClosures($user_id, $period);
     if ($changed) {
         mitTsSheetSaved($user_id, $period);
         if ($user_id !== intval($session_user_id)) {
@@ -509,6 +804,43 @@ function mitTsSaveCells(array $sheet, array $period, array $cells) {
         }
     }
     return [true, $changed ? 'Timesheet saved' : 'Nothing changed'];
+}
+
+/** The code closure days are filled in with (the first one set to do it that the person may use), or null. */
+function mitTsClosureCode($user_id) {
+    foreach (mitTsCodesFor($user_id) as $code_id => $code) {
+        if (intval($code['code_closure_fill'] ?? 0)) {
+            return $code;
+        }
+    }
+    return null;
+}
+
+/**
+ * Closure days (Admin > SLA) up to today with nothing on that code: filled in with the person's normal hours for that
+ * weekday. Returns how many days were filled.
+ */
+function mitTsFillClosures($user_id, array $period) {
+    global $mysqli, $session_user_id;
+    $code = mitTsClosureCode($user_id);
+    if (!$code) {
+        return 0;
+    }
+    $user_id = intval($user_id);
+    $code_id = intval($code['code_id']);
+    $schedule = mitTsSchedule($user_id);
+    $current = mitTsEntries([$user_id], $period['start'], $period['end'])[$user_id] ?? [];
+    $filled = 0;
+    foreach (mitTsDates($period) as $date) {
+        $minutes = $schedule[intval(date('N', strtotime($date)))] ?? 0;
+        if ($date > date('Y-m-d') || mitTsClosure($date) === '' || !$minutes || isset($current[$date][$code_id])) {
+            continue;
+        }
+        mysqli_query($mysqli, "INSERT IGNORE INTO mit_time_entries SET user_id = $user_id, entry_date = '$date', code_id = $code_id, source = 'manual',
+            minutes = $minutes, note = '" . escapeSql(mb_substr(mitTsClosure($date), 0, 255)) . "', updated_by = " . intval($session_user_id));
+        $filled += mysqli_affected_rows($mysqli) > 0 ? 1 : 0;
+    }
+    return $filled;
 }
 
 /** For a handler: the stored timesheet by id, if the agent may see it, with its period - or back with an error. */
@@ -539,11 +871,29 @@ function mitTsApprovers() {
     return $approvers;
 }
 
-/** An app notification for someone. */
-function mitTsNotify($user_id, $text, $link, $entity_id) {
-    global $mysqli;
+/** Who approves this person: their own approver (People tab) if set and active, else everyone with Full access. */
+function mitTsApproversFor($user_id) {
+    $approver_id = mitTsPerson($user_id)['approver_id'];
+    if ($approver_id && $approver_id !== intval($user_id)) {
+        $approver = mitTsUsers()[$approver_id] ?? null;
+        if ($approver) {
+            return [$approver_id => $approver];
+        }
+    }
+    return mitTsApprovers();
+}
+
+/** An app notification for someone, and an email when they want reminders by email ($email true). */
+function mitTsNotify($user_id, $text, $link, $entity_id, $email = false) {
+    global $mysqli, $config_base_url, $config_smtp_provider, $config_mail_from_email, $config_mail_from_name;
     mysqli_query($mysqli, "INSERT INTO notifications SET notification_type = 'Timesheet', notification = '" . escapeSql($text) . "',
         notification_action = '" . escapeSql($link) . "', notification_user_id = " . intval($user_id) . ", notification_entity_id = " . intval($entity_id));
+    $user = $email ? (mitTsUsers([$user_id])[intval($user_id)] ?? null) : null;
+    if ($user && !empty($config_smtp_provider) && filter_var($user['user_email'], FILTER_VALIDATE_EMAIL)) {
+        addToMailQueue([['from' => escapeSql($config_mail_from_email), 'from_name' => escapeSql($config_mail_from_name),
+            'recipient' => escapeSql($user['user_email']), 'recipient_name' => escapeSql($user['user_name']), 'subject' => escapeSql($text),
+            'body' => escapeSql('Hello ' . escapeHtml($user['user_name']) . ',<br><br>' . escapeHtml($text) . ".<br><br><a href=\"https://$config_base_url$link\">Open your timesheet</a>")]]);
+    }
 }
 
 /** The timesheet page's link. */
@@ -557,10 +907,14 @@ function mitTsSubmit(array $sheet, array $period) {
     if (!in_array($sheet['status'], ['open', 'returned'], true)) {
         return [false, 'This timesheet is already ' . strtolower(MIT_TS_STATUSES[$sheet['status']][0]) . '.'];
     }
+    if (!mitTsSettings()['approval']) {
+        return [false, 'Timesheets are not approved here (Admin > Timesheets) - saving is enough.'];
+    }
+    mitTsFillClosures($sheet['user_id'], $period);
     $sheet = mitTsSheetSaved($sheet['user_id'], $period);
     mysqli_query($mysqli, "UPDATE mit_timesheets SET status = 'submitted', submitted_at = NOW(), decision_note = NULL WHERE sheet_id = " . intval($sheet['sheet_id']));
     $user = mitTsUsers([$sheet['user_id']])[intval($sheet['user_id'])] ?? ['user_name' => 'Someone'];
-    foreach (mitTsApprovers() as $approver_id => $approver) {
+    foreach (mitTsApproversFor($sheet['user_id']) as $approver_id => $approver) {
         if ($approver_id !== intval($session_user_id)) {
             mitTsNotify($approver_id, $user['user_name'] . "'s timesheet for " . $period['label'] . ' is waiting for approval', mitTsLink($sheet['user_id'], $period), $sheet['sheet_id']);
         }
@@ -595,7 +949,7 @@ function mitTsSnapshotTickets($user_id, array $period) {
     }
 }
 
-/** Approve or send back a timesheet (Full access). $decision 'approve' | 'return'. Returns [ok, message]. */
+/** Approve or send back a timesheet (Full access, or the person's approver). $decision 'approve' | 'return'. Returns [ok, message]. */
 function mitTsDecide(array $sheet, array $period, $decision, $note = '') {
     global $mysqli, $session_user_id;
     $note = trim((string) $note);
@@ -624,7 +978,7 @@ function mitTsDecide(array $sheet, array $period, $decision, $note = '') {
     return [true, 'Timesheet ' . $text];
 }
 
-/** Reopen an approved period (Full access) - ticket time is live again until it is approved again. */
+/** Reopen an approved period (Full access, or the person's approver) - ticket time is live again until it is approved again. */
 function mitTsReopen(array $sheet, array $period) {
     global $mysqli;
     if ($sheet['status'] !== 'approved') {
@@ -638,8 +992,112 @@ function mitTsReopen(array $sheet, array $period) {
     return [true, 'Reopened - approve it again when it is right'];
 }
 
-/** Submitted timesheets waiting for an approver (side menu badge). */
+/** Submitted timesheets the signed-in agent can approve (side menu badge). */
 function mitTsWaitingCount() {
+    global $mysqli, $session_user_id;
+    if (!mitTsReady() || !mitTsSettings()['approval']) {
+        return 0;
+    }
+    $result = mysqli_query($mysqli, "SELECT user_id FROM mit_timesheets WHERE status = 'submitted' AND user_id <> " . intval($session_user_id));
+    $n = 0;
+    while ($row = mysqli_fetch_assoc($result)) {
+        $n += mitTsMayApprove($row['user_id']) ? 1 : 0;
+    }
+    return $n;
+}
+
+/*
+ * ---------- personal choices (Account > Preferences) ----------
+ */
+
+/** Charge codes this person has hidden from their timesheet (still shown on a period that has hours on them). */
+function mitTsHiddenCodes($user_id) {
+    return array_filter(array_map('intval', explode(',', (string) mitUserPreference($user_id, 'timesheet.hidden_codes', ''))));
+}
+
+/** Does the person want timesheet reminders? (on unless they turned them off) */
+function mitTsRemindersOn($user_id) {
+    return mitUserPreference($user_id, 'timesheet.reminders', '1') !== '0';
+}
+
+/** The Timesheet part of Account > Preferences (agent/user/user_preferences.php). */
+function mitTsPreferenceFields($user_id) {
+    if (!mitTsReady()) {
+        return '';
+    }
+    $user_id = intval($user_id);
+    $format = (string) mitUserPreference($user_id, 'timesheet.format', '');
+    $view = (string) mitUserPreference($user_id, 'timesheet.view', 'period');
+    $hidden = mitTsHiddenCodes($user_id);
+    $settings = mitTsSettings();
+    $html = '<div class="col-12"><hr><h6 class="mb-3"><i class="fas fa-fw fa-business-time me-2"></i>Timesheet</h6><div class="row g-3">'
+        . '<div class="col-md-4"><label class="form-label">Hours shown as</label><select class="form-select" name="mit_ts_format">'
+        . '<option value=""' . ($format === '' ? ' selected' : '') . '>Company default (' . ($settings['format'] === 'hm' ? '7:30' : '7.5') . ')</option>'
+        . '<option value="decimal"' . ($format === 'decimal' ? ' selected' : '') . '>Decimal - 7.5</option>'
+        . '<option value="hm"' . ($format === 'hm' ? ' selected' : '') . '>Hours and minutes - 7:30</option></select></div>'
+        . '<div class="col-md-4"><label class="form-label">Open on</label><select class="form-select" name="mit_ts_view">'
+        . '<option value="period"' . ($view !== 'week' ? ' selected' : '') . '>The whole pay period</option>'
+        . '<option value="week"' . ($view === 'week' ? ' selected' : '') . '>This week (others folded)</option></select></div>'
+        . '<div class="col-md-4 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="mit_ts_reminders" value="1" id="mitTsReminders"'
+        . (mitTsRemindersOn($user_id) ? ' checked' : '') . '><label class="form-check-label" for="mitTsReminders">Remind me to fill it in</label></div></div>'
+        . '<div class="col-12"><label class="form-label">Charge codes I use</label><div class="d-flex flex-wrap gap-3">';
+    foreach (mitTsCodesFor($user_id) as $code_id => $code) {
+        $html .= '<div class="form-check"><input class="form-check-input" type="checkbox" name="mit_ts_codes[]" value="' . intval($code_id) . '" id="mitTsCode' . intval($code_id) . '"'
+            . (in_array(intval($code_id), $hidden, true) ? '' : ' checked') . '><label class="form-check-label" for="mitTsCode' . intval($code_id) . '">' . mitTsCodeDot($code) . escapeHtml($code['code_name']) . '</label></div>';
+    }
+    return $html . '<input type="hidden" name="mit_ts_prefs" value="1"></div><div class="form-text">Unticked ones are left off your timesheet.</div></div></div></div>';
+}
+
+/** Save those (a no-op when the form did not have them). */
+function mitTsSavePreferences($user_id, array $post) {
+    if (empty($post['mit_ts_prefs']) || !mitTsReady()) {
+        return;
+    }
+    $format = (string) ($post['mit_ts_format'] ?? '');
+    mitSetUserPreference($user_id, 'timesheet.format', in_array($format, ['decimal', 'hm'], true) ? $format : '');
+    mitSetUserPreference($user_id, 'timesheet.view', ($post['mit_ts_view'] ?? '') === 'week' ? 'week' : 'period');
+    mitSetUserPreference($user_id, 'timesheet.reminders', empty($post['mit_ts_reminders']) ? '0' : '1');
+    $shown = array_map('intval', (array) ($post['mit_ts_codes'] ?? []));
+    $hidden = array_diff(array_keys(mitTsCodesFor($user_id)), $shown);
+    mitSetUserPreference($user_id, 'timesheet.hidden_codes', implode(',', $hidden));
+}
+
+/*
+ * ---------- reminders (cron/mit_timesheet_reminders.php) ----------
+ */
+
+/** Send the reminders that are due: on a period's last day, and when the last one is late. Returns lines for the log. */
+function mitTsSendReminders() {
     global $mysqli;
-    return mitTsReady() ? intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COUNT(*) FROM mit_timesheets WHERE status = 'submitted'"))[0]) : 0;
+    $settings = mitTsSettings();
+    $log = [];
+    $today = date('Y-m-d');
+    $current = mitTsPeriodFor();
+    $last = mitTsPeriodShift($current, -1);
+    foreach (mitTsUsers() as $user_id => $user) {
+        if (!mitTsRemindersOn($user_id)) {
+            continue;
+        }
+        if ($settings['remind_due'] && $current['end'] === $today) {
+            $sheet = mitTsSheet($user_id, $current);
+            if (in_array($sheet['status'], ['open', 'returned'], true) && empty($sheet['reminded_due_at'])) {
+                $sheet = mitTsSheetSaved($user_id, $current);
+                mysqli_query($mysqli, "UPDATE mit_timesheets SET reminded_due_at = NOW() WHERE sheet_id = " . intval($sheet['sheet_id']));
+                mitTsNotify($user_id, 'Your timesheet for ' . $current['label'] . ' ends today - check your hours' . ($settings['approval'] ? ' and submit it' : ''),
+                    mitTsLink($user_id, $current), $sheet['sheet_id'], true);
+                $log[] = "Reminded {$user['user_name']}: period ends today";
+            }
+        }
+        $late = $settings['remind_late_days'];
+        if ($settings['approval'] && $late && $today >= date('Y-m-d', strtotime($last['end'] . " +$late days"))) {
+            $sheet = mitTsSheet($user_id, $last);
+            if (in_array($sheet['status'], ['open', 'returned'], true) && empty($sheet['reminded_late_at'])) {
+                $sheet = mitTsSheetSaved($user_id, $last);
+                mysqli_query($mysqli, "UPDATE mit_timesheets SET reminded_late_at = NOW() WHERE sheet_id = " . intval($sheet['sheet_id']));
+                mitTsNotify($user_id, 'Your timesheet for ' . $last['label'] . ' has not been submitted yet', mitTsLink($user_id, $last), $sheet['sheet_id'], true);
+                $log[] = "Reminded {$user['user_name']}: last period not submitted";
+            }
+        }
+    }
+    return $log;
 }

@@ -61,6 +61,7 @@ $per_page = intval($me['user_config_records_per_page']) ?: 10;
                 </div>
 
                 <?= mitCalendarColorField($session_user_id) // Mountaineer IT ?>
+                <?= mitTsPreferenceFields($session_user_id) // Mountaineer IT ?>
             </div>
         </div>
         <div class="card-footer">
