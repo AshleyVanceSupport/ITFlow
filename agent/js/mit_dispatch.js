@@ -413,9 +413,16 @@
                 droppable: true,
                 eventDurationEditable: true,
                 businessHours: businessHours,
-                // The times down the side once, on the first column
+                // The times down the side once, on the first column. The other columns keep the label but
+                // hidden: an empty one collapses FullCalendar's rows, so their hours would be squashed
                 slotHeaderContent: function (arg) {
-                    return index === 0 ? arg.text : '';
+                    if (index === 0) {
+                        return arg.text;
+                    }
+                    const label = document.createElement('span');
+                    label.style.visibility = 'hidden';
+                    label.textContent = arg.text;
+                    return {domNodes: [label]};
                 },
                 eventDidMount: function (info) {
                     const props = info.event.extendedProps || {};
