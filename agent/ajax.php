@@ -2215,6 +2215,11 @@ if (isset($_POST['calendar_move'])) {
         $fail('That is not a date and time.');
     }
 
+    // Mountaineer IT: a helper's booking (functions/mit_ticket_techs.php)
+    if (($_POST['kind'] ?? '') === 'helper') {
+        mitTicketTechCalendarMove($_POST);
+    }
+
     if (($_POST['kind'] ?? '') === 'ticket') {
 
         if (!calendarCanScheduleTickets()) {
@@ -2408,7 +2413,7 @@ if (isset($_GET['calendar_day'])) {
 
     $day = [];
     foreach ($items as $item) {
-        if ($item['id'] === $skip_ticket) {
+        if ($item['id'] === $skip_ticket || str_starts_with($item['id'], 'helper-' . substr($skip_ticket, 7) . '-')) { // Mountaineer IT: and its helpers
             continue;
         }
         $all_day = !empty($item['allDay']);

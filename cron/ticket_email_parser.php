@@ -352,6 +352,7 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
                     ]
                 ];
                 addToMailQueue($data);
+                mitTicketTechsCopyMail($ticket_id, $data[0]); // Mountaineer IT: and the techs helping
             }
         }
 

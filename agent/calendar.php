@@ -54,6 +54,11 @@ foreach ($sources as $key => $source) {
         opacity: .85;
         cursor: default;
     }
+    /* Mountaineer IT: a tech helping on a ticket (functions/mit_ticket_techs.php) - dashed, in their colour */
+    #itflowCalendar [data-kind="helper"] {
+        outline: 2px dashed rgba(255, 255, 255, .75);
+        outline-offset: -3px;
+    }
 </style>
 
 <div class="row g-3 itflow-calendar-page" id="itflowCalendar"

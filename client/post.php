@@ -146,6 +146,7 @@ if (isset($_POST['add_ticket_comment'])) {
             ];
 
             addToMailQueue($data);
+            mitTicketTechsCopyMail($ticket_id, $data[0]); // Mountaineer IT: and the techs helping
 
         }
 

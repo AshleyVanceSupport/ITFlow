@@ -609,6 +609,8 @@ function calendarSourceItems($key, $from, $to, array $opts = []) {
                     'detail' => implode(' · ', array_filter([$row['user_name'] ?: 'Unassigned', $row['ticket_status_name']]))],
             ] + $base;
         }
+        // Mountaineer IT: techs helping on a ticket, at their own time or the lead's
+        $items = array_merge($items, mitTicketTechCalendarItems($from, $to, $client_id, $user_id, $can_move));
     } elseif ($key === 'projects') {
         $sql = mysqli_query($mysqli, "SELECT project_id, project_prefix, project_number, project_name, project_start, project_due, project_client_id, client_name
             FROM projects LEFT JOIN clients ON client_id = project_client_id
@@ -1275,6 +1277,9 @@ function calendarUserFeedItems(array $feed, $from, $to) {
             ];
         }
     }
+
+    // Mountaineer IT: tickets they are helping on (functions/mit_ticket_techs.php)
+    $items = array_merge($items, mitTicketTechFeedItems($feed, $from, $to));
 
     if (!empty($feed['feed_events'])) {
         $sql = mysqli_query($mysqli, "SELECT calendar_events.*, location_name, location_address, location_city, location_state, location_zip

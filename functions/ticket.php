@@ -1208,6 +1208,8 @@ function ticketSetSchedule(array $row, $schedule, $onsite, $end = null) {
     $cal_str = createiCalStr($schedule, $cal_subject, $cal_description, (string) $mail_row['location_address'], getTicketCalendarUid($ticket_id), $end);
     $when_text = mitScheduleWhenText($schedule, $end);
     ticketMailSchedule($mail_row, $cal_str, false, $when_text);
+    // Mountaineer IT: helpers booked with the lead get the new time too (functions/mit_ticket_techs.php)
+    $conflicts = array_merge($conflicts, mitTicketTechsLeadMoved($ticket_id));
 
     // Note it on the ticket
     $note = escapeSql("Ticket scheduled for $when_text " . ($onsite ? '(onsite).' : '(remote).'));
@@ -1239,6 +1241,7 @@ function ticketCancelSchedule(array $row) {
     $cal_subject = intval($mail_row['ticket_number']) . ": " . $mail_row['client_name'] . " - " . $mail_row['ticket_subject'];
     $cal_str = createiCalStrCancel($old_schedule, $cal_subject, getTicketCalendarUid($ticket_id));
     ticketMailSchedule($mail_row, $cal_str, true, '');
+    mitTicketTechsLeadCancelled($ticket_id, $old_schedule); // Mountaineer IT: and helpers booked with the lead
 
     mysqli_query($mysqli, "INSERT INTO ticket_replies SET ticket_reply = 'Ticket schedule cancelled.', ticket_reply_type = 'Internal', ticket_reply_time_worked = '00:00:00', ticket_reply_by = " . intval($session_user_id) . ", ticket_reply_ticket_id = $ticket_id");
 

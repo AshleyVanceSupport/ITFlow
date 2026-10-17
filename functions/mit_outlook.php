@@ -195,7 +195,7 @@ function mitOutlookToken(array $link) {
  * ---------- what should be in the calendar ----------
  */
 
-/** The person's open booked tickets, ticket_id => row. */
+/** The person's open booked tickets - as the lead or helping - ticket_id => row. */
 function mitOutlookBookings($user_id) {
     global $mysqli;
     $user_id = intval($user_id);
@@ -215,7 +215,8 @@ function mitOutlookBookings($user_id) {
     while ($result && $row = mysqli_fetch_assoc($result)) {
         $bookings[intval($row['ticket_id'])] = $row;
     }
-    return $bookings;
+    // And the tickets they are helping on, at their own time or the lead's (functions/mit_ticket_techs.php)
+    return $bookings + mitTicketTechOutlookBookings($user_id, $past_days);
 }
 
 /** The Outlook event for a booking. Times go to Microsoft in UTC. */
@@ -457,9 +458,9 @@ function mitOutlookRefreshBusy($token, $user_id) {
         }
         foreach ($response['json']['value'] ?? [] as $event) {
             $show_as = strtolower((string) ($event['showAs'] ?? 'busy'));
-            // Not busy time: ITFlow's own events, and invites ITFlow emailed for a ticket booking (ticket-<id>@...)
+            // Not busy time: ITFlow's own events, and invites ITFlow emailed for a ticket booking (ticket-<id>@..., a helper's ticket-<id>-tech-<user>@...)
             if (isset($ours[$event['id'] ?? '']) || in_array(MIT_OUTLOOK_CATEGORY, $event['categories'] ?? [], true)
-                || preg_match('/^ticket-\d+@/', (string) ($event['iCalUId'] ?? ''))
+                || preg_match('/^ticket-\d+(-tech-\d+)?@/', (string) ($event['iCalUId'] ?? ''))
                 || !empty($event['isCancelled']) || !in_array($show_as, ['busy', 'tentative', 'oof'], true)) {
                 continue;
             }

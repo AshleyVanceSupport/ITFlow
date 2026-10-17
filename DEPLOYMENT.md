@@ -182,6 +182,9 @@ break stock ITFlow, and lists what stops working after a move.
 - **Repeats by weekday** ("the third Wednesday", "the last Friday") – stock ITFlow repeats those
   recurring tickets and calendar events on the same date each month instead (the rule sits unused
   in `recurring_ticket_by_day` / `event_repeat_by_day`). Check and adjust their dates after a move.
+- **Additional techs on tickets** – stock ITFlow keeps only the lead (the assigned tech). Helpers,
+  their own booking times and their calendar / Outlook entries are not shown (the rows sit unused
+  in `mit_ticket_techs`); reassign or note them on the tickets that need it.
 - **Quote pricing and item images** – stock ITFlow keeps every quote's customer prices, but our
   cost, the markup / margin and the line and product images are not shown (they sit unused in
   the `item_cost` / `item_price_*` / `item_image` and `product_cost` / `product_price_*` /

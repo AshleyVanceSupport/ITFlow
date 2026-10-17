@@ -223,6 +223,7 @@ $sort_link = function ($column, $label, $class = '') use ($url_query_strings_sor
                         <?php } else { ?>
                             <?= $assignee ?>
                         <?php } ?>
+                        <?= mitTicketTechsListBadge($ticket_id) // Mountaineer IT: techs helping ?>
                     </td>
 
                     <!-- Due - its own date and its SLA -->

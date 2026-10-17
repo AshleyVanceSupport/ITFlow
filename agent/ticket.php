@@ -1004,6 +1004,8 @@ if (isset($_GET['ticket_id'])) {
                                 </dd>
                             </div>
 
+                            <?= mitTicketTechsProp($ticket, $can_change_fields) // Mountaineer IT: additional techs ?>
+
                             <?php if ($sla_in_use) {
                                 // What the SLA value says - the clock state when there is one, else the plan
                                 if ($sla_state_label) {

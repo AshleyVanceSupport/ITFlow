@@ -121,6 +121,20 @@ model: see DEPLOYMENT.md.
   (add/edit/copy/delete items, PDF image), `guest/guest_view_quote.php` + `guest/guest_post.php` (PDF),
   `agent/modals/product/product_add.php` / `product_edit.php`, `agent/post/product.php`,
   `agent/post/client.php` (client delete). Invoices are untouched (customer price only).
+- Additional techs on tickets (Oct 2026): `functions/mit_ticket_techs.php` (ours, required from
+  mit_calendar.php), table `mit_ticket_techs` (M008) - helpers beside the lead (`ticket_assigned_to`
+  unchanged), each booked with the lead (follows_lead), at their own time, or not booked. UI: modal
+  `agent/modals/ticket/mit_ticket_tech.php`, handlers `agent/post/mit_ticket_techs.php`, one-line
+  `mitTicketTechsProp` in `agent/ticket.php` (under Assigned to). Hooks: `functions/ticket.php`
+  (ticketSetSchedule `mitTicketTechsLeadMoved`, ticketCancelSchedule `mitTicketTechsLeadCancelled`),
+  `functions/calendar.php` (tickets source + user feeds), `agent/ajax.php` (calendar_move kind
+  `helper`, calendar_day skips `helper-<ticket>-`), `agent/js/calendar.js` (moved: helper branch),
+  `agent/calendar.php` (dashed `[data-kind="helper"]` CSS), `agent/tickets.php` (Mine + assigned
+  filter via `mitAssignedSql`), `functions/dashboard.php` (dashboardMyTickets), `agent/ticket_list.php`
+  + `agent/ticket_kanban.php` (`mitTicketTechsListBadge`), `cron/ticket_email_parser.php` +
+  `client/post.php` (`mitTicketTechsCopyMail` after the lead's reply email). Ours: helper clashes
+  in `mitScheduleConflicts`, helper bookings in `mitOutlookBookings`, busy-copy skips
+  `ticket-<id>-tech-<user>@` invites. Customer emails stay about the lead's booking only.
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files
   upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
   SSRF, broken tag links, Clients/Tickets/dashboard/search performance.

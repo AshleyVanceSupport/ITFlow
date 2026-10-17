@@ -161,7 +161,8 @@ function mitScheduleShortText($start, $end = null) {
 }
 
 /**
- * The agent's other open booked work that overlaps $start - $end, as plain text lines.
+ * The agent's other open booked work that overlaps $start - $end, as plain text lines - as the lead
+ * or helping on a ticket.
  * Overlap uses each booking's real end (or the default length when it has none). Their
  * Outlook busy times count too.
  */
@@ -188,6 +189,8 @@ function mitScheduleConflicts($user_id, $start, $end, $ticket_id = 0) {
         $conflicts[] = ticketReference($row) . ' - ' . $row['ticket_subject'] . ' @ '
             . date('g:ia', strtotime($row['ticket_schedule'])) . '-' . date('g:ia', strtotime($row_end));
     }
+    // Tickets they are helping on (functions/mit_ticket_techs.php)
+    $conflicts = array_merge($conflicts, mitTicketTechConflicts($user_id, $start, $end, $ticket_id));
     // Their own Outlook appointments too, once they have connected Outlook (functions/mit_outlook.php)
     if (function_exists('mitOutlookBusyConflicts')) {
         $conflicts = array_merge($conflicts, mitOutlookBusyConflicts($user_id, $start, $end));
@@ -261,3 +264,4 @@ function mitCleanCalendarState(array $state) {
 
 // Repeats by weekday (the third Wednesday, the last Friday) for recurring tickets and events
 require_once __DIR__ . '/mit_recurring.php';
+require_once __DIR__ . '/mit_ticket_techs.php';

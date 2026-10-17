@@ -324,7 +324,7 @@ function dashboardMyTickets($limit = 8) {
     global $mysqli, $session_user_id;
 
     $user_id = intval($session_user_id);
-    $where = "ticket_assigned_to = $user_id AND ticket_resolved_at IS NULL " . clientScopeSql('ticket_client_id');
+    $where = mitAssignedSql($user_id) . " AND ticket_resolved_at IS NULL " . clientScopeSql('ticket_client_id'); // Mountaineer IT: or helping
 
     $sql = mysqli_query($mysqli, "
         SELECT ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_priority, ticket_client_id,

@@ -352,6 +352,28 @@
             return;
         }
 
+        // Mountaineer IT: a tech helping on a ticket - moving it gives them their own time
+        if (props.kind === 'helper') {
+            confirmDialog({
+                title: 'Move ' + event.title.split(' ')[0] + ' for this tech to ' + words(start, false) + '?',
+                text: props.follows_lead ? 'They get their own time - no longer moving with the lead. They are emailed the new time.' : 'They are emailed the new time.',
+                confirmButtonText: 'Move it'
+            }).then(function (result) {
+                if (!result.isConfirmed) {
+                    info.revert();
+                    return;
+                }
+                post({kind: 'helper', id: props.ticket_id, user_id: props.user_id, start: ymdhm(start), end: end && !event.allDay ? ymdhm(end) : '', all_day: event.allDay ? 1 : 0}, function (json) {
+                    saved(json);
+                    calendar.refetchEvents();
+                }, function (error) {
+                    itflowToast(error, 'error');
+                    info.revert();
+                });
+            });
+            return;
+        }
+
         if (props.kind !== 'event') {
             info.revert();
             return;
