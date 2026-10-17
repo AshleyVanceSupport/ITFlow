@@ -130,7 +130,7 @@
         }).join('');
     }
 
-    // The ticket's client, contact, priority, category and SLA, to put right while scheduling it (null: not shown)
+    // The ticket's client, contact, priority, status, category and SLA, to put right while scheduling it (null: not shown)
     function detailsHtml(d) {
         if (!d || d.error) {
             return '';
@@ -143,7 +143,9 @@
             + '<div class="col-sm-6"><label class="form-label mb-0" for="mdContactPick">Contact</label><select class="form-select form-select-sm" id="mdContactPick">' + options(contacts, t.contact_id) + '</select></div>'
             + '<div class="col-sm-4"><label class="form-label mb-0" for="mdPriority">Priority</label><select class="form-select form-select-sm" id="mdPriority">'
             + options(d.priorities.map(function (p) { return {id: p, name: p}; }), t.priority) + '</select></div>'
-            + '<div class="col-sm-8"><label class="form-label mb-0" for="mdCategory">Category</label><select class="form-select form-select-sm" id="mdCategory">'
+            + '<div class="col-sm-4"><label class="form-label mb-0" for="mdStatus">Status</label><select class="form-select form-select-sm" id="mdStatus">'
+            + options(d.statuses, t.status_id) + '</select></div>'
+            + '<div class="col-sm-4"><label class="form-label mb-0" for="mdCategory">Category</label><select class="form-select form-select-sm" id="mdCategory">'
             + options([{id: 0, name: 'No category'}].concat(d.categories), t.category_id) + '</select></div>'
             + '<div class="col-12"><label class="form-label mb-0" for="mdSla">SLA</label><select class="form-select form-select-sm" id="mdSla">'
             + '<option value="auto">Automatic - from the client and priority</option>'
@@ -239,6 +241,7 @@
                     post.detail_client_id = document.getElementById('mdClient').value;
                     post.detail_contact_id = document.getElementById('mdContactPick').value;
                     post.detail_priority = document.getElementById('mdPriority').value;
+                    post.detail_status = document.getElementById('mdStatus').value;
                     post.detail_category_id = document.getElementById('mdCategory').value;
                     post.detail_sla = document.getElementById('mdSla').value;
                 }

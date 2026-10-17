@@ -224,7 +224,7 @@ function mitDispatchContacts($client_id) {
 }
 
 /**
- * What the Schedule dialog shows of a ticket, so the client, contact, priority, category and SLA can be put right as it is
+ * What the Schedule dialog shows of a ticket, so the client, contact, priority, status, category and SLA can be put right as it is
  * scheduled: the current values and the choices for each (clients this agent can see, the client's contacts, ticket
  * categories and SLAs still in use - plus the ticket's own if it was archived). Null when the ticket is out of reach.
  */
@@ -246,7 +246,11 @@ function mitDispatchDetails($ticket_id) {
     };
     return [
         'ticket' => ['client_id' => intval($row['ticket_client_id']), 'contact_id' => intval($row['ticket_contact_id']), 'priority' => $row['ticket_priority'],
-            'category_id' => $category_id, 'sla_id' => $sla_id],
+            'status_id' => intval($row['ticket_status']), 'category_id' => $category_id, 'sla_id' => $sla_id],
+        // The statuses an agent may set by hand (ITFlow's own list), plus the one it has now when that is not one of them (New)
+        'statuses' => array_values(array_map(function ($status) {
+            return ['id' => intval($status['ticket_status_id']), 'name' => $status['ticket_status_name']];
+        }, ticketPickableStatuses() + [intval($row['ticket_status']) => ['ticket_status_id' => $row['ticket_status'], 'ticket_status_name' => $row['ticket_status_name']]])),
         'clients' => $pick("SELECT client_id, client_name FROM clients WHERE (client_archived_at IS NULL OR client_id = " . intval($row['ticket_client_id']) . ")"
             . clientScopeSql('client_id') . " ORDER BY client_name"),
         'contacts' => mitDispatchContacts($row['ticket_client_id']),
@@ -258,10 +262,10 @@ function mitDispatchDetails($ticket_id) {
 
 /**
  * Save the details posted with a Dispatch booking (detail_client_id, detail_contact_id, detail_priority, detail_category_id,
- * detail_sla - "auto", or an SLA id, 0 for none), only what changed, the way ITFlow's own forms do it: a new client as
+ * detail_status, detail_sla - "auto", or an SLA id, 0 for none), only what changed, the way ITFlow's own forms do it: a new client as
  * "Change client" does (agent/post/ticket.php change_client_ticket - its public replies become internal, the old
  * client's asset, site and project links go); the contact only one of the client's; the priority through
- * ticketChangePriority(); the SLA chosen pins it (edit_ticket_sla), otherwise a new client or priority works it out again.
+ * ticketChangePriority(); the status through ticketChangeStatus() (only the ones an agent may set by hand); the SLA chosen pins it (edit_ticket_sla), otherwise a new client or priority works it out again.
  * Every change goes in the ticket's history and the audit log. Returns [ok, message or ''].
  */
 function mitDispatchSaveDetails($ticket_id, array $post) {
@@ -328,6 +332,15 @@ function mitDispatchSaveDetails($ticket_id, array $post) {
     if ($priority_changed) {
         ticketChangePriority($ticket_id, $priority);
         $changed[] = "priority $priority";
+    }
+
+    // Status - ticketChangeStatus() keeps to the statuses an agent may set, logs it and keeps the SLA clock right
+    $status_id = intval($post['detail_status'] ?? $row['ticket_status']);
+    if ($status_id !== intval($row['ticket_status']) && isset(ticketPickableStatuses()[$status_id])) {
+        [$status_ok] = ticketChangeStatus($ticket_id, $status_id);
+        if ($status_ok) {
+            $changed[] = 'status ' . ticketPickableStatuses()[$status_id]['ticket_status_name'];
+        }
     }
 
     // SLA: the dialog starts on the ticket's own. "Automatic" works it out from the client and priority; a different

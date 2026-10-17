@@ -250,7 +250,7 @@ model: see DEPLOYMENT.md.
   and hashed class names, so style by data- attributes; Week: techs x days table with SortableJS), requests
   `agent/mit_dispatch_ajax.php` (queue, items, book, unbook, state). Queue: open tickets with no tech / with a tech
   and nothing booked. Book = `ticketChangeAssignee` + `ticketSetSchedule`; unbook = `ticketCancelSchedule`.
-  The Schedule dialog also shows the ticket's client, contact, priority, category and SLA (`?details=` /
+  The Schedule dialog also shows the ticket's client, contact, priority, status, category and SLA (`?details=` /
   `?contacts=`); changes are saved first by `mitDispatchSaveDetails` - the same rules as ITFlow's Edit ticket,
   Change client (`change_client_ticket`, public replies become internal) and SLA forms; re-check it if those change.
   Needs Support edit (`calendarCanScheduleTickets`). Settings per agent in `mit_user_preferences` dispatch.state.
