@@ -314,8 +314,16 @@ To retire a server, delete its key there.
 Ask Claude Code (with this repository attached): *"Check ITFlow for updates and bring them in."*
 It will fetch the latest **official release** from itflow-org, summarise what changed
 (including any database updates), merge it into `develop` and, once you confirm, push it.
-The beta server picks it up; test there, then ask Claude to open the
+The beta server picks it up; test there (including the smoke tests below), then ask Claude to open the
 `develop` → `MountaineerIT` PR.
+
+## Smoke tests
+
+`tests/smoke/` holds browser tests that click through the app on the **beta** install: every menu
+page, a client → ticket → note → booking round trip, our own features, and a Technician's
+permissions - about a minute. Setup and use are in `tests/smoke/README.md` (Node, two test-only
+logins without 2FA, a `.env`). Run them after every ITFlow update and before promoting to
+production. Never point them at production: they add and delete a test client.
 
 ## Rules for our own changes
 

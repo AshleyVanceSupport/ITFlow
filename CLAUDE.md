@@ -34,6 +34,9 @@ model: see DEPLOYMENT.md.
   restore into a stock checkout of the latest release (`git archive vYY.MM`; install schema first,
   then `scripts/restore_cli.php`) -> click through the main pages and save a client/ticket/reply.
   Keep DEPLOYMENT.md "Moving to stock ITFlow" (what stops working after a move) up to date.
+- Smoke tests: `cd tests/smoke && npx playwright test` against the test install (never production) - after
+  every upstream merge, before every "Promote to production", and after changing a page or hook in ITFlow's files.
+  Report the result. New features get a test there (it must fail when the feature is broken).
 - Don't modify `libs/` unless asked.
 - Keep diffs against upstream minimal so release merges stay clean.
 
@@ -41,7 +44,8 @@ model: see DEPLOYMENT.md.
 - Default/release branch is `MountaineerIT` instead of `master`: `functions/app.php`
   (`getRepoBranch`), `admin/update.php` (release-branch badge), `setup/index.php` and
   `scripts/setup_cli.php` (default `$repo_branch`).
-- `DEPLOYMENT.md`, `CLAUDE.md`, `scripts/install.sh` (Debian one-line installer) – ours.
+- `DEPLOYMENT.md`, `CLAUDE.md`, `scripts/install.sh` (Debian one-line installer), `tests/smoke/` (Playwright smoke
+  tests, see its README) – ours.
 - Removed `.github/workflows/first-interaction.yml` (upstream's welcome bot – it points people
   to ITFlow's forum). If an upstream merge brings it back, delete it again.
 - Bug and security fixes made here ahead of upstream (Oct 2026, "Phase 1" – see `git log`):
@@ -302,9 +306,9 @@ model: see DEPLOYMENT.md.
 3. Summarise for the user: version, notable features/fixes, new files in
    `admin/database_updates/` (DB version change), anything touching our deviations above.
 4. On `develop`, `git merge <tag>`, resolve conflicts keeping our deviations, `php -l`
-   changed PHP files, run `scripts/mit_portability_check.php` on the test install after the
-   database update, then ask the user before pushing to `develop`.
+   changed PHP files, run `scripts/mit_portability_check.php` and the smoke tests (`tests/smoke`)
+   on the test install after the database update, then ask the user before pushing to `develop`.
 
 ## "Promote to production"
 Open a PR `develop` → `MountaineerIT` listing what's included and any DB updates, plus the
-result of the stock-ITFlow portability test (see Rules). Ask the user before merging.
+result of the stock-ITFlow portability test (see Rules) and of the smoke tests. Ask the user before merging.
