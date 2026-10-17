@@ -6,6 +6,8 @@
  *   GET  ?items=1&from=Y-m-d&to=Y-m-d&techs=1,2                  the board's bookings
  *   GET  ?details=TICKET_ID                                      the ticket's client, contact, priority, category, SLA + choices
  *   GET  ?contacts=CLIENT_ID                                     a client's contacts
+ *   GET  ?contact_tickets=CONTACT_ID&except=TICKET_ID            the contact's other open tickets
+ *   POST merge=1 child_id parent_id comment move_replies         merge one ticket into another (ITFlow's merge)
  *   POST book=1 ticket_id tech_id start minutes onsite contact    assign and book (+ detail_* - saved first)
  *   POST unbook=1 ticket_id                                       take the booking off
  *   POST state=1 view hidden weekends                             the board settings for this agent
@@ -56,8 +58,22 @@ if (isset($_GET['contacts'])) {
     exit;
 }
 
+if (isset($_GET['contact_tickets'])) {
+    echo json_encode(mitDispatchContactTickets($_GET['contact_tickets'], $_GET['except'] ?? 0));
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCSRFToken();
+
+    if (isset($_POST['merge'])) {
+        [$ok, $message] = mitDispatchMerge($_POST['child_id'] ?? 0, $_POST['parent_id'] ?? 0, $_POST['comment'] ?? '', !empty($_POST['move_replies']));
+        if (!$ok) {
+            $mit_fail($message);
+        }
+        echo json_encode(['ok' => true, 'message' => $message]);
+        exit;
+    }
 
     if (isset($_POST['book'])) {
         // The details first, so the booking emails go to the right contact

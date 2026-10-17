@@ -253,6 +253,9 @@ model: see DEPLOYMENT.md.
   The Schedule dialog also shows the ticket's client, contact, priority, status, category and SLA (`?details=` /
   `?contacts=`); changes are saved first by `mitDispatchSaveDetails` - the same rules as ITFlow's Edit ticket,
   Change client (`change_client_ticket`, public replies become internal) and SLA forms; re-check it if those change.
+  Under Contact it lists the contact's other open tickets (`?contact_tickets=`) with "Merge into this" / "Merge this into it"
+  (`mitDispatchMerge`: ITFlow's Merge form checks, a scheduled ticket being merged has its schedule cancelled, then ITFlow's
+  own `ticketMergeInto()`, which lives in `agent/post/ticket.php` and is loaded from there - re-check if upstream moves it).
   Needs Support edit (`calendarCanScheduleTickets`). Settings per agent in `mit_user_preferences` dispatch.state.
   Hooks: require of `agent/includes/mit_dispatch_nav.php` in `agent/includes/side_nav.php` (SUPPORT, after
   Recurring Tickets), `functions.php` (require), and one condition in `functions/ticket.php` ticketMailSchedule

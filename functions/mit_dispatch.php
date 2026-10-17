@@ -207,6 +207,73 @@ function mitDispatchBook($ticket_id, $tech_id, $start, $minutes, $onsite, $tell_
  * ---------- the ticket's details in the Schedule dialog ----------
  */
 
+/**
+ * The contact's other open tickets, for the Schedule dialog - so a duplicate can be seen and merged before a visit is
+ * scheduled: [{id, reference, subject, status, agent, scheduled, url}], newest first. [] for no contact or one out of reach.
+ */
+function mitDispatchContactTickets($contact_id, $except_ticket_id) {
+    global $mysqli;
+    $contact_id = intval($contact_id);
+    $client_id = intval(getFieldById('contacts', $contact_id, 'contact_client_id'));
+    if (!$contact_id || !$client_id || !hasClientAccess($client_id)) {
+        return [];
+    }
+    $result = mysqli_query($mysqli, "SELECT tickets.ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_client_id, ticket_schedule, ticket_schedule_end,
+            ticket_status_name, user_name
+        FROM tickets
+        LEFT JOIN ticket_statuses ON ticket_status_id = ticket_status
+        LEFT JOIN users ON user_id = ticket_assigned_to
+        WHERE ticket_contact_id = $contact_id AND ticket_client_id = $client_id AND tickets.ticket_id <> " . intval($except_ticket_id) . "
+        AND ticket_resolved_at IS NULL AND ticket_closed_at IS NULL AND ticket_archived_at IS NULL
+        ORDER BY ticket_created_at DESC LIMIT 15");
+    $tickets = [];
+    while ($row = mysqli_fetch_assoc($result)) {
+        $tickets[] = ['id' => intval($row['ticket_id']), 'reference' => ticketReference($row), 'subject' => $row['ticket_subject'],
+            'status' => (string) $row['ticket_status_name'], 'agent' => (string) ($row['user_name'] ?? ''),
+            'scheduled' => $row['ticket_schedule'] ? mitScheduleShortText($row['ticket_schedule'], $row['ticket_schedule_end']) : '',
+            'url' => ticketUrl($row['ticket_id'], $row['ticket_client_id'])];
+    }
+    return $tickets;
+}
+
+/**
+ * Merge one ticket into another from the Schedule dialog, with ITFlow's own ticketMergeInto() (agent/post/ticket.php -
+ * notes on both, the merged one closed, its replies moved when asked): the same checks as ITFlow's Merge form (both
+ * open and reachable, the same client). A merged ticket that was scheduled has that cancelled first, so its invites are
+ * withdrawn. Returns [ok, message].
+ */
+function mitDispatchMerge($child_id, $parent_id, $comment, $move_replies) {
+    global $mysqli;
+    $child = ticketRow($child_id);
+    $parent = ticketRow($parent_id);
+    foreach ([$child, $parent] as $row) {
+        if (!$row || !empty($row['ticket_closed_at']) || (intval($row['ticket_client_id']) && !hasClientAccess($row['ticket_client_id']))) {
+            return [false, 'Both tickets have to be open and yours to reach.'];
+        }
+    }
+    if (intval($child['ticket_id']) === intval($parent['ticket_id'])) {
+        return [false, "A ticket can't be merged into itself."];
+    }
+    if (intval($child['ticket_client_id']) !== intval($parent['ticket_client_id'])) {
+        return [false, 'A ticket merges into one of the same client\'s.'];
+    }
+    $comment = trim((string) $comment);
+    if ($comment === '') {
+        return [false, 'Give a reason - it is noted on both tickets.'];
+    }
+    if (!function_exists('ticketMergeInto')) {
+        // ITFlow keeps it in its ticket request handler; none of its handlers answer this request's fields
+        defined('FROM_POST_HANDLER') || define('FROM_POST_HANDLER', true);
+        require_once dirname(__DIR__) . '/agent/post/ticket.php';
+    }
+    if (!empty($child['ticket_schedule'])) {
+        ticketCancelSchedule($child);
+        $child = ticketRow($child['ticket_id']);
+    }
+    ticketMergeInto($child, $parent, escapeSql(mb_substr($comment, 0, 500)), (bool) $move_replies);
+    return [true, ticketReference($child) . ' merged into ' . ticketReference($parent) . ' and closed'];
+}
+
 /** A client's contacts for the dialog's Contact list: [{id, name}], primary first. [] for no client or one out of reach. */
 function mitDispatchContacts($client_id) {
     global $mysqli;

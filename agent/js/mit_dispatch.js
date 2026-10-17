@@ -141,6 +141,7 @@
         return '<div class="col-12 border-top mt-3 pt-2 fw-semibold">Details</div>'
             + '<div class="col-sm-6"><label class="form-label mb-0" for="mdClient">Client</label><select class="form-select form-select-sm" id="mdClient">' + options(clients, t.client_id) + '</select></div>'
             + '<div class="col-sm-6"><label class="form-label mb-0" for="mdContactPick">Contact</label><select class="form-select form-select-sm" id="mdContactPick">' + options(contacts, t.contact_id) + '</select></div>'
+            + '<div class="col-12" id="mdOther" hidden></div>'
             + '<div class="col-sm-4"><label class="form-label mb-0" for="mdPriority">Priority</label><select class="form-select form-select-sm" id="mdPriority">'
             + options(d.priorities.map(function (p) { return {id: p, name: p}; }), t.priority) + '</select></div>'
             + '<div class="col-sm-4"><label class="form-label mb-0" for="mdStatus">Status</label><select class="form-select form-select-sm" id="mdStatus">'
@@ -158,6 +159,95 @@
         // The ticket's details come with the dialog, so they can be checked as it is scheduled
         return request('GET', {details: ticket.id}).then(function (details) {
             return confirmBookingDialog(ticket, at, techId, details);
+        });
+    }
+
+    // The contact's other open tickets under the Contact box, each with a way to merge it with this one
+    function loadOtherTickets(ticket) {
+        const box = document.getElementById('mdOther');
+        const contact = document.getElementById('mdContactPick');
+        if (!box || !contact) {
+            return;
+        }
+        if (!Number(contact.value)) {
+            box.hidden = true;
+            return;
+        }
+        // Tickets merge only within a client - not while this one is being moved to another (saved when scheduled)
+        const client = document.getElementById('mdClient');
+        const moving = client && client.value !== client.dataset.original;
+        const off = moving ? ' disabled title="Schedule it first - it is moving to another client"' : '';
+        request('GET', {contact_tickets: contact.value, except: ticket.id}).then(function (list) {
+            list = Array.isArray(list) ? list : [];
+            box.hidden = !list.length;
+            box.innerHTML = '<div class="border rounded p-2 bg-body-tertiary"><div class="fw-semibold mb-1"><i class="fas fa-fw fa-layer-group me-1"></i>'
+                + list.length + ' other open ticket' + (list.length === 1 ? '' : 's') + ' for this contact</div>'
+                + list.map(function (o) {
+                    return '<div class="d-flex align-items-start gap-2 py-1 border-top" data-md-other="' + o.id + '" data-reference="' + escapeText(o.reference) + '">'
+                        + '<div class="flex-grow-1" style="min-width:0"><a href="' + escapeText(o.url) + '" target="_blank" rel="noopener">' + escapeText(o.reference) + '</a> '
+                        + escapeText(o.subject) + '<div class="text-muted">' + escapeText([o.status, o.agent, o.scheduled ? 'scheduled ' + o.scheduled : ''].filter(Boolean).join(' · ')) + '</div></div>'
+                        + '<button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" data-md-merge="here"' + (off || ' title="Close ' + escapeText(o.reference) + ' into ' + escapeText(ticket.reference) + '"') + '>Merge into this</button>'
+                        + '<button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" data-md-merge="there"' + (off || ' title="Close ' + escapeText(ticket.reference) + ' into ' + escapeText(o.reference) + ' (not scheduled)"') + '>Merge this into it</button>'
+                        + '</div>';
+                }).join('')
+                + '<div class="border-top pt-2 mt-1" data-md-merge-form hidden><div class="mb-1" data-md-merge-what></div>'
+                + '<input type="text" class="form-control form-control-sm mb-1" placeholder="Reason - noted on both tickets" data-md-merge-reason maxlength="500">'
+                + '<div class="d-flex align-items-center gap-2"><div class="form-check mb-0"><input class="form-check-input" type="checkbox" id="mdMergeReplies" data-md-merge-replies>'
+                + '<label class="form-check-label" for="mdMergeReplies">Move its replies too</label></div>'
+                + '<button type="button" class="btn btn-sm btn-light ms-auto" data-md-merge-cancel>Cancel</button>'
+                + '<button type="button" class="btn btn-sm btn-danger" data-md-merge-go>Merge and close</button></div></div></div>';
+        });
+    }
+
+    // Merge buttons in that list (one handler for the box, as the list is redrawn)
+    function bindMerge(ticket) {
+        const box = document.getElementById('mdOther');
+        if (!box) {
+            return;
+        }
+        let pending = null;
+        box.addEventListener('click', function (e) {
+            const pick = e.target.closest('[data-md-merge]');
+            const form = box.querySelector('[data-md-merge-form]');
+            if (pick) {
+                const row = pick.closest('[data-md-other]');
+                const other = {id: Number(row.dataset.mdOther), reference: row.dataset.reference};
+                pending = pick.dataset.mdMerge === 'here' ? {child: other, parent: ticket} : {child: ticket, parent: other};
+                box.querySelector('[data-md-merge-what]').textContent = 'Merge ' + pending.child.reference + ' into ' + pending.parent.reference
+                    + ' - ' + pending.child.reference + ' is closed' + (pending.child.id === ticket.id ? ' and not scheduled.' : '.');
+                form.hidden = false;
+                box.querySelector('[data-md-merge-reason]').focus();
+                return;
+            }
+            if (e.target.closest('[data-md-merge-cancel]')) {
+                form.hidden = true;
+                pending = null;
+                return;
+            }
+            if (e.target.closest('[data-md-merge-go]') && pending) {
+                const reason = box.querySelector('[data-md-merge-reason]').value.trim();
+                if (!reason) {
+                    Swal.showValidationMessage('Give a reason for the merge');
+                    return;
+                }
+                Swal.resetValidationMessage();
+                request('POST', {merge: 1, csrf_token: csrf, child_id: pending.child.id, parent_id: pending.parent.id, comment: reason,
+                    move_replies: box.querySelector('[data-md-merge-replies]').checked ? 1 : 0}).then(function (json) {
+                    if (json.error) {
+                        Swal.showValidationMessage(json.error);
+                        return;
+                    }
+                    toast(json.message, 'success');
+                    if (pending.child.id === ticket.id) {
+                        // This ticket is closed now - nothing left to schedule
+                        Swal.close();
+                        refresh();
+                        return;
+                    }
+                    pending = null;
+                    loadOtherTickets(ticket);
+                });
+            }
         });
     }
 
@@ -205,7 +295,13 @@
                 if (!client) {
                     return;
                 }
-                const original = client.value;
+                client.dataset.original = client.value;
+                bindMerge(ticket);
+                loadOtherTickets(ticket);
+                document.getElementById('mdContactPick').addEventListener('change', function () {
+                    loadOtherTickets(ticket);
+                });
+                const original = client.dataset.original;
                 client.addEventListener('change', function () {
                     document.getElementById('mdClientNote').hidden = client.value === original;
                     const contact = document.getElementById('mdContactPick');
@@ -213,6 +309,7 @@
                     request('GET', {contacts: client.value}).then(function (list) {
                         contact.innerHTML = options([{id: 0, name: 'No contact'}].concat(Array.isArray(list) ? list : []), Array.isArray(list) && list.length ? list[0].id : 0);
                         contact.disabled = false;
+                        loadOtherTickets(ticket);
                     });
                 });
             },
