@@ -1393,6 +1393,8 @@ if (isset($_GET['ticket_id'])) {
                     </div>
                 <?php } ?>
 
+                <?= mitTicketPartsCard($ticket, $can_edit_ticket && !$ticket_is_closed) // Mountaineer IT: parts used / to order ?>
+
                 <!--
                     Everything else this ticket is attached to, in one card instead of
                     four stacked ones that were mostly empty on a typical ticket.

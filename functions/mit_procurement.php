@@ -638,3 +638,5 @@ function mitPoEmail(array $po, $to) {
     mitPoLog($po['po_id'], mitProcWho() . " emailed the PO to $to");
     return '';
 }
+
+require_once __DIR__ . '/mit_procurement_parts.php';

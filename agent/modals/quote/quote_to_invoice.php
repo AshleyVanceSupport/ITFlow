@@ -41,6 +41,8 @@ ob_start();
             </div>
         </div>
 
+        <?= mitProcQuoteConvertFields($quote_id, $client_id) // Mountaineer IT: send lines to procurement ?>
+
     </div>
     <div class="modal-footer">
         <button type="submit" name="add_quote_to_invoice" class="btn btn-primary text-bold">

@@ -69,7 +69,7 @@ ob_start();
             </div>
         </div>
 
-        <?= $mit_product ? mitPricingFields(['product_cost', 'product_price_method', 'product_price_percent'], $mit_product['product_cost'], $mit_product['product_price_method'], $mit_product['product_price_percent']) : '' // Mountaineer IT ?>
+        <?= ($mit_product ? mitPricingFields(['product_cost', 'product_price_method', 'product_price_percent'], $mit_product['product_cost'], $mit_product['product_price_method'], $mit_product['product_price_percent']) : '') . mitProductVendorField($product_id) // Mountaineer IT ?>
 
         <div class="row g-2">
             <div class="col">

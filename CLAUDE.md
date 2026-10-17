@@ -156,8 +156,19 @@ model: see DEPLOYMENT.md.
   `agent/includes/mit_procurement_nav.php` in `agent/includes/side_nav.php` (before FINANCE),
   settings card `admin/includes/mit_procurement_card.php` at the end of `admin/settings_invoice.php`
   (handler `admin/post/mit_procurement_settings.php`), `functions.php` (require).
-  Parts 2-3 (planned): quote->invoice / invoice / ticket parts into procurement, ticket parts billing,
-  receiving extras (assets, stock, notes), vendor bill -> expense, order status on invoice/project.
+  Part 2: `functions/mit_procurement_parts.php` (ours, required from mit_procurement.php), M010
+  (`mit_ticket_parts`, `products.product_vendor_id`). Quote -> invoice ticks: `mitProcQuoteConvertFields`
+  in `agent/modals/quote/quote_to_invoice.php` (+ data-modal-size="lg" on the Invoice button in
+  `agent/quote.php`), `mitProcFromQuoteLine` in `agent/post/quote.php` add_quote_to_invoice loop.
+  Invoice: `mitProcInvoiceMenuItem` in the `agent/invoice.php` ⋮ menu -> modal
+  `agent/modals/mit_procurement/from_invoice.php`. Ticket Parts box: `mitTicketPartsCard` in
+  `agent/ticket.php` (side column, above Linked; icon fa-microchip = layout box `parts`), modals
+  `part.php` / `parts_bill.php`, handlers `agent/post/mit_procurement_parts.php`. From-stock parts take
+  product_stock at once (billed lines have no item_product_id, so ITFlow does not take it again);
+  to-order parts become procurement items (source ticket). Product vendor: `mitProductVendorField`
+  appended to the product modals' pricing hook line, saved from `mitProductSave`.
+  Part 3 (planned): receiving extras (assets, stock, notes), vendor bill -> expense, order status on
+  invoice/project.
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files
   upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
   SSRF, broken tag links, Clients/Tickets/dashboard/search performance.

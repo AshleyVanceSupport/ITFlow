@@ -284,6 +284,7 @@ if (isset($_GET['invoice_id'])) {
                                     data-modal-url="modals/invoice/invoice_recurring_add.php?invoice_id=<?= $invoice_id ?>">
                                     <i class="fa fa-fw fa-sync-alt text-secondary me-2"></i>Recurring
                                 </a>
+                                <?= mitProcInvoiceMenuItem($invoice_id) // Mountaineer IT ?>
                                 <div class="dropdown-divider"></div>
                                 <a class="dropdown-item" href="#" onclick="window.print();">
                                     <i class="fa fa-fw fa-print text-secondary me-2"></i>Print

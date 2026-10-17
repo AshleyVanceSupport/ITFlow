@@ -193,7 +193,7 @@ if (isset($_GET['quote_id'])) {
                 <?php if ($quote_status == 'Accepted') { ?>
                     <div class="btn-group fix-quote-dropdown">
                         <button type="button" class="btn btn-primary ajax-modal"
-                            data-modal-url="modals/quote/quote_to_invoice.php?quote_id=<?= $quote_id ?>">
+                            data-modal-size="lg" data-modal-url="modals/quote/quote_to_invoice.php?quote_id=<?= $quote_id ?>"><?php // Mountaineer IT: lg for the procurement ticks ?>
                             <i class="fas fa-check me-2"></i>Invoice
                         </button>
                         <button type="button" class="btn btn-primary dropdown-toggle dropdown-icon" data-bs-toggle="dropdown" aria-expanded="false">

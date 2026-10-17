@@ -77,7 +77,7 @@ ob_start();
             </div>
         </div>
 
-        <?= mitQuoteColumnsReady() ? mitPricingFields(['product_cost', 'product_price_method', 'product_price_percent'], null, null, null) : '' // Mountaineer IT ?>
+        <?= (mitQuoteColumnsReady() ? mitPricingFields(['product_cost', 'product_price_method', 'product_price_percent'], null, null, null) : '') . mitProductVendorField(0) // Mountaineer IT ?>
 
         <div class="row g-2">
             <div class="col">

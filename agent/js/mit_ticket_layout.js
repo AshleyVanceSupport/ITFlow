@@ -55,18 +55,18 @@
     // ITFlow's boxes, known by the icon in their title
     const ICONS = {
         'fa-align-left': 'description', 'fa-sliders-h': 'details', 'fa-user': 'contact', 'fa-layer-group': 'also_open',
-        'fa-map-marker-alt': 'site', 'fa-tasks': 'tasks', 'fa-link': 'linked', 'fa-history': 'history'
+        'fa-map-marker-alt': 'site', 'fa-tasks': 'tasks', 'fa-microchip': 'parts', 'fa-link': 'linked', 'fa-history': 'history'
     };
     const NAMES = {
         description: 'Description', reply: 'Reply box', conversation: 'Conversation', details: 'Details', contact: 'Contact',
-        also_open: 'Also open', site: 'Site', tasks: 'Tasks', linked: 'Linked', history: 'History'
+        also_open: 'Also open', site: 'Site', tasks: 'Tasks', parts: 'Parts', linked: 'Linked', history: 'History'
     };
     // ITFlow's own layout - where a box goes back to, and where a saved layout slots a box it never saw
     const DEFAULT = {
         columns: '',
         left: [],
         main: ['description', 'reply', 'conversation'],
-        side: ['details', 'contact', 'also_open', 'site', 'tasks', 'linked', 'history'],
+        side: ['details', 'contact', 'also_open', 'site', 'tasks', 'parts', 'linked', 'history'],
         collapsed: ['history'],
         half: []
     };

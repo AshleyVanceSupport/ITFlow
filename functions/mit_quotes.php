@@ -432,6 +432,9 @@ function mitProductSave($product_id, array $post, array $files) {
         mitImageDelete($old_image);
     }
     mysqli_query($mysqli, "UPDATE products SET $set WHERE product_id = $product_id");
+    if (function_exists('mitProductVendorSave')) {
+        mitProductVendorSave($product_id, $post); // procurement: who we order it from
+    }
     if ($error !== '') {
         $_SESSION['mit_image_error'] = $error;
     }
