@@ -131,6 +131,10 @@ $n = $count("SELECT COUNT(*) FROM recurring_tickets WHERE recurring_ticket_by_da
 if ($n) {
     $after[] = "Repeats by weekday: $n recurring tickets / events repeat on e.g. the third Wednesday - stock ITFlow repeats them on the same date each month instead.";
 }
+$n = $count("SELECT COUNT(*) FROM mit_purchase_orders");
+if ($n || $count("SELECT COUNT(*) FROM modules WHERE module_name = 'module_procurement'")) {
+    $after[] = "Procurement: $n purchase order" . ($n === 1 ? '' : 's') . " and the items to order are not shown by stock ITFlow (they stay in the mit_ tables; PO PDFs in uploads/mit_po). Admin > Roles keeps an unused \"Procurement\" permission - delete its row from the modules table if it bothers you.";
+}
 if ($n = $count("SELECT COUNT(*) FROM mit_ticket_techs tt JOIN tickets t ON t.ticket_id = tt.ticket_id WHERE t.ticket_resolved_at IS NULL AND t.ticket_closed_at IS NULL")) {
     $after[] = "Additional techs: $n helpers on open tickets - stock ITFlow keeps only the lead (assigned) tech; helpers and their own bookings are not shown.";
 }

@@ -145,6 +145,19 @@ model: see DEPLOYMENT.md.
   wrapped as "conversation" - re-check those if upstream reworks `agent/ticket.php`. Hooks: one line
   after the layout in `agent/ticket.php` (`mitTicketLayoutHtml`), `agent/ajax.php?mit_ticket_layout`,
   `functions.php` (require). "Customise layout" is added to the ticket's ⋮ menu by the script.
+- Procurement (Oct 2026, part 1 of 3): `functions/mit_procurement.php` (ours) - items to order
+  (`mit_procurement_items`), purchase orders (`mit_purchase_orders`, `mit_po_lines`, `mit_po_tracking`,
+  `mit_po_receipts`, `mit_po_history`; M009), approval when over `procurement_approval_over`
+  (`mit_settings`, 0 = always), tracking links, receiving (partial, serials), PO PDF (TCPDF) and email
+  (attachment in `uploads/mit_po/`). Permission: ITFlow module row `module_procurement` (M009) -
+  View 1 / Edit 2 / Full 3 approves + cancels; admins Full. Pages `agent/mit_procurement.php`,
+  `mit_purchase_orders.php`, `mit_purchase_order.php`, `mit_receiving.php`; modals
+  `agent/modals/mit_procurement/`; handlers `agent/post/mit_procurement.php`. Hooks: one require of
+  `agent/includes/mit_procurement_nav.php` in `agent/includes/side_nav.php` (before FINANCE),
+  settings card `admin/includes/mit_procurement_card.php` at the end of `admin/settings_invoice.php`
+  (handler `admin/post/mit_procurement_settings.php`), `functions.php` (require).
+  Parts 2-3 (planned): quote->invoice / invoice / ticket parts into procurement, ticket parts billing,
+  receiving extras (assets, stock, notes), vendor bill -> expense, order status on invoice/project.
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files
   upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
   SSRF, broken tag links, Clients/Tickets/dashboard/search performance.

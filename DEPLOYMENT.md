@@ -182,6 +182,10 @@ break stock ITFlow, and lists what stops working after a move.
 - **Repeats by weekday** ("the third Wednesday", "the last Friday") – stock ITFlow repeats those
   recurring tickets and calendar events on the same date each month instead (the rule sits unused
   in `recurring_ticket_by_day` / `event_repeat_by_day`). Check and adjust their dates after a move.
+- **Procurement** (items to order, purchase orders, approval, tracking, receiving) – not in stock
+  ITFlow; its data stays in the `mit_procurement_items` / `mit_purchase_orders` / `mit_po_*` tables
+  and PO PDFs in `uploads/mit_po/`. Admin > Roles keeps an unused "Procurement" permission (a row
+  in ITFlow's `modules` table, `module_procurement`) – harmless; delete the row if wanted.
 - **Additional techs on tickets** – stock ITFlow keeps only the lead (the assigned tech). Helpers,
   their own booking times and their calendar / Outlook entries are not shown (the rows sit unused
   in `mit_ticket_techs`); reassign or note them on the tickets that need it.

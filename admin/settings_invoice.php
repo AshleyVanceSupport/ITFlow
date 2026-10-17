@@ -99,5 +99,6 @@ require_once "includes/inc_all_admin.php";
     </div>
 
 <?php
+require_once "includes/mit_procurement_card.php"; // Mountaineer IT
 require_once "../includes/footer.php";
 

@@ -169,6 +169,8 @@
                     </li>
                 <?php } ?>
 
+                <?php require __DIR__ . '/mit_procurement_nav.php'; // Mountaineer IT ?>
+
                 <?php if ($config_module_enable_accounting == 1) { ?>
                     <li class="nav-header mt-3">FINANCE</li>
                     <?php if (lookupUserPermission("module_financial") >= 1) { ?>
