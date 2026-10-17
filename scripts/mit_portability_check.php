@@ -131,6 +131,10 @@ $n = $count("SELECT COUNT(*) FROM recurring_tickets WHERE recurring_ticket_by_da
 if ($n) {
     $after[] = "Repeats by weekday: $n recurring tickets / events repeat on e.g. the third Wednesday - stock ITFlow repeats them on the same date each month instead.";
 }
+$n = $count("SELECT COUNT(*) FROM quote_items WHERE item_cost IS NOT NULL OR item_image IS NOT NULL") + $count("SELECT COUNT(*) FROM products WHERE product_cost IS NOT NULL OR product_image IS NOT NULL");
+if ($n) {
+    $after[] = "Quote pricing and images: $n quote lines / products have our cost or an image - stock ITFlow shows the customer prices only, without the images (the files stay in uploads/mit_images).";
+}
 if ($n = $count("SELECT COUNT(*) FROM mit_user_preferences")) {
     $after[] = "Per-person calendar settings and tech colours ($n saved) are not used by stock ITFlow.";
 }

@@ -217,7 +217,7 @@ if ($quote_status == "Draft" || $quote_status == "Sent" || $quote_status == "Vie
                                 ?>
 
                                 <tr>
-                                    <td><?= $item_name ?></td>
+                                    <td><?= mitQuoteCustomerImage($quote_id, $item_id) ?><?= $item_name ?></td>
                                     <td><?= nl2br($item_description) ?></td>
                                     <td class="text-center"><?= $item_quantity ?></td>
                                     <td class="text-end"><?= numfmt_format_currency($currency_format, $item_price, $quote_currency_code) ?></td>

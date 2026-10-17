@@ -52,3 +52,4 @@ require_once __DIR__ . '/functions/service.php';
 // Mountaineer IT additions
 require_once __DIR__ . '/functions/mit_calendar.php';
 require_once __DIR__ . '/functions/mit_m365.php';
+require_once __DIR__ . '/functions/mit_quotes.php';

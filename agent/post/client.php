@@ -305,6 +305,7 @@ if (isset($_GET['delete_client'])) {
     while($row = mysqli_fetch_assoc($sql)) {
         $quote_id = $row['quote_id'];
 
+        mitQuoteImagesDelete($quote_id); // Mountaineer IT: the lines' image files
         mysqli_query($mysqli, "DELETE FROM quote_items WHERE item_quote_id = $quote_id");
     }
     mysqli_query($mysqli, "DELETE FROM quotes WHERE quote_client_id = $client_id");

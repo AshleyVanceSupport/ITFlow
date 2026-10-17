@@ -1,0 +1,655 @@
+<?php
+
+/*
+ * Mountaineer IT - quote pricing and line images (database update M007).
+ *
+ *  - Each quote line can carry OUR cost and how its customer price comes from it: a markup or
+ *    margin % or a set price. Cost, method, % and profit are for staff only - never on the quote
+ *    page's print, the PDF, the guest link or the client portal. Invoices are made from the
+ *    customer price only, as before.
+ *  - Products remember a cost, method, % and image, so picking one fills the line in.
+ *  - Each line (and product) can have one image - uploaded, or pulled from a link (an image, or a
+ *    web page's main picture). ITFlow keeps its own resized copy under uploads/mit_images/, with an
+ *    unguessable name; every line and product owns its own copy.
+ *  - Defaults (method, %, presets, show images) live in mit_settings, prefixed quote_.
+ *
+ * Hooks in ITFlow's files are one line each (CLAUDE.md lists them).
+ */
+
+const MIT_PRICE_METHODS = ['markup' => 'Markup', 'margin' => 'Margin', 'price' => 'Set price'];
+const MIT_IMAGE_DIR = 'uploads/mit_images';
+const MIT_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+const MIT_IMAGE_MAX_SIDE = 800;
+
+/*
+ * ---------- settings and the sums ----------
+ */
+
+/** [method, percent, presets [..], show_images bool] */
+function mitQuoteSettings() {
+    static $settings = null;
+    if ($settings === null) {
+        $method = mitSetting('quote_price_method', 'markup');
+        $presets = array_values(array_filter(array_map('floatval', explode(',', (string) mitSetting('quote_price_presets', '15,20,25,35'))), function ($p) {
+            return $p > 0 && $p < 1000;
+        }));
+        $settings = [
+            'method' => isset(MIT_PRICE_METHODS[$method]) && $method !== 'price' ? $method : 'markup',
+            'percent' => (float) mitSetting('quote_price_percent', '20'),
+            'presets' => $presets ?: [15, 20, 25, 35],
+            'show_images' => mitSetting('quote_show_images', '1') === '1',
+        ];
+    }
+    return $settings;
+}
+
+function mitPriceMethod($method) {
+    $method = strtolower(trim((string) $method));
+    return isset(MIT_PRICE_METHODS[$method]) ? $method : '';
+}
+
+/** The customer price from our cost: markup 20% on 100 = 120; margin 20% on 100 = 125. Null when it cannot be worked out. */
+function mitPriceFromCost($cost, $method, $percent) {
+    $cost = (float) $cost;
+    $percent = (float) $percent;
+    if ($cost <= 0) {
+        return null;
+    }
+    if ($method === 'markup') {
+        return round($cost * (1 + $percent / 100), 2);
+    }
+    if ($method === 'margin' && $percent < 100) {
+        return round($cost / (1 - $percent / 100), 2);
+    }
+    return null;
+}
+
+/** Have our columns been added yet (database update M007)? */
+function mitQuoteColumnsReady() {
+    global $mysqli;
+    static $ready = null;
+    if ($ready === null) {
+        try {
+            $ready = mysqli_num_rows(mysqli_query($mysqli, "SHOW COLUMNS FROM quote_items LIKE 'item_cost'")) > 0
+                && mysqli_num_rows(mysqli_query($mysqli, "SHOW COLUMNS FROM products LIKE 'product_cost'")) > 0;
+        } catch (Throwable $e) {
+            $ready = false;
+        }
+    }
+    return $ready;
+}
+
+/** A posted money / percent value, or null when left blank. */
+function mitPostedNumber($value) {
+    $value = trim(str_replace([',', '$', '%'], '', (string) $value));
+    return $value === '' || !is_numeric($value) ? null : round((float) $value, 2);
+}
+
+/*
+ * ---------- images ----------
+ */
+
+function mitImagePath($relative) {
+    return dirname(__DIR__) . '/' . $relative;
+}
+
+/** Is this one of our image files (and nothing else)? */
+function mitImageIsOurs($relative) {
+    return is_string($relative) && preg_match('#^' . preg_quote(MIT_IMAGE_DIR, '#') . '/[a-f0-9]{32}\.(jpg|png)$#', $relative) === 1;
+}
+
+/** The URL a browser shows it from. */
+function mitImageUrl($relative) {
+    return mitImageIsOurs($relative) ? '/' . $relative : '';
+}
+
+/** Store image bytes as our own resized copy; returns its relative path. Throws when it is not an image. */
+function mitImageStore($bytes) {
+    if (strlen($bytes) === 0 || strlen($bytes) > MIT_IMAGE_MAX_BYTES) {
+        throw new RuntimeException('The image is empty or bigger than ' . (MIT_IMAGE_MAX_BYTES / 1048576) . ' MB.');
+    }
+    $info = @getimagesizefromstring($bytes);
+    if (!$info || !in_array($info[2], [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_GIF, IMAGETYPE_WEBP], true)) {
+        throw new RuntimeException('That is not a JPG, PNG, GIF or WebP image.');
+    }
+    if ($info[0] * $info[1] > 40000000) {
+        throw new RuntimeException('That image is too large to work with.');
+    }
+    $source = @imagecreatefromstring($bytes);
+    if (!$source) {
+        throw new RuntimeException('That image could not be read.');
+    }
+    // Re-drawing it drops anything but the picture (metadata, scripts in SVG-like payloads, etc.)
+    $width = imagesx($source);
+    $height = imagesy($source);
+    $scale = min(1, MIT_IMAGE_MAX_SIDE / max($width, $height));
+    $new_width = max(1, (int) round($width * $scale));
+    $new_height = max(1, (int) round($height * $scale));
+    $alpha = in_array($info[2], [IMAGETYPE_PNG, IMAGETYPE_GIF, IMAGETYPE_WEBP], true);
+    $image = imagecreatetruecolor($new_width, $new_height);
+    if ($alpha) {
+        imagealphablending($image, false);
+        imagesavealpha($image, true);
+        imagefill($image, 0, 0, imagecolorallocatealpha($image, 255, 255, 255, 127));
+    } else {
+        imagefill($image, 0, 0, imagecolorallocate($image, 255, 255, 255));
+    }
+    imagecopyresampled($image, $source, 0, 0, 0, 0, $new_width, $new_height, $width, $height);
+
+    $dir = mitImagePath(MIT_IMAGE_DIR);
+    if (!is_dir($dir) && !@mkdir($dir, 0750, true)) {
+        throw new RuntimeException('Could not create the image folder in uploads.');
+    }
+    $relative = MIT_IMAGE_DIR . '/' . bin2hex(random_bytes(16)) . ($alpha ? '.png' : '.jpg');
+    $ok = $alpha ? imagepng($image, mitImagePath($relative), 6) : imagejpeg($image, mitImagePath($relative), 85);
+    if (!$ok) {
+        throw new RuntimeException('Could not save the image.');
+    }
+    return $relative;
+}
+
+/** An uploaded file ($_FILES entry) stored; '' when none was sent. Throws on a bad one. */
+function mitImageFromUpload($file) {
+    if (!is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return '';
+    }
+    if ($file['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
+        throw new RuntimeException('The image upload did not come through - try again (up to 8 MB).');
+    }
+    return mitImageStore((string) file_get_contents($file['tmp_name']));
+}
+
+/** A copy of one of our images (so each line and product owns its file); '' when there is none. */
+function mitImageCopy($relative) {
+    if (!mitImageIsOurs($relative) || !is_file(mitImagePath($relative))) {
+        return '';
+    }
+    $copy = MIT_IMAGE_DIR . '/' . bin2hex(random_bytes(16)) . '.' . pathinfo($relative, PATHINFO_EXTENSION);
+    return @copy(mitImagePath($relative), mitImagePath($copy)) ? $copy : '';
+}
+
+function mitImageDelete($relative) {
+    if (mitImageIsOurs($relative)) {
+        @unlink(mitImagePath($relative));
+    }
+}
+
+/**
+ * Fetch a web address for an image, safely: http(s) only, public addresses only (never this server
+ * or the internal network - checked for every address the name resolves to, and the connection is
+ * pinned to the checked one), at most 3 redirects, a size cap and a time limit.
+ * Returns [body, content type].
+ */
+function mitFetchPublic($url, $max_bytes = MIT_IMAGE_MAX_BYTES) {
+    for ($hop = 0; $hop < 4; $hop++) {
+        $parts = parse_url((string) $url);
+        $scheme = strtolower($parts['scheme'] ?? '');
+        $host = $parts['host'] ?? '';
+        if (!in_array($scheme, ['http', 'https'], true) || $host === '' || isset($parts['user']) || isset($parts['pass'])) {
+            throw new RuntimeException('Use a normal http:// or https:// web address.');
+        }
+        $port = intval($parts['port'] ?? ($scheme === 'https' ? 443 : 80));
+        if (!in_array($port, [80, 443, 8080, 8443], true)) {
+            throw new RuntimeException('That web address uses a port ITFlow will not fetch from.');
+        }
+        $host_plain = trim($host, '[]');
+        $ips = filter_var($host_plain, FILTER_VALIDATE_IP) ? [$host_plain] : array_merge(
+            (array) @gethostbynamel($host_plain),
+            array_column((array) @dns_get_record($host_plain, DNS_AAAA), 'ipv6')
+        );
+        $ips = array_values(array_filter($ips));
+        if (!$ips) {
+            throw new RuntimeException("Could not find $host.");
+        }
+        foreach ($ips as $ip) {
+            if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                throw new RuntimeException('That address is on a private or local network - ITFlow only fetches public web addresses.');
+            }
+        }
+        $body = '';
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => false,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_CONNECTTIMEOUT => 8,
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_RESOLVE => ["$host_plain:$port:" . (strpos($ips[0], ':') !== false ? "[{$ips[0]}]" : $ips[0])],
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (compatible; ITFlow image fetch)',
+            CURLOPT_HTTPHEADER => ['Accept: image/*,text/html;q=0.9,*/*;q=0.5'],
+            CURLOPT_ENCODING => '',
+            CURLOPT_WRITEFUNCTION => function ($ch, $chunk) use (&$body, $max_bytes) {
+                $body .= $chunk;
+                return strlen($body) > $max_bytes ? 0 : strlen($chunk);
+            },
+        ]);
+        curl_exec($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $type = strtolower((string) curl_getinfo($ch, CURLINFO_CONTENT_TYPE));
+        $redirect = (string) curl_getinfo($ch, CURLINFO_REDIRECT_URL);
+        $error = curl_error($ch);
+        curl_close($ch);
+        if (strlen($body) > $max_bytes) {
+            throw new RuntimeException('That file is bigger than ' . ($max_bytes / 1048576) . ' MB.');
+        }
+        if ($status >= 300 && $status < 400 && $redirect !== '') {
+            $url = $redirect;
+            continue;
+        }
+        if ($status !== 200) {
+            throw new RuntimeException('The website answered ' . ($status ?: $error ?: 'nothing') . '.');
+        }
+        return [$body, $type];
+    }
+    throw new RuntimeException('That web address redirects too many times.');
+}
+
+/** An image from a link - the image itself, or a web page's main picture (og:image and the like). Stored; returns its path. */
+function mitImageFromUrl($url) {
+    [$body, $type] = mitFetchPublic(trim((string) $url));
+    if (strpos($type, 'text/html') !== false || preg_match('/^\s*<(!doctype|html)/i', substr($body, 0, 200))) {
+        $image_url = '';
+        foreach (['og:image:secure_url', 'og:image', 'twitter:image', 'twitter:image:src'] as $name) {
+            if (preg_match('/<meta[^>]+(?:property|name)=["\']' . preg_quote($name, '/') . '["\'][^>]*content=["\']([^"\']+)["\']/i', $body, $m)
+                || preg_match('/<meta[^>]+content=["\']([^"\']+)["\'][^>]*(?:property|name)=["\']' . preg_quote($name, '/') . '["\']/i', $body, $m)) {
+                $image_url = html_entity_decode($m[1], ENT_QUOTES);
+                break;
+            }
+        }
+        if ($image_url === '' && preg_match('/<link[^>]+rel=["\']image_src["\'][^>]*href=["\']([^"\']+)["\']/i', $body, $m)) {
+            $image_url = html_entity_decode($m[1], ENT_QUOTES);
+        }
+        if ($image_url === '') {
+            throw new RuntimeException('That page does not name a main picture - right-click the picture you want, copy its image address, and use that instead.');
+        }
+        if (strpos($image_url, '//') === 0) {
+            $image_url = (parse_url($url, PHP_URL_SCHEME) ?: 'https') . ':' . $image_url;
+        } elseif (!preg_match('#^https?://#i', $image_url)) {
+            $base = parse_url($url);
+            $image_url = $base['scheme'] . '://' . $base['host'] . (isset($base['port']) ? ':' . $base['port'] : '') . '/' . ltrim($image_url, '/');
+        }
+        [$body] = mitFetchPublic($image_url);
+    }
+    return mitImageStore($body);
+}
+
+/**
+ * The image a form asks for: a new upload, else a link to pull from. Returns the new path, '' for
+ * "nothing new", and keeps $error for the screen when the image could not be had.
+ */
+function mitImageFromForm(array $post, array $files, $field, &$error) {
+    $error = '';
+    try {
+        $upload = mitImageFromUpload($files[$field] ?? null);
+        if ($upload !== '') {
+            return $upload;
+        }
+        $url = trim((string) ($post[$field . '_url'] ?? ''));
+        return $url !== '' ? mitImageFromUrl($url) : '';
+    } catch (Throwable $e) {
+        $error = $e->getMessage();
+        return '';
+    }
+}
+
+/*
+ * ---------- quote lines ----------
+ */
+
+/** Our extras for a quote's lines: item_id => [cost, method, percent, image]. */
+function mitQuoteItemExtras($quote_id) {
+    global $mysqli;
+    static $cache = [];
+    $quote_id = intval($quote_id);
+    if (!mitQuoteColumnsReady()) {
+        return [];
+    }
+    if (!isset($cache[$quote_id])) {
+        $cache[$quote_id] = [];
+        $result = mysqli_query($mysqli, "SELECT item_id, item_cost, item_price_method, item_price_percent, item_image, item_quantity, item_price
+            FROM quote_items WHERE item_quote_id = $quote_id");
+        while ($row = mysqli_fetch_assoc($result)) {
+            $cache[$quote_id][intval($row['item_id'])] = $row;
+        }
+    }
+    return $cache[$quote_id];
+}
+
+function mitQuoteItemExtra($quote_id, $item_id) {
+    return mitQuoteItemExtras($quote_id)[intval($item_id)] ?? null;
+}
+
+/**
+ * Hook after a quote line is added or edited (agent/post/quote.php): save our cost, method, % and
+ * image. A new line picked from a product gets the product's image when no other was given.
+ */
+function mitQuoteItemSave($item_id, array $post, array $files, $is_new = false) {
+    global $mysqli;
+    $item_id = intval($item_id);
+    if (!$item_id || !mitQuoteColumnsReady()) {
+        return;
+    }
+    $cost = mitPostedNumber($post['item_cost'] ?? '');
+    $method = mitPriceMethod($post['item_price_method'] ?? '');
+    $percent = mitPostedNumber($post['item_price_percent'] ?? '');
+    if ($method === 'price') {
+        $percent = null;
+    }
+    $set = "item_cost = " . ($cost === null ? 'NULL' : $cost)
+        . ", item_price_method = " . ($method === '' ? 'NULL' : "'$method'")
+        . ", item_price_percent = " . ($percent === null ? 'NULL' : $percent);
+
+    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT item_image FROM quote_items WHERE item_id = $item_id"));
+    $old_image = (string) ($row['item_image'] ?? '');
+    $error = '';
+    $new_image = mitImageFromForm($post, $files, 'item_image', $error);
+    if ($new_image === '' && $is_new && intval($post['product_id'] ?? 0)) {
+        $product = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT product_image FROM products WHERE product_id = " . intval($post['product_id'])));
+        $new_image = mitImageCopy($product['product_image'] ?? '');
+    }
+    if ($new_image !== '') {
+        $set .= ", item_image = '" . mysqli_real_escape_string($mysqli, $new_image) . "'";
+        mitImageDelete($old_image);
+    } elseif (!empty($post['item_image_remove'])) {
+        $set .= ", item_image = NULL";
+        mitImageDelete($old_image);
+    }
+    mysqli_query($mysqli, "UPDATE quote_items SET $set WHERE item_id = $item_id");
+    if ($error !== '') {
+        $_SESSION['mit_image_error'] = $error;
+    }
+}
+
+/** Hook in a quote copy: the new line gets the old one's cost, method, % and its own copy of the image. */
+function mitQuoteItemCopy($from_item_id, $to_item_id) {
+    global $mysqli;
+    if (!mitQuoteColumnsReady()) {
+        return;
+    }
+    $from = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT item_cost, item_price_method, item_price_percent, item_image FROM quote_items WHERE item_id = " . intval($from_item_id)));
+    if (!$from) {
+        return;
+    }
+    $image = mitImageCopy($from['item_image'] ?? '');
+    mysqli_query($mysqli, "UPDATE quote_items SET item_cost = " . ($from['item_cost'] === null ? 'NULL' : floatval($from['item_cost']))
+        . ", item_price_method = " . (mitPriceMethod($from['item_price_method']) === '' ? 'NULL' : "'" . mitPriceMethod($from['item_price_method']) . "'")
+        . ", item_price_percent = " . ($from['item_price_percent'] === null ? 'NULL' : floatval($from['item_price_percent']))
+        . ", item_image = " . ($image === '' ? 'NULL' : "'" . mysqli_real_escape_string($mysqli, $image) . "'")
+        . " WHERE item_id = " . intval($to_item_id));
+}
+
+/** Hook before a quote line is deleted: its image file goes with it. */
+function mitQuoteItemDelete($item_id) {
+    global $mysqli;
+    if (!mitQuoteColumnsReady()) {
+        return;
+    }
+    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT item_image FROM quote_items WHERE item_id = " . intval($item_id)));
+    mitImageDelete($row['item_image'] ?? '');
+}
+
+/** Hook before all of a quote's lines are deleted at once (a client being deleted). */
+function mitQuoteImagesDelete($quote_id) {
+    foreach (mitQuoteItemExtras($quote_id) as $extra) {
+        mitImageDelete($extra['item_image'] ?? '');
+    }
+}
+
+/** The image-could-not-be-had message from the last save, once, for flashAlert. */
+function mitImageErrorFlash() {
+    if (!empty($_SESSION['mit_image_error'])) {
+        flashAlert('Saved, but the image could not be added: ' . escapeHtml($_SESSION['mit_image_error']), 'warning');
+        unset($_SESSION['mit_image_error']);
+    }
+}
+
+/*
+ * ---------- products ----------
+ */
+
+/** Hook after a product is added or edited (agent/post/product.php). */
+function mitProductSave($product_id, array $post, array $files) {
+    global $mysqli;
+    $product_id = intval($product_id);
+    if (!$product_id || !mitQuoteColumnsReady()) {
+        return;
+    }
+    $cost = mitPostedNumber($post['product_cost'] ?? '');
+    $method = mitPriceMethod($post['product_price_method'] ?? '');
+    $percent = $method === 'price' ? null : mitPostedNumber($post['product_price_percent'] ?? '');
+    $set = "product_cost = " . ($cost === null ? 'NULL' : $cost)
+        . ", product_price_method = " . ($method === '' ? 'NULL' : "'$method'")
+        . ", product_price_percent = " . ($percent === null ? 'NULL' : $percent);
+    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT product_image FROM products WHERE product_id = $product_id"));
+    $old_image = (string) ($row['product_image'] ?? '');
+    $error = '';
+    $new_image = mitImageFromForm($post, $files, 'product_image', $error);
+    if ($new_image !== '') {
+        $set .= ", product_image = '" . mysqli_real_escape_string($mysqli, $new_image) . "'";
+        mitImageDelete($old_image);
+    } elseif (!empty($post['product_image_remove'])) {
+        $set .= ", product_image = NULL";
+        mitImageDelete($old_image);
+    }
+    mysqli_query($mysqli, "UPDATE products SET $set WHERE product_id = $product_id");
+    if ($error !== '') {
+        $_SESSION['mit_image_error'] = $error;
+    }
+}
+
+/** Hook before a product is deleted: its image file goes with it. */
+function mitProductDelete($product_id) {
+    global $mysqli;
+    if (!mitQuoteColumnsReady()) {
+        return;
+    }
+    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT product_image FROM products WHERE product_id = " . intval($product_id)));
+    mitImageDelete($row['product_image'] ?? '');
+}
+
+/** Products' pricing and images for the quote add-item row: {product_id: {cost, method, percent, image}}. */
+function mitProductsPricingJson() {
+    global $mysqli;
+    $out = new stdClass();
+    if (!mitQuoteColumnsReady()) {
+        return json_encode($out);
+    }
+    $result = mysqli_query($mysqli, "SELECT product_id, product_cost, product_price_method, product_price_percent, product_image FROM products
+        WHERE product_archived_at IS NULL AND (product_cost IS NOT NULL OR product_image IS NOT NULL)");
+    while ($row = mysqli_fetch_assoc($result)) {
+        $out->{intval($row['product_id'])} = [
+            'cost' => $row['product_cost'] === null ? '' : number_format((float) $row['product_cost'], 2, '.', ''),
+            'method' => mitPriceMethod($row['product_price_method']),
+            'percent' => $row['product_price_percent'] === null ? '' : rtrim(rtrim(number_format((float) $row['product_price_percent'], 2, '.', ''), '0'), '.'),
+            'image' => mitImageUrl($row['product_image'] ?? ''),
+        ];
+    }
+    return json_encode($out);
+}
+
+/*
+ * ---------- screen pieces (staff) ----------
+ */
+
+/**
+ * The pricing block for a form (quote line edit, product): our cost, price by, %, presets and a
+ * hint; js/mit_quote_pricing.js works the price field out from them. $names: field names for
+ * cost / method / percent; $price_name: the form's price field.
+ */
+function mitPricingFields(array $names, $cost, $method, $percent, $price_name = 'price') {
+    $settings = mitQuoteSettings();
+    $method = mitPriceMethod($method) ?: ($cost === null || $cost === '' ? 'price' : $settings['method']);
+    $percent = $percent === null || $percent === '' ? ($method === 'price' ? '' : $settings['percent']) : $percent;
+    $fmt = function ($n) {
+        return $n === null || $n === '' ? '' : rtrim(rtrim(number_format((float) $n, 2, '.', ''), '0'), '.');
+    };
+    $html = '<div class="border rounded p-3 mb-3" style="background:#fffcf2;border-color:#f3e3b0!important" data-mit-pricing data-price="' . escapeHtml($price_name) . '">'
+        . '<div class="small fw-bold mb-2" style="color:#6b4e00;letter-spacing:.04em">PRICING - ONLY STAFF SEE THIS</div>'
+        . '<div class="row g-2 align-items-end">'
+        . '<div class="col-sm-4"><label class="form-label mb-1">Our cost (each)</label><div class="input-group"><span class="input-group-text"><i class="fa fa-fw fa-dollar-sign"></i></span>'
+        . '<input type="text" class="form-control text-end" inputmode="decimal" name="' . escapeHtml($names[0]) . '" value="' . escapeHtml($cost === null || $cost === '' ? '' : number_format((float) $cost, 2, '.', '')) . '" placeholder="0.00" data-mit-cost></div></div>'
+        . '<div class="col-sm-4"><label class="form-label mb-1">Price by</label><select class="form-select" name="' . escapeHtml($names[1]) . '" data-mit-method>';
+    foreach (MIT_PRICE_METHODS as $value => $label) {
+        $html .= '<option value="' . $value . '"' . ($value === $method ? ' selected' : '') . '>' . $label . '</option>';
+    }
+    $html .= '</select></div>'
+        . '<div class="col-sm-4" data-mit-pct-wrap' . ($method === 'price' ? ' hidden' : '') . '><label class="form-label mb-1">%</label>'
+        . '<input type="text" class="form-control text-end" inputmode="decimal" name="' . escapeHtml($names[2]) . '" value="' . escapeHtml($fmt($percent)) . '" data-mit-pct></div>'
+        . '</div><div class="d-flex flex-wrap gap-2 mt-2" data-mit-presets' . ($method === 'price' ? ' hidden' : '') . '>';
+    foreach ($settings['presets'] as $preset) {
+        $html .= '<button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" data-mit-preset="' . escapeHtml($fmt($preset)) . '">' . escapeHtml($fmt($preset)) . '%</button>';
+    }
+    return $html . '</div><div class="small text-body-secondary mt-2" data-mit-hint></div></div>'
+        . '<script src="/js/mit_quote_pricing.js"></script>';
+}
+
+/** The image field: the current picture, upload, pull from a link, remove. $name = the file field's name. */
+function mitImageField($name, $current) {
+    $url = mitImageUrl($current);
+    return '<div class="mb-3"><label class="form-label">Image</label><div class="d-flex gap-3 align-items-start">'
+        . '<div style="width:110px;height:110px;flex-shrink:0" class="border rounded bg-body-tertiary d-flex align-items-center justify-content-center overflow-hidden">'
+        . '<img alt="" data-mit-image-preview src="' . escapeHtml($url) . '" style="max-width:100%;max-height:100%;' . ($url ? '' : 'display:none') . '">'
+        . '<i class="fas fa-image fa-2x text-body-secondary" data-mit-image-empty' . ($url ? ' hidden' : '') . '></i></div>'
+        . '<div class="flex-grow-1">'
+        . '<input type="file" class="form-control mb-2" name="' . escapeHtml($name) . '" accept="image/jpeg,image/png,image/gif,image/webp" data-mit-image-input>'
+        . '<input type="url" class="form-control mb-1" name="' . escapeHtml($name) . '_url" placeholder="Or paste a link - an image, or the product\'s web page">'
+        . '<div class="form-text">From a product page it takes the page\'s main picture. ITFlow keeps its own copy.</div>'
+        . ($url ? '<div class="form-check mt-1"><input class="form-check-input" type="checkbox" name="' . escapeHtml($name) . '_remove" value="1" id="' . escapeHtml($name) . '_remove"><label class="form-check-label" for="' . escapeHtml($name) . '_remove">Remove the image</label></div>' : '')
+        . '</div></div></div>';
+}
+
+/** Quote page (agent/quote.php): the Image header cell. */
+function mitQuoteHeadImage() {
+    return mitQuoteSettings()['show_images'] ? '<th style="width:72px">Image</th>' : '';
+}
+
+/** Quote page: the staff-only Our cost / Pricing header cells (not printed). */
+function mitQuoteHeadPricing() {
+    return '<th class="text-end d-print-none" style="background:#fff8e1;color:#6b4e00">Our cost</th><th class="d-print-none" style="background:#fff8e1;color:#6b4e00">Pricing</th>';
+}
+
+function mitQuoteThumb($relative, $size = 56) {
+    $url = mitImageUrl($relative);
+    return $url ? '<img src="' . escapeHtml($url) . '" alt="" style="width:' . $size . 'px;height:' . $size . 'px;object-fit:contain" class="border rounded bg-white">' : '';
+}
+
+/** Quote page: a line's image cell. */
+function mitQuoteCellImage($quote_id, $item_id) {
+    if (!mitQuoteSettings()['show_images']) {
+        return '';
+    }
+    $extra = mitQuoteItemExtra($quote_id, $item_id);
+    return '<td>' . mitQuoteThumb($extra['item_image'] ?? '') . '</td>';
+}
+
+/** "Markup 20%" and what that is as the other measure. */
+function mitPricingBadge($cost, $method, $percent, $price) {
+    $cost = (float) $cost;
+    $price = (float) $price;
+    $method = mitPriceMethod($method);
+    if ($cost <= 0 || $price <= 0) {
+        return $method === 'price' ? '<span class="badge text-bg-light border">Set price</span>' : '';
+    }
+    $markup = ($price - $cost) / $cost * 100;
+    $margin = ($price - $cost) / $price * 100;
+    if ($method === 'markup' || $method === 'margin') {
+        $badge = '<span class="badge ' . ($method === 'markup' ? 'text-bg-primary' : 'text-bg-success') . '">' . MIT_PRICE_METHODS[$method] . ' ' . rtrim(rtrim(number_format((float) $percent, 2), '0'), '.') . '%</span>';
+    } else {
+        $badge = '<span class="badge text-bg-light border">Set price</span>';
+    }
+    $other = $method === 'margin' ? number_format($markup, 1) . '% markup' : number_format($margin, 1) . '% margin';
+    return $badge . '<div class="small ' . ($margin < 0 ? 'text-danger' : 'text-body-secondary') . '">' . $other . '</div>';
+}
+
+/** Quote page: a line's staff-only cost and pricing cells. */
+function mitQuoteCellPricing($quote_id, $item_id, $currency_format, $currency_code) {
+    $extra = mitQuoteItemExtra($quote_id, $item_id);
+    $cost = $extra['item_cost'] ?? null;
+    return '<td class="text-end d-print-none" style="background:#fffcf2">' . ($cost === null ? '<span class="text-body-secondary">-</span>' : numfmt_format_currency($currency_format, (float) $cost, $currency_code)) . '</td>'
+        . '<td class="d-print-none" style="background:#fffcf2">' . mitPricingBadge($cost, $extra['item_price_method'] ?? '', $extra['item_price_percent'] ?? '', $extra['item_price'] ?? 0) . '</td>';
+}
+
+/** Quote page add-item row: the image cell (upload; a product's image comes along by itself). */
+function mitQuoteAddCellImage() {
+    if (!mitQuoteSettings()['show_images']) {
+        return '';
+    }
+    return '<td><label class="d-block border border-primary-subtle rounded text-center small text-primary" style="width:56px;height:56px;cursor:pointer;border-style:dashed!important;overflow:hidden" title="Add an image">'
+        . '<img alt="" data-mit-image-preview style="width:100%;height:100%;object-fit:contain;display:none">'
+        . '<span data-mit-image-empty style="display:block;padding-top:9px">+ Image</span>'
+        . '<input type="file" name="item_image" accept="image/jpeg,image/png,image/gif,image/webp" class="d-none" data-mit-image-input></label></td>';
+}
+
+/** Quote page add-item row: our cost and pricing cells, wired to the row's price field. */
+function mitQuoteAddCellPricing() {
+    $settings = mitQuoteSettings();
+    $html = '<td class="d-print-none" style="background:#fffcf2"><input type="text" class="form-control text-end" inputmode="decimal" name="item_cost" placeholder="Our cost" data-mit-cost data-mit-price-field="price"></td>'
+        . '<td class="d-print-none" style="background:#fffcf2"><select class="form-select mb-1" name="item_price_method" data-mit-method>';
+    foreach (MIT_PRICE_METHODS as $value => $label) {
+        $html .= '<option value="' . $value . '"' . ($value === $settings['method'] ? ' selected' : '') . '>' . $label . '</option>';
+    }
+    return $html . '</select><input type="text" class="form-control text-end" inputmode="decimal" name="item_price_percent" value="' . escapeHtml(rtrim(rtrim(number_format($settings['percent'], 2, '.', ''), '0'), '.')) . '" placeholder="%" data-mit-pct>'
+        . '<div class="small text-body-secondary" data-mit-hint></div>'
+        . '<script>window.mitProductPricing = ' . mitProductsPricingJson() . ';</script><script src="/js/mit_quote_pricing.js"></script></td>';
+}
+
+/** Quote page: the staff-only profit box (not printed). */
+function mitQuoteProfitBox($quote_id, $currency_format, $currency_code) {
+    $cost = 0;
+    $priced = 0;
+    $missing = 0;
+    foreach (mitQuoteItemExtras($quote_id) as $extra) {
+        $line = (float) $extra['item_price'] * (float) $extra['item_quantity'];
+        if ($extra['item_cost'] === null) {
+            if (mitPriceMethod($extra['item_price_method']) !== 'price') {
+                $missing++;
+            }
+            $priced += $line;  // set-price lines (labour) count as all profit
+            continue;
+        }
+        $cost += (float) $extra['item_cost'] * (float) $extra['item_quantity'];
+        $priced += $line;
+    }
+    if ($priced <= 0) {
+        return '';
+    }
+    $profit = $priced - $cost;
+    $money = function ($n) use ($currency_format, $currency_code) {
+        return numfmt_format_currency($currency_format, $n, $currency_code);
+    };
+    return '<div class="row mb-3 d-print-none"><div class="col-md-5 col-lg-4 ms-auto"><div class="border rounded p-3" style="background:#fffcf2;border-color:#f3e3b0!important">'
+        . '<div class="small fw-bold mb-2" style="color:#6b4e00;letter-spacing:.04em">PROFIT - ONLY STAFF SEE THIS</div>'
+        . '<div class="d-flex justify-content-between"><span>Our cost</span><span>' . $money($cost) . '</span></div>'
+        . '<div class="d-flex justify-content-between"><span>Customer subtotal</span><span>' . $money($priced) . '</span></div>'
+        . '<div class="d-flex justify-content-between fw-bold border-top mt-1 pt-1 ' . ($profit < 0 ? 'text-danger' : 'text-success-emphasis') . '"><span>Profit</span><span>' . $money($profit) . '</span></div>'
+        . '<div class="d-flex justify-content-between ' . ($profit < 0 ? 'text-danger' : 'text-success-emphasis') . '"><span>Margin</span><span>' . number_format($profit / $priced * 100, 1) . '%</span></div>'
+        . ($missing ? '<div class="small text-body-secondary mt-1">' . $missing . ' line' . ($missing === 1 ? ' has' : 's have') . ' no cost entered - counted as all profit.</div>' : '')
+        . '</div></div></div>';
+}
+
+/*
+ * ---------- what the customer sees ----------
+ */
+
+/** The guest link / portal quote: a line's picture, or ''. */
+function mitQuoteCustomerImage($quote_id, $item_id) {
+    if (!mitQuoteSettings()['show_images']) {
+        return '';
+    }
+    $extra = mitQuoteItemExtra($quote_id, $item_id);
+    $thumb = mitQuoteThumb($extra['item_image'] ?? '', 64);
+    return $thumb ? '<span class="me-2">' . $thumb . '</span>' : '';
+}
+
+/** The quote PDF (TCPDF): a line's picture above its name, or ''. */
+function mitQuotePdfImage($quote_id, $item_id) {
+    if (!mitQuoteSettings()['show_images']) {
+        return '';
+    }
+    $extra = mitQuoteItemExtra($quote_id, $item_id);
+    $relative = $extra['item_image'] ?? '';
+    if (!mitImageIsOurs($relative) || !is_file(mitImagePath($relative))) {
+        return '';
+    }
+    return '<img src="' . htmlspecialchars(mitImagePath($relative)) . '" height="40"><br>';
+}

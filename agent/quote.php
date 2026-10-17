@@ -322,9 +322,11 @@ if (isset($_GET['quote_id'])) {
                                 <thead class="bg-light">
                                     <tr>
                                         <th class="d-print-none"></th>
+                                        <?= mitQuoteHeadImage() // Mountaineer IT ?>
                                         <th>Item</th>
                                         <th>Description</th>
                                         <th class="text-center">Qty</th>
+                                        <?= mitQuoteHeadPricing() // Mountaineer IT: our cost, pricing ?>
                                         <th class="text-end">Unit Price</th>
                                         <th class="text-end">Tax</th>
                                         <th class="text-end">Amount</th>
@@ -376,9 +378,11 @@ if (isset($_GET['quote_id'])) {
                                                     </div>
                                                 <?php } ?>
                                             </td>
+                                            <?= mitQuoteCellImage($quote_id, $item_id) // Mountaineer IT ?>
                                             <td><?= $item_name ?></td>
                                             <td><?= nl2br($item_description) ?></td>
                                             <td class="text-center"><?= number_format($item_quantity, 2) ?></td>
+                                            <?= mitQuoteCellPricing($quote_id, $item_id, $currency_format, $quote_currency_code) // Mountaineer IT ?>
                                             <td class="text-end"><?= numfmt_format_currency($currency_format, $item_price, $quote_currency_code) ?></td>
                                             <td class="text-end"><?= numfmt_format_currency($currency_format, $item_tax, $quote_currency_code) ?></td>
                                             <td class="text-end"><?= numfmt_format_currency($currency_format, $item_total, $quote_currency_code) ?></td>
@@ -393,7 +397,7 @@ if (isset($_GET['quote_id'])) {
                                     <tr class="d-print-none" <?php if ($quote_status == "Invoiced" || $quote_status == "Accepted" || $quote_status == "Declined" || lookupUserPermission("module_sales") <= 1) {
                                                                     echo "hidden";
                                                                 } ?>>
-                                        <form action="post.php" method="post" autocomplete="off">
+                                        <form action="post.php" method="post" autocomplete="off" enctype="multipart/form-data">
                                             <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
                                             <input type="hidden" name="quote_id" value="<?= $quote_id ?>">
                                             <input type="hidden" id="product_id" name="product_id" value="0">
@@ -405,6 +409,7 @@ if (isset($_GET['quote_id'])) {
                                             echo $item_order;
                                             ?>">
                                             <td></td>
+                                            <?= mitQuoteAddCellImage() // Mountaineer IT ?>
                                             <td>
                                                 <input type="text" class="form-control" name="name" id="name" placeholder="Item" maxlength="200" required>
                                             </td>
@@ -414,6 +419,7 @@ if (isset($_GET['quote_id'])) {
                                             <td>
                                                 <input type="text" class="form-control" inputmode="decimal" pattern="-?[0-9]*\.?[0-9]{0,2}" id="qty" style="text-align: center;" name="qty" placeholder="Qty">
                                             </td>
+                                            <?= mitQuoteAddCellPricing() // Mountaineer IT: our cost, pricing ?>
                                             <td>
                                                 <input type="text" class="form-control" inputmode="decimal" pattern="-?[0-9]*\.?[0-9]{0,2}" id="price" style="text-align: right;" name="price" placeholder="Price (<?= $quote_currency_code ?>)">
                                             </td>
@@ -448,6 +454,8 @@ if (isset($_GET['quote_id'])) {
                     </div>
                 </div>
             </div>
+
+            <?= mitQuoteProfitBox($quote_id, $currency_format, $quote_currency_code) // Mountaineer IT: staff only, not printed ?>
 
             <div class="row mb-3">
                 <div class="col-sm-7">

@@ -108,6 +108,17 @@ model: see DEPLOYMENT.md.
   `mitRepeatOnField`), `functions/calendar.php` (event SET, expandRecurringEvent, RepeatText,
   icsRepeatToRrule BYDAY/BYMONTH), event SELECTs with explicit columns in calendar.php,
   dashboard.php, client_overview.php (`mitEventByDayColumn()`).
+- Quote pricing and images (Oct 2026): `functions/mit_quotes.php` + `js/mit_quote_pricing.js` (ours) -
+  our cost, Markup / Margin % or Set price, and one image per quote line and per product (upload or
+  a link - an image or a product page's og:image, fetched public-only; GD re-encodes into
+  `uploads/mit_images/`). Columns `quote_items.item_cost/_price_method/_price_percent/_image` and
+  `products.product_cost/...` (M007); defaults in `mit_settings` `quote_price_*` / `quote_show_images`
+  (card `admin/includes/mit_quote_card.php` required at the end of `admin/settings_quote.php`,
+  handler `admin/post/mit_quote_settings.php`). Hooks: `agent/quote.php` (Image / Our cost / Pricing
+  cells, add row multipart, profit box), `agent/modals/quote/quote_item_edit.php`, `agent/post/quote.php`
+  (add/edit/copy/delete items, PDF image), `guest/guest_view_quote.php` + `guest/guest_post.php` (PDF),
+  `agent/modals/product/product_add.php` / `product_edit.php`, `agent/post/product.php`,
+  `agent/post/client.php` (client delete). Invoices are untouched (customer price only).
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files
   upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
   SSRF, broken tag links, Clients/Tickets/dashboard/search performance.

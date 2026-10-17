@@ -48,5 +48,6 @@ require_once "includes/inc_all_admin.php";
     </div>
 
 <?php
+require_once "includes/mit_quote_card.php"; // Mountaineer IT
 require_once "../includes/footer.php";
 

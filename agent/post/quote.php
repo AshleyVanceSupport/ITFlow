@@ -115,6 +115,7 @@ if (isset($_POST['add_quote_copy'])) {
         $tax_id = intval($row['item_tax_id']);
 
         mysqli_query($mysqli,"INSERT INTO quote_items SET item_name = '$item_name', item_description = '$item_description', item_quantity = $item_quantity, item_price = $item_price, item_subtotal = $item_subtotal, item_tax = $item_tax, item_total = $item_total, item_order = $item_order, item_tax_id = $tax_id, item_quote_id = $new_quote_id");
+        mitQuoteItemCopy($item_id, mysqli_insert_id($mysqli)); // Mountaineer IT: cost, pricing, its own copy of the image
     }
 
     logAudit("Quote", "Create", "$session_name created quote $config_quote_prefix$quote_number from quote $original_quote_prefix$original_quote_number", $client_id, $new_quote_id);
@@ -254,6 +255,7 @@ if (isset($_POST['add_quote_item'])) {
     $total = $subtotal + $tax_amount;
 
     mysqli_query($mysqli,"INSERT INTO quote_items SET item_name = '$name', item_description = '$description', item_quantity = $qty, item_price = $price, item_subtotal = $subtotal, item_tax = $tax_amount, item_total = $total, item_tax_id = $tax_id, item_order = $item_order, item_quote_id = $quote_id");
+    mitQuoteItemSave(mysqli_insert_id($mysqli), $_POST, $_FILES, true); // Mountaineer IT: our cost, pricing, image
 
     // Get Quote Details
     $sql = mysqli_query($mysqli,"SELECT quote_client_id, quote_discount_amount, quote_number, quote_prefix FROM quotes WHERE quote_id = $quote_id");
@@ -277,6 +279,7 @@ if (isset($_POST['add_quote_item'])) {
     logAudit("Quote", "Edit", "$session_name added item $name to quote $quote_prefix$quote_number", $client_id, $quote_id);
 
     flashAlert("Item <strong>$name</strong> added");
+    mitImageErrorFlash(); // Mountaineer IT
 
     redirect();
 
@@ -325,6 +328,7 @@ if (isset($_POST['edit_quote_item'])) {
     enforceClientAccess();
 
     mysqli_query($mysqli,"UPDATE quote_items SET item_name = '$name', item_description = '$description', item_quantity = $qty, item_price = $price, item_subtotal = $subtotal, item_tax = $tax_amount, item_total = $total, item_tax_id = $tax_id WHERE item_id = $item_id");
+    mitQuoteItemSave($item_id, $_POST, $_FILES); // Mountaineer IT: our cost, pricing, image
 
     //Update Quote Balances by tallying up items
     $sql_quote_total = mysqli_query($mysqli,"SELECT SUM(item_total) AS quote_total FROM quote_items WHERE item_quote_id = $quote_id");
@@ -336,6 +340,7 @@ if (isset($_POST['edit_quote_item'])) {
     logAudit("Quote", "Edit", "$session_name edited item $name on quote $quote_prefix$quote_number", $client_id, $quote_id);
 
     flashAlert("Item <strong>$name</strong> updated");
+    mitImageErrorFlash(); // Mountaineer IT
 
     redirect();
 
@@ -402,6 +407,7 @@ if (isset($_GET['delete_quote'])) {
     $sql = mysqli_query($mysqli,"SELECT item_id FROM quote_items WHERE item_quote_id = $quote_id");
     while($row = mysqli_fetch_assoc($sql)) {;
         $item_id = intval($row['item_id']);
+        mitQuoteItemDelete($item_id); // Mountaineer IT: the line's image file
         mysqli_query($mysqli,"DELETE FROM quote_items WHERE item_id = $item_id");
     }
 
@@ -453,6 +459,7 @@ if (isset($_GET['delete_quote_item'])) {
 
     mysqli_query($mysqli,"UPDATE quotes SET quote_amount = $new_quote_amount WHERE quote_id = $quote_id");
 
+    mitQuoteItemDelete($item_id); // Mountaineer IT: the line's image file
     mysqli_query($mysqli,"DELETE FROM quote_items WHERE item_id = $item_id");
 
     logAudit("Quote", "Edit", "$session_name removed item $item_name from $quote_prefix$quote_number", $client_id, $quote_id);
@@ -976,7 +983,7 @@ if (isset($_GET['export_quote_pdf'])) {
     $sub_total = 0;
     $total_tax = 0;
 
-    $sql_items = mysqli_query($mysqli, "SELECT item_description, item_name, item_price, item_quantity, item_tax, item_total FROM quote_items WHERE item_quote_id = $quote_id ORDER BY item_order ASC");
+    $sql_items = mysqli_query($mysqli, "SELECT item_id, item_description, item_name, item_price, item_quantity, item_tax, item_total FROM quote_items WHERE item_quote_id = $quote_id ORDER BY item_order ASC");
     while ($item = mysqli_fetch_assoc($sql_items)) {
         $name = $item['item_name'];
         $desc = $item['item_description'];
@@ -990,7 +997,7 @@ if (isset($_GET['export_quote_pdf'])) {
 
         $html .= '
         <tr>
-            <td><strong>' . $name . '</strong>
+            <td>' . mitQuotePdfImage($quote_id, $item['item_id']) . '<strong>' . $name . '</strong>
                 <br><span style="font-style:italic; font-size:9pt;">' . nl2br($desc) . '</span>
             </td>
             <td align="center">' . number_format($qty, 2) . '</td>

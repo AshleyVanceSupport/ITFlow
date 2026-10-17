@@ -435,7 +435,7 @@ if (isset($_GET['export_quote_pdf'])) {
         $sub_total = 0;
         $total_tax = 0;
 
-        $sql_items = mysqli_query($mysqli, "SELECT item_description, item_name, item_price, item_quantity, item_tax, item_total FROM quote_items WHERE item_quote_id = $quote_id ORDER BY item_order ASC");
+        $sql_items = mysqli_query($mysqli, "SELECT item_id, item_description, item_name, item_price, item_quantity, item_tax, item_total FROM quote_items WHERE item_quote_id = $quote_id ORDER BY item_order ASC");
         while ($item = mysqli_fetch_assoc($sql_items)) {
             $name = $item['item_name'];
             $desc = $item['item_description'];
@@ -449,7 +449,7 @@ if (isset($_GET['export_quote_pdf'])) {
 
             $html .= '
             <tr>
-                <td><strong>' . $name . '</strong>
+                <td>' . mitQuotePdfImage($quote_id, $item['item_id']) . '<strong>' . $name . '</strong>
                     <br><span style="font-style:italic; font-size:9pt;">' . nl2br($desc) . '</span>
                 </td>
                 <td align="center">' . number_format($qty, 2) . '</td>

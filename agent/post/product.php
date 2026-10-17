@@ -18,10 +18,12 @@ if (isset($_POST['add_product'])) {
     mysqli_query($mysqli,"INSERT INTO products SET product_name = '$name', product_type = '$type', product_description = '$description', product_code = '$code', product_location = '$location', product_price = '$price', product_currency_code = '$session_company_currency', product_tax_id = $tax, product_category_id = $category");
 
     $product_id = mysqli_insert_id($mysqli);
+    mitProductSave($product_id, $_POST, $_FILES); // Mountaineer IT: cost, pricing, image
 
     logAudit("Product", "Create", "$session_name created product $name", 0, $product_id);
 
     flashAlert("Product <strong>$name</strong> created");
+    mitImageErrorFlash();
 
     redirect();
 
@@ -38,10 +40,12 @@ if (isset($_POST['edit_product'])) {
     $product_id = intval($_POST['product_id']);
 
     mysqli_query($mysqli,"UPDATE products SET product_name = '$name', product_description = '$description', product_code = '$code', product_location = '$location', product_price = '$price', product_tax_id = $tax, product_category_id = $category WHERE product_id = $product_id");
+    mitProductSave($product_id, $_POST, $_FILES); // Mountaineer IT: cost, pricing, image
 
     logAudit("Product", "Edit", "$session_name edited product $name", 0, $product_id);
 
     flashAlert("Product <strong>$name</strong> edited");
+    mitImageErrorFlash();
 
     redirect();
 
@@ -98,6 +102,7 @@ if (isset($_GET['delete_product'])) {
     //Get Product Name
     $product_name = escapeSql(getFieldById('products', $product_id, 'product_name'));
 
+    mitProductDelete($product_id); // Mountaineer IT: its image file
     mysqli_query($mysqli,"DELETE FROM products WHERE product_id = $product_id");
 
     logAudit("Product", "Delete", "$session_name deleted product $product_name");
@@ -228,6 +233,7 @@ if (isset($_POST['bulk_delete_products'])) {
 
             $product_name = escapeSql(getFieldById('products', $product_id, 'product_name'));
 
+            mitProductDelete($product_id); // Mountaineer IT: its image file
             mysqli_query($mysqli, "DELETE FROM products WHERE product_id = $product_id");
 
             logAudit("Product", "Delete", "$session_name deleted product $product_name");

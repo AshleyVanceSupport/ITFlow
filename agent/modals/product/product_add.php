@@ -19,7 +19,7 @@ ob_start();
     <h5 class="modal-title"><i class="fas fa-fw <?= $type_icon ?> me-2"></i>New <strong><?= ucwords($type); ?></strong></h5>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
 </div>
-<form action="post.php" method="post" autocomplete="off">
+<form action="post.php" method="post" autocomplete="off" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
 
     <div class="modal-body">
@@ -76,6 +76,8 @@ ob_start();
                     </button>
             </div>
         </div>
+
+        <?= mitQuoteColumnsReady() ? mitPricingFields(['product_cost', 'product_price_method', 'product_price_percent'], null, null, null) : '' // Mountaineer IT ?>
 
         <div class="row g-2">
             <div class="col">
@@ -136,6 +138,8 @@ ob_start();
                 <input type="text" class="form-control" name="code" placeholder="Enter product code eg. SKU #" maxlength="200">
             </div>
         </div>
+
+        <?= mitQuoteColumnsReady() && mitQuoteSettings()['show_images'] ? mitImageField('product_image', '') : '' // Mountaineer IT ?>
 
     </div>
 

@@ -1,0 +1,196 @@
+/*
+ * Mountaineer IT - quote pricing (functions/mit_quotes.php): works a line's customer price out
+ * from our cost and a markup / margin %, shows what that means, previews a chosen image, and on
+ * the quote's add-item row fills cost, pricing and picture in when a product is picked.
+ *
+ * Fields are found through their form (input.form - the add-item row's form sits inside a table
+ * row, so its fields are not its DOM children): [data-mit-cost], [data-mit-method], [data-mit-pct],
+ * the price field (name from data-price on [data-mit-pricing], or data-mit-price-field, default
+ * "price"), [data-mit-hint], [data-mit-preset] buttons. Safe to load more than once.
+ */
+(function () {
+    'use strict';
+
+    function num(value) {
+        var n = parseFloat(String(value || '').replace(/[$,%\s]/g, ''));
+        return isNaN(n) ? null : n;
+    }
+    function money(n) {
+        return '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    }
+
+    /** The pieces of one pricing group, keyed off its cost field. */
+    function group(costInput) {
+        var form = costInput.form;
+        if (!form) {
+            return null;
+        }
+        var all = Array.prototype.slice.call(form.elements);
+        var block = costInput.closest('[data-mit-pricing]');
+        var priceName = (block && block.dataset.price) || costInput.dataset.mitPriceField || 'price';
+        var root = block || document;
+        return {
+            form: form,
+            cost: costInput,
+            method: all.filter(function (el) { return el.hasAttribute('data-mit-method'); })[0],
+            pct: all.filter(function (el) { return el.hasAttribute('data-mit-pct'); })[0],
+            price: form.elements[priceName] || all.filter(function (el) { return el.name === priceName; })[0],
+            hint: (block || costInput.closest('tr') || document).querySelector('[data-mit-hint]') || root.querySelector('[data-mit-hint]'),
+            pctWrap: block ? block.querySelector('[data-mit-pct-wrap]') : null,
+            presets: block ? block.querySelector('[data-mit-presets]') : null
+        };
+    }
+
+    function update(g, fromPrice) {
+        if (!g || !g.method || !g.price) {
+            return;
+        }
+        var method = g.method.value;
+        var cost = num(g.cost.value);
+        var pct = g.pct ? num(g.pct.value) : null;
+        var setPrice = method === 'price';
+        if (g.pctWrap) {
+            g.pctWrap.hidden = setPrice;
+        }
+        if (g.presets) {
+            g.presets.hidden = setPrice;
+        }
+        if (g.pct && !g.pctWrap) {
+            g.pct.hidden = setPrice;
+        }
+        if (!fromPrice && !setPrice && cost !== null && cost > 0 && pct !== null) {
+            var price = method === 'markup' ? cost * (1 + pct / 100) : (pct < 100 ? cost / (1 - pct / 100) : null);
+            if (price !== null) {
+                g.price.value = price.toFixed(2);
+            }
+        }
+        if (g.presets) {
+            g.presets.querySelectorAll('[data-mit-preset]').forEach(function (b) {
+                var on = pct !== null && num(b.dataset.mitPreset) === pct;
+                b.classList.toggle('btn-primary', on);
+                b.classList.toggle('btn-outline-secondary', !on);
+            });
+        }
+        if (!g.hint) {
+            return;
+        }
+        var p = num(g.price.value);
+        if (cost === null || cost <= 0 || p === null || p <= 0) {
+            g.hint.textContent = cost === null && !setPrice ? 'Enter our cost to work the price out.' : '';
+            return;
+        }
+        var profit = p - cost;
+        var markup = profit / cost * 100;
+        var margin = profit / p * 100;
+        g.hint.textContent = 'Profit ' + money(profit) + ' each - ' + (method === 'margin' ? markup.toFixed(1) + '% markup' : (method === 'markup' ? margin.toFixed(1) + '% margin' : markup.toFixed(1) + '% markup, ' + margin.toFixed(1) + '% margin'));
+        g.hint.classList.toggle('text-danger', profit < 0);
+    }
+
+    function bind(costInput) {
+        if (costInput.dataset.mitBound) {
+            return;
+        }
+        var g = group(costInput);
+        if (!g || !g.price) {
+            return;
+        }
+        costInput.dataset.mitBound = '1';
+        [g.cost, g.pct].forEach(function (el) {
+            if (el) {
+                el.addEventListener('input', function () { update(g); });
+            }
+        });
+        if (g.method) {
+            g.method.addEventListener('change', function () { update(g); });
+        }
+        // Typing a price yourself makes it a set price - the hint still shows what it comes to
+        g.price.addEventListener('input', function (e) {
+            if (e.isTrusted && g.method && g.method.value !== 'price') {
+                g.method.value = 'price';
+            }
+            update(g, true);
+        });
+        if (g.presets) {
+            g.presets.addEventListener('click', function (e) {
+                var b = e.target.closest('[data-mit-preset]');
+                if (b && g.pct) {
+                    g.pct.value = b.dataset.mitPreset;
+                    update(g);
+                }
+            });
+        }
+        update(g, true);
+
+        // The quote's add-item row: a product picked from the list brings its cost, pricing and picture
+        var productId = g.form.elements.product_id;
+        if (productId && window.mitProductPricing && !costInput.closest('[data-mit-pricing]')) {
+            var last = productId.value;
+            setInterval(function () {
+                if (productId.value === last) {
+                    return;
+                }
+                last = productId.value;
+                var p = window.mitProductPricing[last];
+                if (!p) {
+                    return;
+                }
+                g.cost.value = p.cost || '';
+                if (p.method && g.method) {
+                    g.method.value = p.method;
+                }
+                if (g.pct) {
+                    g.pct.value = p.percent || g.pct.value;
+                }
+                update(g, true);
+                if (p.image) {
+                    var row = costInput.closest('tr');
+                    var img = row && row.querySelector('[data-mit-image-preview]');
+                    if (img) {
+                        img.src = p.image;
+                        img.style.display = '';
+                        var empty = row.querySelector('[data-mit-image-empty]');
+                        if (empty) {
+                            empty.style.display = 'none';
+                        }
+                    }
+                }
+            }, 300);
+        }
+    }
+
+    function bindImage(input) {
+        if (input.dataset.mitBound) {
+            return;
+        }
+        input.dataset.mitBound = '1';
+        input.addEventListener('change', function () {
+            var box = input.closest('label, .d-flex') || input.parentNode;
+            var img = box.querySelector('[data-mit-image-preview]') || (box.parentNode && box.parentNode.querySelector('[data-mit-image-preview]'));
+            var empty = box.querySelector('[data-mit-image-empty]') || (box.parentNode && box.parentNode.querySelector('[data-mit-image-empty]'));
+            if (img && input.files && input.files[0]) {
+                img.src = URL.createObjectURL(input.files[0]);
+                img.style.display = '';
+                if (empty) {
+                    empty.hidden = true;
+                    empty.style.display = 'none';
+                }
+            }
+        });
+    }
+
+    function scan(root) {
+        (root || document).querySelectorAll('[data-mit-cost]').forEach(bind);
+        (root || document).querySelectorAll('[data-mit-image-input]').forEach(bindImage);
+    }
+
+    // The add-item row's script sits before the row's price field: wait for the whole page
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () { scan(); });
+    } else {
+        scan();
+    }
+    if (!window.mitQuotePricingBound) {
+        window.mitQuotePricingBound = true;
+        document.addEventListener('shown.bs.modal', function (e) { scan(e.target); });
+    }
+})();

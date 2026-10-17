@@ -20,6 +20,9 @@ $product_created_at = escapeHtml($row['product_created_at']);
 $category_id = intval($row['product_category_id']);
 $product_tax_id = intval($row['product_tax_id']);
 
+// Mountaineer IT: our cost, pricing and image (functions/mit_quotes.php)
+$mit_product = mitQuoteColumnsReady() ? mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT product_cost, product_price_method, product_price_percent, product_image FROM products WHERE product_id = $product_id")) : null;
+
 // Generate the HTML form content using output buffering.
 ob_start();
 ?>
@@ -28,7 +31,7 @@ ob_start();
     <h5 class="modal-title"><i class="fas fa-fw fa-box-open me-2"></i>Editing <?= ucwords($product_type) ?>: <strong><?= $product_name ?></strong></h5>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
 </div>
-<form action="post.php" method="post" autocomplete="off">
+<form action="post.php" method="post" autocomplete="off" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
     <input type="hidden" name="product_id" value="<?= $product_id ?>">
     <div class="modal-body">
@@ -65,6 +68,8 @@ ob_start();
                     </button>
             </div>
         </div>
+
+        <?= $mit_product ? mitPricingFields(['product_cost', 'product_price_method', 'product_price_percent'], $mit_product['product_cost'], $mit_product['product_price_method'], $mit_product['product_price_percent']) : '' // Mountaineer IT ?>
 
         <div class="row g-2">
             <div class="col">
@@ -124,6 +129,8 @@ ob_start();
                 <input type="text" class="form-control" name="code" placeholder="Enter product code eg. SKU #" maxlength="200" value="<?= $product_code ?>">
             </div>
         </div>
+
+        <?= $mit_product && mitQuoteSettings()['show_images'] ? mitImageField('product_image', $mit_product['product_image']) : '' // Mountaineer IT ?>
 
     </div>
 
