@@ -262,6 +262,12 @@ model: see DEPLOYMENT.md.
   (`empty($GLOBALS['mit_schedule_skip_contact'])` - the "Email the contact" tick; a global rather than a new
   parameter so ITFlow's function signature stays as it is). Working hours on the board come from Admin > SLA
   (`mitDispatchBusinessHours`). Needs ticketing on and the Dispatch switch on.
+- Remembered list views (Oct 2026): `functions/mit_list_views.php` (ours) - the Tickets list keeps each agent's
+  pill, filters, sort and List / Board in `mit_user_preferences` `listview.tickets` (like the calendar) and puts
+  them back when Tickets is opened with none; saved only when picked on the page itself (Referer), never q / page /
+  open, not in a client's ticket list. Hooks in `agent/tickets.php`: one line after `enforceUserPermission`
+  (`mitListViewRestore('tickets')`, then filter_header.php runs again so sort / order / dates follow) and
+  `mitListViewResetButton('tickets')` before the List / Board group (`?mit_reset_view=1`). `functions.php` (require).
 - Review fixes (Oct 2026): `functions/mit_common.php` (ours, required first in `functions.php`) - shared
   helpers: `mitMailBody` / `mitSqlHtml` (HTML for SQL without escapeSql's strip_tags), `mitProductIsTangible`,
   module switches (`mitModuleOn`, `mitModuleRequire` for pages/modals, `mitModuleGuard` for handler files,

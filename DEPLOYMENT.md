@@ -192,6 +192,8 @@ break stock ITFlow, and lists what stops working after a move.
   OAuth, and switch SMTP AUTH / IMAP back on for the mailbox.
 - **Outlook calendars** stop syncing; events ITFlow already put in people's Outlook stay until
   deleted (they carry the *ITFlow* category).
+- **Remembered Tickets filters** – stock ITFlow opens Tickets with its defaults every time (the saved
+  views sit unused in `mit_user_preferences`).
 - **Repeats by weekday** ("the third Wednesday", "the last Friday") – stock ITFlow repeats those
   recurring tickets and calendar events on the same date each month instead (the rule sits unused
   in `recurring_ticket_by_day` / `event_repeat_by_day`). Check and adjust their dates after a move.

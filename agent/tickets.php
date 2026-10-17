@@ -33,6 +33,8 @@ if (isset($_GET['client_id'])) {
 // Perms
 enforceUserPermission('module_support');
 
+if (function_exists('mitListViewRestore') && mitListViewRestore('tickets')) { require $_SERVER['DOCUMENT_ROOT'] . '/includes/filter_header.php'; } // Mountaineer IT: remembered filters
+
 $can_edit = ticketCan(2);
 $can_delete = ticketCan(3);
 
@@ -390,6 +392,7 @@ $export_extra = [
                                 </div>
                             </div>
                         <?php } ?>
+                        <?= function_exists('mitListViewResetButton') ? mitListViewResetButton('tickets') : '' ?><!-- Mountaineer IT -->
                         <div class="btn-group" role="group" aria-label="View">
                             <a href="<?= escapeHtml($filter_url(['view' => 'list'])) ?>" class="btn <?= $view === 'list' ? 'btn-dark' : 'btn-outline-dark' ?>" title="List">
                                 <i class="fas fa-fw fa-list"></i><span class="d-none d-xl-inline ms-1">List</span>
