@@ -7,9 +7,10 @@
  * mit_user_preferences (ticket.layout) - and applied in the browser by agent/js/mit_ticket_layout.js,
  * which moves ITFlow's own boxes, so the page's markup stays upstream's.
  *
- * Layout: {"main": [box ids], "side": [box ids], "collapsed": [box ids]}. Box ids are the script's
- * names for the boxes (description, reply, conversation, details, contact, also_open, site, tasks,
- * linked, history). A box a layout does not mention stays where ITFlow puts it.
+ * Layout: {"columns": '' | even | side | single | three, "left": [box ids] (the third column),
+ * "main": [...], "side": [...], "collapsed": [...], "half": [...] (half width - two sit side by side)}.
+ * Box ids are the script's names for the boxes (description, reply, conversation, details, contact,
+ * also_open, site, tasks, linked, history). A box a layout does not mention stays where ITFlow puts it.
  */
 
 /** A layout as posted or stored, made safe - or null when it is not one. */
@@ -20,8 +21,8 @@ function mitTicketLayoutClean($layout) {
     if (!is_array($layout)) {
         return null;
     }
-    $clean = [];
-    foreach (['main', 'side', 'collapsed'] as $key) {
+    $clean = ['columns' => in_array($layout['columns'] ?? '', ['', 'even', 'side', 'single', 'three'], true) ? ($layout['columns'] ?? '') : ''];
+    foreach (['left', 'main', 'side', 'collapsed', 'half'] as $key) {
         $ids = [];
         foreach ((array) ($layout[$key] ?? []) as $id) {
             if (is_string($id) && preg_match('/^[a-z_]{1,24}$/', $id) && count($ids) < 30) {
@@ -31,8 +32,9 @@ function mitTicketLayoutClean($layout) {
         $clean[$key] = array_values($ids);
     }
     // A box is in one column only
-    $clean['side'] = array_values(array_diff($clean['side'], $clean['main']));
-    return $clean['main'] || $clean['side'] ? $clean : null;
+    $clean['left'] = array_values(array_diff($clean['left'], $clean['main']));
+    $clean['side'] = array_values(array_diff($clean['side'], $clean['main'], $clean['left']));
+    return $clean['left'] || $clean['main'] || $clean['side'] ? $clean : null;
 }
 
 /** The company default layout, or null for ITFlow's own. */

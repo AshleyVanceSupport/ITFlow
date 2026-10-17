@@ -137,7 +137,8 @@ model: see DEPLOYMENT.md.
   `ticket-<id>-tech-<user>@` invites. A helper who becomes the lead is cleared by `mitTicketTechsTidy()`
   on read (no hooks in ITFlow's four reassign paths). Customer emails stay about the lead's booking only.
 - Ticket page layout (Oct 2026): `functions/mit_ticket_layout.php` + `agent/js/mit_ticket_layout.js` (ours) -
-  box order / column / start collapsed, company default (`mit_settings` ticket_layout, admins) and
+  columns (main wide / even / side wider / one / three - an extra `.mit-layout-left` column the
+  script adds), box order / column / half width / start collapsed, company default (`mit_settings` ticket_layout, admins) and
   per tech (`mit_user_preferences` ticket.layout). The script moves ITFlow's own boxes in the browser,
   found by their title icon (fa-align-left, fa-sliders-h, fa-user, fa-layer-group, fa-map-marker-alt,
   fa-tasks, fa-link, fa-history), the reply form by `#replyComposer`, the rest of the main column

@@ -1,10 +1,11 @@
 /*
  * Mountaineer IT - the ticket page's customisable layout (functions/mit_ticket_layout.php).
  *
- * Finds ITFlow's boxes on the page, names them, and puts them where the saved layout says - left
- * (main) or right (side) column, in order, collapsed or not. "Customise layout" (in the ticket's
- * menu, or under the right column) lets you drag them about, then save it for yourself or, as an
- * admin, as the company default. The page's markup is ITFlow's own; nothing here changes it
+ * Finds ITFlow's boxes on the page, names them, and puts them where the saved layout says: how the
+ * columns share the page (main wide, even, side wider, one column, or three columns - an extra one
+ * on the left), which column each box is in and in what order, full or half width (two half boxes
+ * sit side by side), collapsed or not. "Customise layout" (in the ticket's menu, or under the right
+ * column) lets you drag them about, then save it for yourself or, as an admin, as the company default. The page's markup is ITFlow's own; nothing here changes it
  * server-side, so a box this script does not know simply stays where ITFlow put it.
  */
 (function () {
@@ -18,12 +19,37 @@
         return;
     }
 
+    // The extra (third) column, on the left - only shown in the three-column layout
+    const left = document.createElement('div');
+    left.className = 'mit-layout-left';
+    root.insertBefore(left, main);
+    const COLUMNS = {left: left, main: main, side: side};
+
+    // How the columns share the page; '' is ITFlow's own (main wide, side 300-340px)
+    const WIDTHS = {'': 'Main wide', even: 'Even 50/50', side: 'Side wider', single: 'One column', three: 'Three columns'};
+
     const style = document.createElement('style');
     style.textContent = '.ticket-layout .card.collapsed-card > .list-group { display: none; }'
+        + '.ticket-layout:not(.mit-cols-three) > .mit-layout-left { display: none; }'
+        + '.mit-layout-left { display: contents; } .mit-layout-left > * { order: 3; }'
+        + '@media (min-width: 992px) {'
+        + ' .ticket-layout.mit-cols-even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }'
+        + ' .ticket-layout.mit-cols-side { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }'
+        + ' .ticket-layout.mit-cols-single { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; grid-template-areas: "header" "main" "side"; }'
+        + ' .ticket-layout.mit-cols-three { grid-template-columns: 300px minmax(0, 1fr) 300px; grid-template-areas: "left header side" "left main side"; }'
+        + ' .mit-layout-left { display: block; grid-area: left; min-width: 0; }'
+        + ' .ticket-layout.mit-layout-on > .ticket-layout-main, .ticket-layout.mit-layout-on > .ticket-layout-side, .ticket-layout.mit-layout-on.mit-cols-three > .mit-layout-left { display: flex; flex-wrap: wrap; align-content: flex-start; column-gap: 1rem; }'
+        + ' .ticket-layout.mit-layout-on > :is(.ticket-layout-main, .ticket-layout-side, .mit-layout-left) > * { width: 100%; }'
+        + ' .ticket-layout.mit-layout-on > :is(.ticket-layout-main, .ticket-layout-side, .mit-layout-left) > .mit-half { width: calc(50% - .5rem); }'
+        + '}'
+        + '@media (min-width: 1400px) { .ticket-layout.mit-cols-three { grid-template-columns: 340px minmax(0, 1fr) 340px; } }'
         + '.mit-layout-editing [data-mit-box] { outline: 2px dashed var(--bs-primary-border-subtle); outline-offset: 2px; border-radius: .375rem; margin-bottom: 1rem; }'
-        + '.mit-layout-editing .ticket-layout-main, .mit-layout-editing .ticket-layout-side { min-height: 8rem; }'
+        + '.mit-layout-editing .ticket-layout-main, .mit-layout-editing .ticket-layout-side, .mit-layout-editing .mit-layout-left { min-height: 8rem; }'
+        + '.mit-layout-editing.mit-cols-three .mit-layout-left:empty::before { content: "Drag boxes here"; display: block; width: 100%; padding: 2rem 1rem; text-align: center; color: var(--bs-secondary-color); border: 2px dashed var(--bs-border-color); border-radius: .375rem; }'
         + '.mit-box-bar { background: var(--bs-primary-bg-subtle); color: var(--bs-primary-text-emphasis); border-radius: .375rem .375rem 0 0; }'
-        + '.mit-box-handle { cursor: grab; font-weight: 600; } .mit-layout-toolbar { position: sticky; top: .5rem; z-index: 1020; }';
+        + '.mit-box-bar { flex-wrap: wrap; row-gap: 0 !important; } .mit-box-bar .form-check { white-space: nowrap; }'
+        + '.mit-box-handle { cursor: grab; font-weight: 600; white-space: nowrap; flex: 1 0 auto; }'
+        + '.mit-layout-toolbar { position: sticky; top: .5rem; z-index: 1020; }';
     document.head.appendChild(style);
 
     // ITFlow's boxes, known by the icon in their title
@@ -37,9 +63,12 @@
     };
     // ITFlow's own layout - where a box goes back to, and where a saved layout slots a box it never saw
     const DEFAULT = {
+        columns: '',
+        left: [],
         main: ['description', 'reply', 'conversation'],
         side: ['details', 'contact', 'also_open', 'site', 'tasks', 'linked', 'history'],
-        collapsed: ['history']
+        collapsed: ['history'],
+        half: []
     };
     const NO_COLLAPSE = ['reply', 'conversation'];
 
@@ -132,22 +161,45 @@
         }
     }
 
+    /** The columns: '' (ITFlow's), even, side, single or three. Leaving three moves the left column's boxes to the top of the main one. */
+    function setColumns(columns) {
+        columns = Object.prototype.hasOwnProperty.call(WIDTHS, columns) ? columns : '';
+        Object.keys(WIDTHS).forEach(function (name) {
+            if (name) {
+                root.classList.toggle('mit-cols-' + name, name === columns);
+            }
+        });
+        if (columns !== 'three') {
+            Array.prototype.slice.call(left.children).reverse().forEach(function (box) {
+                main.insertBefore(box, main.firstChild);
+            });
+        }
+        return columns;
+    }
+
+    function setHalf(box, half) {
+        box.classList.toggle('mit-half', half);
+    }
+
     function apply(layout) {
         if (!layout) {
             return;
         }
+        root.classList.add('mit-layout-on');
         const found = boxes();
-        ['main', 'side'].forEach(function (name) {
-            const column = name === 'main' ? main : side;
+        ['left', 'main', 'side'].forEach(function (name) {
             (layout[name] || []).forEach(function (id) {
                 if (found[id]) {
-                    column.appendChild(found[id]);
+                    COLUMNS[name].appendChild(found[id]);
                 }
             });
         });
+        setColumns(layout.columns || '');
         const collapsed = layout.collapsed || [];
+        const half = layout.half || [];
         Object.keys(found).forEach(function (id) {
             setCollapsed(found[id], collapsed.includes(id));
+            setHalf(found[id], half.includes(id));
         });
     }
 
@@ -162,17 +214,22 @@
      */
     function current() {
         const before = cfg.layout || DEFAULT;
-        const shown = {main: [], side: []};
-        main.querySelectorAll(':scope > [data-mit-box]').forEach(function (box) {
-            shown.main.push(box.dataset.mitBox);
+        const names = ['left', 'main', 'side'];
+        const shown = {left: [], main: [], side: []};
+        names.forEach(function (name) {
+            COLUMNS[name].querySelectorAll(':scope > [data-mit-box]').forEach(function (box) {
+                shown[name].push(box.dataset.mitBox);
+            });
         });
-        side.querySelectorAll(':scope > [data-mit-box]').forEach(function (box) {
-            shown.side.push(box.dataset.mitBox);
-        });
-        const present = shown.main.concat(shown.side);
-        ['main', 'side'].forEach(function (name) {
-            const list = (before[name] || []).concat(DEFAULT[name].filter(function (id) {
-                return !(before.main || []).includes(id) && !(before.side || []).includes(id);
+        const present = shown.left.concat(shown.main, shown.side);
+        const placed = function (id) {
+            return names.some(function (name) {
+                return (before[name] || []).includes(id);
+            });
+        };
+        names.forEach(function (name) {
+            const list = (before[name] || []).concat((DEFAULT[name] || []).filter(function (id) {
+                return !placed(id);
             }));
             list.forEach(function (id, index) {
                 if (present.includes(id) || shown[name].includes(id)) {
@@ -189,16 +246,26 @@
                 shown[name].splice(at, 0, id);
             });
         });
-        const collapsed = (before.collapsed || DEFAULT.collapsed).filter(function (id) {
-            return !present.includes(id);
-        });
+        // Boxes not on this ticket keep their collapsed / half setting; the rest are as ticked
+        const kept = function (key) {
+            return (before[key] || DEFAULT[key]).filter(function (id) {
+                return !present.includes(id);
+            });
+        };
+        const collapsed = kept('collapsed');
+        const half = kept('half');
         root.querySelectorAll('[data-mit-box]').forEach(function (box) {
-            const tick = box.querySelector(':scope > .mit-box-bar input[type=checkbox]');
-            if (tick && tick.checked) {
+            if (box.classList.contains('collapsed-card') || (box.querySelector(':scope > .mit-box-bar [data-mit-opt="collapsed"]') || {}).checked) {
                 collapsed.push(box.dataset.mitBox);
             }
+            if (box.classList.contains('mit-half')) {
+                half.push(box.dataset.mitBox);
+            }
         });
-        return {main: shown.main, side: shown.side, collapsed: collapsed};
+        const columns = Object.keys(WIDTHS).find(function (name) {
+            return name && root.classList.contains('mit-cols-' + name);
+        }) || '';
+        return {columns: columns, left: shown.left, main: shown.main, side: shown.side, collapsed: collapsed, half: half};
     }
 
     function send(scope, layout) {
@@ -239,11 +306,29 @@
         }
         editing = true;
         document.body.classList.add('mit-layout-editing');
+        root.classList.add('mit-layout-on');
 
         const bar = document.createElement('div');
         bar.className = 'mit-layout-toolbar card card-body py-2 mb-3 d-flex flex-row flex-wrap align-items-center gap-2';
         bar.innerHTML = '<span class="me-auto"><i class="fas fa-th-large me-2 text-primary"></i><strong>Customise layout</strong>'
-            + '<span class="text-body-secondary small ms-2">Drag boxes by their bar - between the columns too - and tick the ones that should start collapsed.</span></span>';
+            + '<span class="text-body-secondary small ms-2">Drag boxes by their bar - between the columns too. Half-width boxes sit side by side.</span></span>';
+        const columnsLabel = document.createElement('label');
+        columnsLabel.className = 'd-flex align-items-center gap-2 small mb-0';
+        columnsLabel.innerHTML = '<span class="text-nowrap">Columns</span>';
+        const columnsSelect = document.createElement('select');
+        columnsSelect.className = 'form-select form-select-sm';
+        Object.keys(WIDTHS).forEach(function (name) {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = WIDTHS[name];
+            columnsSelect.appendChild(option);
+        });
+        columnsSelect.value = current().columns;
+        columnsSelect.addEventListener('change', function () {
+            setColumns(columnsSelect.value);
+        });
+        columnsLabel.appendChild(columnsSelect);
+        bar.appendChild(columnsLabel);
         bar.appendChild(button('<i class="fas fa-check me-1"></i>Save for me', 'btn-primary', function () {
             send('mine', current());
         }));
@@ -272,17 +357,29 @@
             const strip = document.createElement('div');
             strip.className = 'mit-box-bar d-flex align-items-center gap-2 px-2 py-1 small';
             strip.innerHTML = '<span class="mit-box-handle flex-grow-1" title="Drag to move"><i class="fas fa-grip-vertical me-2"></i>' + NAMES[id] + '</span>';
-            if (box.classList.contains('card') && !NO_COLLAPSE.includes(id)) {
+            const option = function (opt, text, checked, onChange) {
                 const label = document.createElement('label');
                 label.className = 'form-check mb-0';
-                label.innerHTML = '<input type="checkbox" class="form-check-input"> <span class="form-check-label">Start collapsed</span>';
-                label.querySelector('input').checked = box.classList.contains('collapsed-card');
+                label.innerHTML = '<input type="checkbox" class="form-check-input" data-mit-opt="' + opt + '"> <span class="form-check-label">' + text + '</span>';
+                const input = label.querySelector('input');
+                input.checked = checked;
+                input.addEventListener('change', function () {
+                    onChange(input.checked);
+                });
                 strip.appendChild(label);
+            };
+            option('half', 'Half width', box.classList.contains('mit-half'), function (on) {
+                setHalf(box, on);
+            });
+            if (box.classList.contains('card') && !NO_COLLAPSE.includes(id)) {
+                option('collapsed', 'Start collapsed', box.classList.contains('collapsed-card'), function (on) {
+                    setCollapsed(box, on);
+                });
             }
             box.insertBefore(strip, box.firstChild);
         });
 
-        [main, side].forEach(function (column) {
+        [left, main, side].forEach(function (column) {
             new Sortable(column, {group: 'mitTicketLayout', handle: '.mit-box-handle', draggable: '[data-mit-box]', animation: 150, forceFallback: true});
         });
         bar.scrollIntoView({behavior: 'smooth', block: 'start'});

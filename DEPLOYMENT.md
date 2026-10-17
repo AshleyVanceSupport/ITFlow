@@ -189,7 +189,7 @@ break stock ITFlow, and lists what stops working after a move.
   cost, the markup / margin and the line and product images are not shown (they sit unused in
   the `item_cost` / `item_price_*` / `item_image` and `product_cost` / `product_price_*` /
   `product_image` columns, the files in `uploads/mit_images/`).
-- **Ticket page layout** (box order, columns, collapsed boxes) – stock ITFlow shows its own layout;
+- **Ticket page layout** (column widths, three columns, box order, half-width and collapsed boxes) – stock ITFlow shows its own layout;
   the saved layouts sit unused in `mit_settings` / `mit_user_preferences`.
 - **Booking lengths, tech colours, per-person calendar settings, Outlook busy times, the ticket
   timers dropdown** – not in stock ITFlow; their data sits unused in `mit_` tables and the
