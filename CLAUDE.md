@@ -99,6 +99,15 @@ model: see DEPLOYMENT.md.
   from `agent/js/ticket_time_tracking.js` - re-check if upstream changes them) with pause /
   resume / discard. Hooks: one require in `includes/top_nav.php` before the bell, and
   `agent/ajax.php?mit_timer_tickets` (ticket names, client-scoped).
+- Repeats by weekday (Oct 2026): `functions/mit_recurring.php` (ours, required from mit_calendar.php)
+  + `js/mit_repeat_on.js` - "the third Wednesday" / "the last Friday" (RFC 5545 BYDAY, e.g. `3WE`,
+  `-1FR`) in `recurring_tickets.recurring_ticket_by_day` and `calendar_events.event_repeat_by_day`
+  (M006). Hooks: `functions/ticket.php` (recurringTicketNextRun `$by_day` param + its 4 callers,
+  CadenceText), `cron/nightly_tasks.php` (recurring SELECT *), `agent/post/recurring_ticket.php`
+  (save / bulk next run), both recurring ticket modals and `calendar_event_form.php` (one-line
+  `mitRepeatOnField`), `functions/calendar.php` (event SET, expandRecurringEvent, RepeatText,
+  icsRepeatToRrule BYDAY/BYMONTH), event SELECTs with explicit columns in calendar.php,
+  dashboard.php, client_overview.php (`mitEventByDayColumn()`).
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files
   upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
   SSRF, broken tag links, Clients/Tickets/dashboard/search performance.

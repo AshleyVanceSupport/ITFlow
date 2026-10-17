@@ -208,6 +208,9 @@ function calendarRepeatText($row) {
     $interval = max(1, intval($row['event_repeat_interval'] ?? 1));
     [, $one, $many] = CALENDAR_REPEATS[(string) $row['event_repeat']];
     $text = $interval === 1 ? "Every $one" : "Every $interval $many";
+    if (function_exists('mitByDayRule') && in_array($row['event_repeat'], ['Month', 'Year'], true) && mitByDayRule($row['event_repeat_by_day'] ?? '') !== '') {
+        $text .= ' on ' . mitByDayText($row['event_repeat_by_day']) . ($row['event_repeat'] === 'Year' && !empty($row['event_start']) ? ' of ' . date('F', strtotime($row['event_start'])) : '');  // Mountaineer IT
+    }
     if (!empty($row['event_repeat_until'])) {
         $text .= ' until ' . date('M j, Y', strtotime($row['event_repeat_until']));
     }
@@ -269,12 +272,20 @@ function expandRecurringEvent(array $event, $window_start, $window_end, $limit =
     $skip = array_flip(calendarSkippedDates($event));
     $step = ['Day' => 'day', 'Week' => 'week', 'Month' => 'month', 'Year' => 'year'][$repeat];
     $base_day = (int) $base->format('j');
+    // Mountaineer IT: monthly / yearly on a weekday ("the third Wednesday") - functions/mit_recurring.php
+    $by_day = ($step === 'month' || $step === 'year') && function_exists('mitByDayRule') ? mitByDayRule($event['event_repeat_by_day'] ?? '') : '';
 
     $occurrences = [];
     for ($i = 0; count($occurrences) < $limit && $i < 50000; $i++) {
 
         $candidate = clone $base;
-        if ($i > 0) {
+        if ($i > 0 && $by_day !== '') {
+            $months = $i * $interval * ($step === 'year' ? 12 : 1);
+            $month = (int) $base->format('n') + $months;
+            $year = (int) $base->format('Y') + intdiv($month - 1, 12);
+            [$y, $m, $d] = explode('-', mitByDayDate($year, ($month - 1) % 12 + 1, $by_day));
+            $candidate->setDate((int) $y, (int) $m, (int) $d);
+        } elseif ($i > 0) {
             $candidate->modify('+' . ($i * $interval) . " $step");
             if (($step === 'month' || $step === 'year') && (int) $candidate->format('j') !== $base_day) {
                 if ($candidate > $to) {
@@ -493,7 +504,8 @@ function calendarEventFormSet($post, $client_id, &$error = '') {
         event_location = '" . escapeSql(mb_substr(trim((string) ($post['location'] ?? '')), 0, 500)) . "',
         event_description = '" . escapeSql(trim((string) ($post['description'] ?? ''))) . "',
         event_start = '$start', event_end = '$end', event_all_day = $all_day,
-        event_repeat = '$repeat', event_repeat_interval = $interval, event_repeat_until = " . ($until !== '' ? "'$until'" : 'NULL') . ",
+        event_repeat = '$repeat', event_repeat_interval = $interval, event_repeat_until = " . ($until !== '' ? "'$until'" : 'NULL') . ","
+        . (function_exists('mitEventByDaySql') /* Mountaineer IT: the third Wednesday */ ? mitEventByDaySql($repeat, $post['repeat_on'] ?? '', $start_date) : '') . "
         event_calendar_id = $calendar_id, event_client_id = " . intval($client_id) . ", event_location_id = $location_id";
 }
 
@@ -713,7 +725,7 @@ function calendarEventItems(array $calendar_ids, $from, $to, array $opts = []) {
     $user_id = intval($opts['user_id'] ?? 0);
     $user_query = $user_id ? "AND (event_created_by = $user_id OR EXISTS (SELECT 1 FROM calendar_event_attendees a WHERE a.attendee_event_id = event_id AND a.attendee_user_id = $user_id))" : '';
 
-    $sql = mysqli_query($mysqli, "SELECT event_id, event_title, event_start, event_end, event_all_day, event_repeat, event_repeat_interval, event_repeat_until, event_repeat_skip,
+    $sql = mysqli_query($mysqli, "SELECT event_id, event_title, event_start, event_end, event_all_day, event_repeat, event_repeat_interval, event_repeat_until, event_repeat_skip," . (function_exists('mitEventByDayColumn') ? mitEventByDayColumn() : '') . "
             event_location, event_client_id, event_calendar_id, calendar_color, client_name, location_name,
             (SELECT COUNT(*) FROM calendar_event_attendees a WHERE a.attendee_event_id = event_id) AS attendee_count,
             (SELECT COUNT(*) FROM calendar_event_attendees a WHERE a.attendee_event_id = event_id AND a.attendee_invited_at IS NOT NULL) AS invited_count
@@ -917,7 +929,7 @@ function icsVtimezone($timezone, $from, $to) {
  * UTC (RFC 5545 requires UTC when DTSTART carries a TZID); an all-day event's
  * is the date itself.
  */
-function icsRepeatToRrule($repeat, $interval = 1, $until = null, $all_day = false, $timezone = 'UTC') {
+function icsRepeatToRrule($repeat, $interval = 1, $until = null, $all_day = false, $timezone = 'UTC', $by_day = '', $start = '') {
 
     if (!isset(CALENDAR_REPEATS[(string) $repeat])) {
         return null;
@@ -926,6 +938,11 @@ function icsRepeatToRrule($repeat, $interval = 1, $until = null, $all_day = fals
     $rule = 'FREQ=' . CALENDAR_REPEATS[(string) $repeat][0];
     if (intval($interval) > 1) {
         $rule .= ';INTERVAL=' . intval($interval);
+    }
+    // Mountaineer IT: "the third Wednesday" (BYDAY=3WE); a yearly one also says which month
+    $by_day = function_exists('mitByDayRule') && in_array((string) $repeat, ['Month', 'Year'], true) ? mitByDayRule($by_day) : '';
+    if ($by_day !== '') {
+        $rule .= ((string) $repeat === 'Year' && $start ? ';BYMONTH=' . intval(date('n', strtotime($start))) : '') . ";BYDAY=$by_day";
     }
     if (!empty($until)) {
         $rule .= ';UNTIL=' . ($all_day ? date('Ymd', strtotime($until)) : icsFormatUtc(substr($until, 0, 10) . ' 23:59:59', $timezone));
@@ -990,7 +1007,7 @@ function icsEventLines(array $item, $timezone, $tzid) {
         }
     }
 
-    $rrule = icsRepeatToRrule($item['repeat'] ?? '', $item['repeat_interval'] ?? 1, $item['repeat_until'] ?? null, $all_day, $timezone);
+    $rrule = icsRepeatToRrule($item['repeat'] ?? '', $item['repeat_interval'] ?? 1, $item['repeat_until'] ?? null, $all_day, $timezone, $item['repeat_by_day'] ?? '', $start);
     if ($rrule) {
         $lines[] = "RRULE:$rrule";
         foreach ($item['skip'] ?? [] as $date) {
@@ -1135,6 +1152,7 @@ function calendarEventIcsItem(array $event, $busy = false) {
         'created' => $event['event_created_at'],
         'sequence' => intval($event['event_sequence'] ?? 0),
         'repeat' => $event['event_repeat'] ?? '',
+        'repeat_by_day' => $event['event_repeat_by_day'] ?? '',
         'repeat_interval' => $event['event_repeat_interval'] ?? 1,
         'repeat_until' => $event['event_repeat_until'] ?? null,
         'skip' => calendarSkippedDates($event),

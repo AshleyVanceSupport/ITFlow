@@ -799,9 +799,10 @@ function recurringTicketFrequency($frequency) {
  * day of shorter months and back on the 31st after, rather than drifting.
  * Missed runs are stepped over, not raised one by one.
  */
-function recurringTicketNextRun($due, $frequency, $anchor = '', $after = '') {
+function recurringTicketNextRun($due, $frequency, $anchor = '', $after = '', $by_day = '') {
     $frequency = recurringTicketFrequency($frequency) ?: 'Monthly';
     $step = RECURRING_TICKET_FREQUENCIES[$frequency];
+    $by_day = function_exists('mitByDayRule') && isset($step['months']) ? mitByDayRule($by_day) : '';  // Mountaineer IT: "the third Wednesday"
     $after = $after !== '' ? $after : date('Y-m-d');
     $date = DateTime::createFromFormat('!Y-m-d', substr((string) $due, 0, 10)) ?: new DateTime('today');
     $anchor_date = DateTime::createFromFormat('!Y-m-d', substr((string) $anchor, 0, 10));
@@ -813,6 +814,10 @@ function recurringTicketNextRun($due, $frequency, $anchor = '', $after = '') {
     do {
         if (isset($step['days'])) {
             $date->modify('+' . $step['days'] . ' days');
+        } elseif ($by_day !== '') {
+            $month = intval($date->format('n')) + $step['months'];
+            $year = intval($date->format('Y')) + intdiv($month - 1, 12);
+            $date = DateTime::createFromFormat('!Y-m-d', mitByDayDate($year, ($month - 1) % 12 + 1, $by_day));
         } else {
             $year = intval($date->format('Y'));
             $month = intval($date->format('n')) + $step['months'];
@@ -833,6 +838,9 @@ function recurringTicketCadenceText($row) {
         return '';
     }
     $step = RECURRING_TICKET_FREQUENCIES[$frequency];
+    if (isset($step['months']) && function_exists('mitRecurringTicketByDay') && mitRecurringTicketByDay($row) !== '') {
+        return 'on ' . mitByDayText(mitRecurringTicketByDay($row));  // Mountaineer IT
+    }
     if (isset($step['days'])) {
         return $step['days'] === 7 ? 'on ' . $next->format('l') . 's' : ($step['days'] === 14 ? 'every other ' . $next->format('l') : 'every three days');
     }
@@ -1006,7 +1014,7 @@ function recurringTicketRunNow($row, $by) {
     $ticket_id = recurringTicketRaise($recurring_ticket_id, $by);
     if ($ticket_id) {
         $due = (string) $row['recurring_ticket_next_run'];
-        $next_run = recurringTicketNextRun($due, $row['recurring_ticket_frequency'], $row['recurring_ticket_start_date'], max(date('Y-m-d'), substr($due, 0, 10)));
+        $next_run = recurringTicketNextRun($due, $row['recurring_ticket_frequency'], $row['recurring_ticket_start_date'], max(date('Y-m-d'), substr($due, 0, 10)), $row['recurring_ticket_by_day'] ?? '');
         mysqli_query($mysqli, "UPDATE recurring_tickets SET recurring_ticket_next_run = '$next_run' WHERE recurring_ticket_id = $recurring_ticket_id");
     }
     return $ticket_id;
@@ -1067,7 +1075,7 @@ function recurringTicketUpcoming($row, $count = 3) {
     }
     $runs[] = $date;
     while (count($runs) < $count) {
-        $date = recurringTicketNextRun($date, $row['recurring_ticket_frequency'], $row['recurring_ticket_start_date'], $date);
+        $date = recurringTicketNextRun($date, $row['recurring_ticket_frequency'], $row['recurring_ticket_start_date'], $date, $row['recurring_ticket_by_day'] ?? '');
         $runs[] = $date;
     }
     return $runs;

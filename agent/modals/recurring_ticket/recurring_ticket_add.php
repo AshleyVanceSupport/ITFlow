@@ -222,6 +222,8 @@ ob_start();
                     <div class="form-text">The nightly cron raises a ticket on this day, then again each time it comes round. Monthly ones keep to this day of the month - the last day, in a shorter month.</div>
                 </div>
 
+                <?= mitRecurringTicketRepeatOnField('start_date', '') // Mountaineer IT: or the third Wednesday, the last Friday ?>
+
             </div>
 
             <div class="tab-pane fade" id="pills-add-assets">

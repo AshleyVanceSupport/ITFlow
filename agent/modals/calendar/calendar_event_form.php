@@ -114,6 +114,9 @@ $form_can_email = calendarCanEmail();
             </div>
         </div>
     </div>
+    <?php if (function_exists('mitRepeatOnField')) { // Mountaineer IT: or the third Wednesday, the last Friday ?>
+        <div class="mt-2"><?= mitRepeatOnField('[name=start_date]', '[name=repeat]', ['Month', 'Year'], ['Year'], $form['event_repeat_by_day'] ?? '') ?></div>
+    <?php } ?>
     <?php if (calendarSkippedDates($form)) { ?>
         <div class="small text-body-secondary mt-2"><i class="fas fa-fw fa-forward me-1"></i>Skipped: <?= escapeHtml(implode(', ', array_map(function ($date) {
             return date('M j, Y', strtotime($date));

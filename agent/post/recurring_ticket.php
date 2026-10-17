@@ -127,6 +127,7 @@ if (isset($_POST['add_recurring_ticket'])) {
         recurring_ticket_asset_id = {$f['asset_id']}, recurring_ticket_category = {$f['category_id']}, recurring_ticket_ticket_template_id = {$f['template_id']}");
 
     $recurring_ticket_id = mysqli_insert_id($mysqli);
+    mitRecurringTicketSaveByDay($recurring_ticket_id, $f['frequency'], $_POST['repeat_on'] ?? '', $start_date); // Mountaineer IT
 
     recurringTicketSetOtherAssets($recurring_ticket_id, ticketClientOwnedAssetIds($_POST['additional_assets'] ?? [], $client_id, $f['asset_id']));
     recurringTicketSetTasks($recurring_ticket_id);
@@ -168,6 +169,7 @@ if (isset($_POST['edit_recurring_ticket'])) {
         recurring_ticket_next_run = '$next_run' $anchor_sql, recurring_ticket_assigned_to = {$f['assigned_to']}, recurring_ticket_asset_id = {$f['asset_id']},
         recurring_ticket_contact_id = {$f['contact_id']}, recurring_ticket_category = {$f['category_id']}, recurring_ticket_ticket_template_id = {$f['template_id']}
         WHERE recurring_ticket_id = $recurring_ticket_id");
+    mitRecurringTicketSaveByDay($recurring_ticket_id, $f['frequency'], $_POST['repeat_on'] ?? mitByDayFollow($row['recurring_ticket_by_day'] ?? '', $next_run), $next_run); // Mountaineer IT
 
     // The other assets go with the asset field - an empty multi-select posts nothing
     if (isset($_POST['asset_id'])) {
@@ -243,7 +245,7 @@ if (isset($_GET['pause_recurring_ticket']) || isset($_GET['resume_recurring_tick
         // Runs it missed while paused are not raised now - it picks up from today
         $next_run = substr((string) $row['recurring_ticket_next_run'], 0, 10);
         if ($next_run < date('Y-m-d')) {
-            $next_run = recurringTicketNextRun($next_run, $row['recurring_ticket_frequency'], $row['recurring_ticket_start_date'], date('Y-m-d', strtotime('-1 day')));
+            $next_run = recurringTicketNextRun($next_run, $row['recurring_ticket_frequency'], $row['recurring_ticket_start_date'], date('Y-m-d', strtotime('-1 day')), $row['recurring_ticket_by_day'] ?? '');
         }
         mysqli_query($mysqli, "UPDATE recurring_tickets SET recurring_ticket_paused_at = NULL, recurring_ticket_next_run = '$next_run' WHERE recurring_ticket_id = $recurring_ticket_id");
     }
@@ -271,7 +273,7 @@ if (isset($_POST['bulk_pause_recurring_tickets']) || isset($_POST['bulk_resume_r
         } else {
             $next_run = substr((string) $row['recurring_ticket_next_run'], 0, 10);
             if ($next_run < date('Y-m-d')) {
-                $next_run = recurringTicketNextRun($next_run, $row['recurring_ticket_frequency'], $row['recurring_ticket_start_date'], date('Y-m-d', strtotime('-1 day')));
+                $next_run = recurringTicketNextRun($next_run, $row['recurring_ticket_frequency'], $row['recurring_ticket_start_date'], date('Y-m-d', strtotime('-1 day')), $row['recurring_ticket_by_day'] ?? '');
             }
             mysqli_query($mysqli, "UPDATE recurring_tickets SET recurring_ticket_paused_at = NULL, recurring_ticket_next_run = '$next_run' WHERE recurring_ticket_id = $recurring_ticket_id");
         }
@@ -436,6 +438,7 @@ if (isset($_POST['bulk_edit_recurring_ticket_next_run_date'])) {
     foreach (recurringTicketsForBulk(2) as $recurring_ticket_id => $row) {
         // A run moved by hand is the new anchor for the day of the month
         mysqli_query($mysqli, "UPDATE recurring_tickets SET recurring_ticket_next_run = '$next_run', recurring_ticket_start_date = '$next_run' WHERE recurring_ticket_id = $recurring_ticket_id");
+        mitRecurringTicketSaveByDay($recurring_ticket_id, $row['recurring_ticket_frequency'], mitByDayFollow($row['recurring_ticket_by_day'] ?? '', $next_run), $next_run); // Mountaineer IT: a weekday rule follows the new date
         logAudit("Recurring Ticket", "Edit", "$session_name moved the next run of recurring ticket " . escapeSql($row['recurring_ticket_subject']) . " from " . escapeSql($row['recurring_ticket_next_run']) . " to $next_run", intval($row['recurring_ticket_client_id']), $recurring_ticket_id);
         triggerCustomAction('recurring_ticket_update', $recurring_ticket_id);
         $count++;

@@ -219,3 +219,6 @@ function mitCleanCalendarState(array $state) {
     }
     return $clean;
 }
+
+// Repeats by weekday (the third Wednesday, the last Friday) for recurring tickets and events
+require_once __DIR__ . '/mit_recurring.php';

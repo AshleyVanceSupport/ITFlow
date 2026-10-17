@@ -212,6 +212,8 @@ ob_start();
                     </div>
                 </div>
 
+                <?= mitRecurringTicketRepeatOnField('next_date', $recurring['recurring_ticket_by_day'] ?? '') // Mountaineer IT: or the third Wednesday, the last Friday ?>
+
                 <div class="small text-body-secondary">
                     <div class="mb-1"><?= recurringTicketNextRunPill($recurring) ?></div>
                     <?php if ($upcoming && !$paused) { ?>

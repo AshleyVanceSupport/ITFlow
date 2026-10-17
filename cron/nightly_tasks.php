@@ -356,7 +356,7 @@ if ($tickets_pending_assignment > 0) {
 // run), raises one ticket and moves on to its next run after today. Paused ones
 // raise nothing. recurringTicketRunNow() (functions/ticket.php) is the same code
 // the Raise now button runs.
-$sql_recurring_tickets = mysqli_query($mysqli, "SELECT recurring_ticket_id, recurring_ticket_next_run, recurring_ticket_frequency, recurring_ticket_start_date
+$sql_recurring_tickets = mysqli_query($mysqli, "SELECT * -- Mountaineer IT: all of it, so a weekday rule (recurring_ticket_by_day) comes along
     FROM recurring_tickets WHERE recurring_ticket_next_run <= CURDATE() AND recurring_ticket_paused_at IS NULL");
 
 $recurring_tickets_raised = 0;

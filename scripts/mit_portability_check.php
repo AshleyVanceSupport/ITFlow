@@ -127,6 +127,10 @@ if ($n = $count("SELECT COUNT(*) FROM mit_outlook_links")) {
 if ($n = $count("SELECT COUNT(*) FROM tickets WHERE ticket_schedule_end IS NOT NULL")) {
     $after[] = "Booking lengths: $n bookings have an end time - stock ITFlow shows its default length instead.";
 }
+$n = $count("SELECT COUNT(*) FROM recurring_tickets WHERE recurring_ticket_by_day IS NOT NULL") + $count("SELECT COUNT(*) FROM calendar_events WHERE event_repeat_by_day IS NOT NULL");
+if ($n) {
+    $after[] = "Repeats by weekday: $n recurring tickets / events repeat on e.g. the third Wednesday - stock ITFlow repeats them on the same date each month instead.";
+}
 if ($n = $count("SELECT COUNT(*) FROM mit_user_preferences")) {
     $after[] = "Per-person calendar settings and tech colours ($n saved) are not used by stock ITFlow.";
 }
