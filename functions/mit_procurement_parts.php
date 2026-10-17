@@ -110,8 +110,7 @@ function mitProcQuoteConvertFields($quote_id, $client_id) {
         return '';
     }
     $products = mitProductsInfo(array_column($lines, 'item_product_id'));
-    $html = '<div class="mb-3"><label class="form-label">Project <span class="text-muted small">(for the items to order - optional)</span></label>'
-        . '<select class="form-select select2" name="mit_proc_project_id">' . mitProcProjectOptions($client_id, 0) . '</select></div>'
+    $html = '<div class="mb-3">' . mitProcProjectField('mit_proc_project_id', $client_id, 0, 'Project <span class="text-muted small">(for the items to order - optional)</span>') . '</div>'
         . '<div class="border rounded overflow-hidden"><div class="px-3 py-2 bg-body-tertiary border-bottom"><strong><i class="fas fa-cart-plus me-2"></i>Send to procurement</strong>'
         . '<div class="small text-muted">Ticked lines wait under Procurement > To order until they are on a PO. The invoice itself is unchanged.</div></div>'
         . '<table class="table table-sm table-borderless mb-0 align-middle"><thead class="small text-muted"><tr><th style="width: 36px"></th><th>Item</th><th class="text-center">Qty</th><th class="text-end">Our cost</th><th style="width: 190px">Order from</th></tr></thead><tbody>';
@@ -132,17 +131,42 @@ function mitProcQuoteConvertFields($quote_id, $client_id) {
     return $html . '</tbody></table></div>';
 }
 
-/** A client's open projects as <option>s. */
-function mitProcProjectOptions($client_id, $selected) {
+/** Open projects the agent can see, oldest number last: [{id, label, client}] - client 0 = our own projects. */
+function mitProcOpenProjects() {
     global $mysqli;
-    $html = '<option value="0">- None -</option>';
-    $result = mysqli_query($mysqli, "SELECT project_id, project_prefix, project_number, project_name FROM projects
-        WHERE project_archived_at IS NULL AND project_completed_at IS NULL AND project_client_id = " . intval($client_id) . " ORDER BY project_number DESC");
+    $projects = [];
+    $result = mysqli_query($mysqli, "SELECT project_id, project_prefix, project_number, project_name, project_client_id FROM projects
+        WHERE project_archived_at IS NULL AND project_completed_at IS NULL" . clientScopeSql('project_client_id') . " ORDER BY project_number DESC");
     while ($row = mysqli_fetch_assoc($result)) {
-        $html .= '<option value="' . intval($row['project_id']) . '"' . (intval($row['project_id']) === intval($selected) ? ' selected' : '') . '>'
-            . escapeHtml($row['project_prefix'] . $row['project_number'] . ' ' . $row['project_name']) . '</option>';
+        $projects[] = ['id' => intval($row['project_id']), 'client' => intval($row['project_client_id']),
+            'label' => $row['project_prefix'] . $row['project_number'] . ' ' . $row['project_name']];
+    }
+    return $projects;
+}
+
+/** A client's open projects as <option>s (client 0 = our own projects). */
+function mitProcProjectOptions($client_id, $selected) {
+    $html = '<option value="0">- None -</option>';
+    foreach (mitProcOpenProjects() as $project) {
+        if ($project['client'] === intval($client_id)) {
+            $html .= '<option value="' . $project['id'] . '"' . ($project['id'] === intval($selected) ? ' selected' : '') . '>' . escapeHtml($project['label']) . '</option>';
+        }
     }
     return $html;
+}
+
+/*
+ * The Project field: label, picker of the client's open projects, and - when there are none - why
+ * the list is empty, rather than a list with only "None" in it.
+ */
+function mitProcProjectField($name, $client_id, $selected, $label = 'Project') {
+    $options = mitProcProjectOptions($client_id, $selected);
+    $empty = substr_count($options, '<option') === 1;
+    return '<label class="form-label">' . $label . '</label>'
+        . '<select class="form-select select2" name="' . escapeHtml($name) . '" data-mit-project>' . $options . '</select>'
+        . '<div class="form-text" data-mit-project-hint' . ($empty ? '' : ' hidden') . '>'
+        . ($client_id ? 'This client has no open projects' : 'There are no open projects without a client')
+        . ' - completed and archived projects are not listed.</div>';
 }
 
 /** Hook in add_quote_to_invoice, after each invoice line: a ticked line goes on the list to order. */

@@ -34,8 +34,7 @@ ob_start();
     <input type="hidden" name="invoice_id" value="<?= $invoice_id ?>">
     <div class="modal-body">
         <div class="mb-3">
-            <label class="form-label">Project <span class="text-muted small">(optional)</span></label>
-            <select class="form-select select2" name="project_id"><?= mitProcProjectOptions($client_id, 0) ?></select>
+            <?= mitProcProjectField('project_id', $client_id, 0, 'Project <span class="text-muted small">(optional)</span>') ?>
         </div>
         <?php if (!$lines) { ?>
             <div class="text-muted">This invoice has no lines.</div>

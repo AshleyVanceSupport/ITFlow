@@ -24,9 +24,7 @@ $value = function ($key, $default = '') use ($item) {
 
 $vendors = mitProcVendorRows();
 $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name FROM clients WHERE client_archived_at IS NULL" . clientScopeSql('client_id') . " ORDER BY client_name"), MYSQLI_ASSOC);
-$projects = mysqli_fetch_all(mysqli_query($mysqli, "SELECT project_id, project_prefix, project_number, project_name, project_client_id, client_name FROM projects
-    LEFT JOIN clients ON clients.client_id = project_client_id
-    WHERE project_archived_at IS NULL AND project_completed_at IS NULL" . clientScopeSql('project_client_id') . " ORDER BY project_number DESC"), MYSQLI_ASSOC);
+$projects = mitProcOpenProjects();
 $products = mysqli_fetch_all(mysqli_query($mysqli, "SELECT product_id, product_name, product_description" . (mitQuoteColumnsReady() ? ', product_cost' : ', NULL AS product_cost') . " FROM products
     WHERE product_archived_at IS NULL AND product_type = 'product' ORDER BY product_name"), MYSQLI_ASSOC);
 
@@ -86,7 +84,7 @@ ob_start();
         <div class="row g-2 mb-3">
             <div class="col-sm-6">
                 <label class="form-label">For client</label>
-                <select class="form-select select2" name="client_id">
+                <select class="form-select select2" name="client_id" data-mit-client>
                     <option value="0">Our stock - no client</option>
                     <?php foreach ($clients as $client) { ?>
                         <option value="<?= intval($client['client_id']) ?>" <?= intval($item['client_id'] ?? 0) === intval($client['client_id']) ? 'selected' : '' ?>><?= escapeHtml($client['client_name']) ?></option>
@@ -94,13 +92,8 @@ ob_start();
                 </select>
             </div>
             <div class="col-sm-6">
-                <label class="form-label">Project</label>
-                <select class="form-select select2" name="project_id">
-                    <option value="0">- None -</option>
-                    <?php foreach ($projects as $project) { ?>
-                        <option value="<?= intval($project['project_id']) ?>" <?= intval($item['project_id'] ?? 0) === intval($project['project_id']) ? 'selected' : '' ?>><?= escapeHtml($project['project_prefix'] . $project['project_number'] . ' ' . $project['project_name'] . ($project['client_name'] ? ' (' . $project['client_name'] . ')' : '')) ?></option>
-                    <?php } ?>
-                </select>
+                <?= mitProcProjectField('project_id', intval($item['client_id'] ?? 0), intval($item['project_id'] ?? 0)) ?>
+                <script type="application/json" data-mit-projects><?= json_encode($projects, JSON_HEX_TAG | JSON_HEX_AMP) ?></script>
             </div>
         </div>
 
@@ -117,6 +110,36 @@ ob_start();
 </form>
 
 <script>
+    // The project list follows the client: only that client's open projects (our stock: projects without a client)
+    if (!window.mitProcProjectBound) {
+        window.mitProcProjectBound = true;
+        document.addEventListener('change', function (e) {
+            if (!e.target.matches('[data-mit-client]')) {
+                return;
+            }
+            const form = e.target.form;
+            const select = form.querySelector('[data-mit-project]');
+            const data = form.querySelector('[data-mit-projects]');
+            if (!select || !data) {
+                return;
+            }
+            const client = parseInt(e.target.value, 10) || 0;
+            const keep = select.value;
+            const projects = JSON.parse(data.textContent).filter(function (p) { return p.client === client; });
+            select.innerHTML = '';
+            select.add(new Option('- None -', '0'));
+            projects.forEach(function (p) {
+                select.add(new Option(p.label, String(p.id), false, String(p.id) === keep));
+            });
+            const hint = form.querySelector('[data-mit-project-hint]');
+            if (hint) {
+                hint.textContent = (client ? 'This client has no open projects' : 'There are no open projects without a client')
+                    + ' - completed and archived projects are not listed.';
+                hint.hidden = projects.length > 0;
+            }
+        });
+    }
+
     // A product fills in the name and our cost
     if (!window.mitProcProductBound) {
         window.mitProcProductBound = true;

@@ -47,6 +47,7 @@ if (isset($_POST['mit_proc_save_item'])) {
         }
         if ($fields['project_id'] && intval(getFieldById('projects', $fields['project_id'], 'project_client_id')) !== $client_id) {
             $fields['project_id'] = 0;
+            $project_dropped = true;
         }
         if (!isset(mitProcVendors()[$fields['vendor_id']])) {
             $fields['vendor_id'] = 0;
@@ -57,14 +58,15 @@ if (isset($_POST['mit_proc_save_item'])) {
         // A ticket's part follows its item
         mysqli_query($mysqli, "UPDATE mit_ticket_parts SET quantity = $quantity WHERE proc_item_id = $item_id AND invoice_id = 0");
         logAudit('Procurement', 'Edit', escapeSql(mitProcWho() . " changed $name on the list to order"), $client_id);
-        flashAlert('Item <strong>' . escapeHtml($name) . '</strong> saved');
+        flashAlert('Item <strong>' . escapeHtml($name) . '</strong> saved' . (!empty($project_dropped) ? ' - without the project, which belongs to another client' : ''), !empty($project_dropped) ? 'warning' : 'success');
     } else {
         if ($fields['project_id'] && intval(getFieldById('projects', $fields['project_id'], 'project_client_id')) !== $client_id) {
             $fields['project_id'] = 0;
+            $project_dropped = true;
         }
         mitProcAddItem($fields);
         logAudit('Procurement', 'Create', escapeSql(mitProcWho() . " added $name to the list to order"), $client_id);
-        flashAlert('Item <strong>' . escapeHtml($name) . '</strong> added to the list to order');
+        flashAlert('Item <strong>' . escapeHtml($name) . '</strong> added to the list to order' . (!empty($project_dropped) ? ' - without the project, which belongs to another client' : ''), !empty($project_dropped) ? 'warning' : 'success');
     }
     redirect();
 }
