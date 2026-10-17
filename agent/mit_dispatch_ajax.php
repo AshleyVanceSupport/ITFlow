@@ -4,7 +4,9 @@
  * Mountaineer IT - Dispatch's requests (functions/mit_dispatch.php), JSON:
  *   GET  ?queue=unassigned|unbooked [&client_id &priority &q]     the queue and both tab counts
  *   GET  ?items=1&from=Y-m-d&to=Y-m-d&techs=1,2                  the board's bookings
- *   POST book=1 ticket_id tech_id start minutes onsite contact    assign and book
+ *   GET  ?details=TICKET_ID                                      the ticket's client, contact, priority, category, SLA + choices
+ *   GET  ?contacts=CLIENT_ID                                     a client's contacts
+ *   POST book=1 ticket_id tech_id start minutes onsite contact    assign and book (+ detail_* - saved first)
  *   POST unbook=1 ticket_id                                       take the booking off
  *   POST state=1 view hidden weekends                             the board settings for this agent
  */
@@ -40,16 +42,35 @@ if (isset($_GET['items'])) {
     exit;
 }
 
+if (isset($_GET['details'])) {
+    $details = mitDispatchDetails($_GET['details']);
+    if (!$details) {
+        $mit_fail('That ticket no longer exists.', 404);
+    }
+    echo json_encode($details);
+    exit;
+}
+
+if (isset($_GET['contacts'])) {
+    echo json_encode(mitDispatchContacts($_GET['contacts']));
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCSRFToken();
 
     if (isset($_POST['book'])) {
+        // The details first, so the booking emails go to the right contact
+        [$ok, $details_message] = mitDispatchSaveDetails($_POST['ticket_id'] ?? 0, $_POST);
+        if (!$ok) {
+            $mit_fail($details_message);
+        }
         [$ok, $message, $conflicts] = mitDispatchBook($_POST['ticket_id'] ?? 0, $_POST['tech_id'] ?? 0, (string) ($_POST['start'] ?? ''),
             $_POST['minutes'] ?? CALENDAR_TICKET_MINUTES, !empty($_POST['onsite']), !empty($_POST['contact']));
         if (!$ok) {
             $mit_fail($message);
         }
-        echo json_encode(['ok' => true, 'message' => $message, 'conflicts' => $conflicts]);
+        echo json_encode(['ok' => true, 'message' => $message . ($details_message !== '' ? ". $details_message" : ''), 'conflicts' => $conflicts]);
         exit;
     }
 

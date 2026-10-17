@@ -6,7 +6,8 @@
  * A board of each tech's booked work - a day with a column per tech, or a week with a row per tech -
  * beside the queue of open tickets still to dispatch: those with no tech, and those with a tech but
  * no time booked. Dropping a ticket on the board (or moving a booking to another tech or time) opens
- * a quick confirm with the tech, start, length, onsite/remote and whether to email the contact, then
+ * a quick confirm with the tech, start, length, onsite/remote, whether to email the contact, and the ticket's details
+ * (client, contact, priority, category, SLA - changes saved first, by mitDispatchSaveDetails), then
  * assigns it (ticketChangeAssignee) and books it (ticketSetSchedule) exactly as the ticket page does.
  * A booking dragged back onto the queue is taken off the schedule (ticketCancelSchedule).
  * Needs Support edit (calendarCanScheduleTickets), ticketing on, and the Dispatch switch on (Admin > Settings > Modules). Which techs show, the view and weekends are saved
@@ -200,6 +201,167 @@ function mitDispatchBook($ticket_id, $tech_id, $start, $minutes, $onsite, $tell_
     $mit_schedule_skip_contact = false;
     $tech = mitDispatchTechs()[$tech_id]['name'];
     return [true, ticketReference($row) . " scheduled with $tech for " . $result['when_text'], $result['conflicts']];
+}
+
+/*
+ * ---------- the ticket's details in the Schedule dialog ----------
+ */
+
+/** A client's contacts for the dialog's Contact list: [{id, name}], primary first. [] for no client or one out of reach. */
+function mitDispatchContacts($client_id) {
+    global $mysqli;
+    $client_id = intval($client_id);
+    if (!$client_id || !hasClientAccess($client_id)) {
+        return [];
+    }
+    $contacts = [];
+    $result = mysqli_query($mysqli, "SELECT contact_id, contact_name, contact_title FROM contacts WHERE contact_client_id = $client_id AND contact_archived_at IS NULL
+        ORDER BY contact_primary DESC, contact_name");
+    while ($row = mysqli_fetch_assoc($result)) {
+        $contacts[] = ['id' => intval($row['contact_id']), 'name' => $row['contact_name'] . ($row['contact_title'] ? ' - ' . $row['contact_title'] : '')];
+    }
+    return $contacts;
+}
+
+/**
+ * What the Schedule dialog shows of a ticket, so the client, contact, priority, category and SLA can be put right as it is
+ * scheduled: the current values and the choices for each (clients this agent can see, the client's contacts, ticket
+ * categories and SLAs still in use - plus the ticket's own if it was archived). Null when the ticket is out of reach.
+ */
+function mitDispatchDetails($ticket_id) {
+    global $mysqli;
+    $row = ticketRow($ticket_id);
+    if (!$row || (intval($row['ticket_client_id']) && !hasClientAccess($row['ticket_client_id']))) {
+        return null;
+    }
+    $category_id = intval($row['ticket_category']);
+    $sla_id = intval($row['ticket_sla_id']);
+    $pick = function ($sql) use ($mysqli) {
+        $list = [];
+        $result = mysqli_query($mysqli, $sql);
+        while ($r = mysqli_fetch_row($result)) {
+            $list[] = ['id' => intval($r[0]), 'name' => $r[1]];
+        }
+        return $list;
+    };
+    return [
+        'ticket' => ['client_id' => intval($row['ticket_client_id']), 'contact_id' => intval($row['ticket_contact_id']), 'priority' => $row['ticket_priority'],
+            'category_id' => $category_id, 'sla_id' => $sla_id],
+        'clients' => $pick("SELECT client_id, client_name FROM clients WHERE (client_archived_at IS NULL OR client_id = " . intval($row['ticket_client_id']) . ")"
+            . clientScopeSql('client_id') . " ORDER BY client_name"),
+        'contacts' => mitDispatchContacts($row['ticket_client_id']),
+        'priorities' => TICKET_PRIORITIES,
+        'categories' => $pick("SELECT category_id, category_name FROM categories WHERE category_type = 'Ticket' AND (category_archived_at IS NULL OR category_id = $category_id) ORDER BY category_name"),
+        'slas' => $pick("SELECT sla_id, sla_name FROM slas WHERE sla_archived_at IS NULL OR sla_id = $sla_id ORDER BY sla_name"),
+    ];
+}
+
+/**
+ * Save the details posted with a Dispatch booking (detail_client_id, detail_contact_id, detail_priority, detail_category_id,
+ * detail_sla - "auto", or an SLA id, 0 for none), only what changed, the way ITFlow's own forms do it: a new client as
+ * "Change client" does (agent/post/ticket.php change_client_ticket - its public replies become internal, the old
+ * client's asset, site and project links go); the contact only one of the client's; the priority through
+ * ticketChangePriority(); the SLA chosen pins it (edit_ticket_sla), otherwise a new client or priority works it out again.
+ * Every change goes in the ticket's history and the audit log. Returns [ok, message or ''].
+ */
+function mitDispatchSaveDetails($ticket_id, array $post) {
+    global $mysqli, $session_name;
+    if (!isset($post['detail_client_id'])) {
+        return [true, ''];  // the dialog did not show them
+    }
+    $row = ticketRow($ticket_id);
+    if (!$row || (intval($row['ticket_client_id']) && !hasClientAccess($row['ticket_client_id']))) {
+        return [false, 'That ticket no longer exists.'];
+    }
+    if (!empty($row['ticket_closed_at'])) {
+        return [false, 'Ticket ' . ticketReference($row) . ' is closed.'];
+    }
+    $ticket_id = intval($row['ticket_id']);
+    $reference = escapeSql(ticketReference($row));
+    $old_client_id = intval($row['ticket_client_id']);
+    $client_id = intval($post['detail_client_id']);
+    $changed = [];
+
+    // Client
+    if ($client_id && $client_id !== $old_client_id) {
+        $client_name = (string) getFieldById('clients', $client_id, 'client_name');
+        if ($client_name === '' || !hasClientAccess($client_id)) {
+            return [false, 'You do not have access to that client.'];
+        }
+        $vendor_id = ticketClientOwnedId('vendor', $row['ticket_vendor_id'], 0) ?: ticketClientOwnedId('vendor', $row['ticket_vendor_id'], $client_id);
+        $project_id = ticketClientOwnedId('project', $row['ticket_project_id'], $client_id);
+        mysqli_query($mysqli, "UPDATE ticket_replies SET ticket_reply_type = 'Internal' WHERE ticket_reply_ticket_id = $ticket_id AND ticket_reply_type = 'Public'");
+        mysqli_query($mysqli, "UPDATE tickets SET ticket_client_id = $client_id, ticket_contact_id = 0, ticket_asset_id = 0, ticket_location_id = 0,
+            ticket_vendor_id = $vendor_id, ticket_project_id = $project_id WHERE ticket_id = $ticket_id LIMIT 1");
+        mysqli_query($mysqli, "DELETE FROM ticket_assets WHERE ticket_id = $ticket_id");
+        $old_name = $old_client_id ? (string) $row['client_name'] : 'no client';
+        logTicketHistory($ticket_id, "$session_name moved the ticket from " . escapeSql($old_name) . " to " . escapeSql($client_name));
+        logAudit("Ticket", "Change", "$session_name moved ticket $reference from " . escapeSql($old_name) . " to " . escapeSql($client_name), $client_id, $ticket_id);
+        $changed[] = "client $client_name";
+        $row['ticket_contact_id'] = 0;
+        $row['contact_name'] = '';
+    } else {
+        $client_id = $old_client_id;
+    }
+
+    // Contact - one of the client's, or none
+    $contact_id = ticketClientOwnedId('contact', $post['detail_contact_id'] ?? 0, $client_id);
+    if ($contact_id !== intval($row['ticket_contact_id'])) {
+        mysqli_query($mysqli, "UPDATE tickets SET ticket_contact_id = $contact_id WHERE ticket_id = $ticket_id");
+        $contact_name = $contact_id ? (string) getFieldById('contacts', $contact_id, 'contact_name') : 'No one';
+        logTicketHistory($ticket_id, "$session_name changed the contact from " . escapeSql($row['contact_name'] ?: 'No one') . " to " . escapeSql($contact_name));
+        $changed[] = "contact $contact_name";
+    }
+
+    // Category
+    $category_id = ticketCategoryId($post['detail_category_id'] ?? 0);
+    if ($category_id !== intval($row['ticket_category'])) {
+        mysqli_query($mysqli, "UPDATE tickets SET ticket_category = $category_id WHERE ticket_id = $ticket_id");
+        $category_name = $category_id ? (string) getFieldById('categories', $category_id, 'category_name') : 'none';
+        logTicketHistory($ticket_id, "$session_name changed the category to " . escapeSql($category_name));
+        $changed[] = "category $category_name";
+    }
+
+    // Priority (ticketChangePriority logs it and works the SLA out again)
+    $priority = (string) ($post['detail_priority'] ?? $row['ticket_priority']);
+    $priority_changed = in_array($priority, TICKET_PRIORITIES, true) && $priority !== $row['ticket_priority'];
+    if ($priority_changed) {
+        ticketChangePriority($ticket_id, $priority);
+        $changed[] = "priority $priority";
+    }
+
+    // SLA: the dialog starts on the ticket's own. "Automatic" works it out from the client and priority; a different
+    // one pins it; left as it was, a new client works it out again (a new priority already did, above)
+    $old_sla_id = intval($row['ticket_sla_id']);
+    $sla = (string) ($post['detail_sla'] ?? $old_sla_id);
+    if ($sla === 'auto') {
+        applyTicketSla($ticket_id);
+        $new_sla_id = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT ticket_sla_id FROM tickets WHERE ticket_id = $ticket_id"))[0] ?? 0);
+        if ($new_sla_id !== $old_sla_id) {
+            $changed[] = 'SLA ' . ($new_sla_id ? (string) getFieldById('slas', $new_sla_id, 'sla_name') : 'None') . ' (automatic)';
+        }
+    } elseif (intval($sla) !== $old_sla_id) {
+        $sla_id = intval($sla);
+        $sla_name = 'None';
+        if ($sla_id) {
+            $sla_name = (string) (mysqli_fetch_row(mysqli_query($mysqli, "SELECT sla_name FROM slas WHERE sla_id = $sla_id AND (sla_archived_at IS NULL OR sla_id = $old_sla_id)"))[0] ?? '');
+            if ($sla_name === '') {
+                return [false, 'That SLA plan is not available.'];
+            }
+        }
+        applyTicketSla($ticket_id, $sla_id);
+        $old_sla_name = $old_sla_id ? (string) getFieldById('slas', $old_sla_id, 'sla_name') : 'None';
+        logTicketHistory($ticket_id, "$session_name changed SLA from " . escapeSql($old_sla_name) . " to " . escapeSql($sla_name));
+        $changed[] = "SLA $sla_name";
+    } elseif ($client_id !== $old_client_id) {
+        applyTicketSla($ticket_id);
+    }
+
+    if ($changed) {
+        logAudit("Ticket", "Edit", "$session_name changed ticket $reference from Dispatch: " . escapeSql(implode(', ', $changed)), $client_id, $ticket_id);
+        triggerCustomAction('ticket_update', $ticket_id);
+    }
+    return [true, $changed ? 'Updated ' . implode(', ', $changed) : ''];
 }
 
 /** Take a ticket's booking off (dragged back to the queue). Returns [ok, message]. */

@@ -123,8 +123,43 @@
 
     // ---------- the quick confirm ----------
 
+    // <option>s from [{id, name}], with the current one selected
+    function options(list, current) {
+        return list.map(function (o) {
+            return '<option value="' + escapeText(String(o.id)) + '"' + (String(o.id) === String(current) ? ' selected' : '') + '>' + escapeText(o.name) + '</option>';
+        }).join('');
+    }
+
+    // The ticket's client, contact, priority, category and SLA, to put right while scheduling it (null: not shown)
+    function detailsHtml(d) {
+        if (!d || d.error) {
+            return '';
+        }
+        const t = d.ticket;
+        const contacts = [{id: 0, name: 'No contact'}].concat(d.contacts);
+        const clients = (t.client_id ? [] : [{id: 0, name: 'No client (internal)'}]).concat(d.clients);
+        return '<div class="col-12 border-top mt-3 pt-2 fw-semibold">Details</div>'
+            + '<div class="col-sm-6"><label class="form-label mb-0" for="mdClient">Client</label><select class="form-select form-select-sm" id="mdClient">' + options(clients, t.client_id) + '</select></div>'
+            + '<div class="col-sm-6"><label class="form-label mb-0" for="mdContactPick">Contact</label><select class="form-select form-select-sm" id="mdContactPick">' + options(contacts, t.contact_id) + '</select></div>'
+            + '<div class="col-sm-4"><label class="form-label mb-0" for="mdPriority">Priority</label><select class="form-select form-select-sm" id="mdPriority">'
+            + options(d.priorities.map(function (p) { return {id: p, name: p}; }), t.priority) + '</select></div>'
+            + '<div class="col-sm-8"><label class="form-label mb-0" for="mdCategory">Category</label><select class="form-select form-select-sm" id="mdCategory">'
+            + options([{id: 0, name: 'No category'}].concat(d.categories), t.category_id) + '</select></div>'
+            + '<div class="col-12"><label class="form-label mb-0" for="mdSla">SLA</label><select class="form-select form-select-sm" id="mdSla">'
+            + '<option value="auto">Automatic - from the client and priority</option>'
+            + options([{id: 0, name: 'None'}].concat(d.slas), t.sla_id) + '</select>'
+            + '<div class="form-text mt-0" id="mdClientNote" hidden>Moving it to another client makes its public replies internal, and its SLA is worked out again unless you pick one.</div></div>';
+    }
+
     // ticket: {id, reference, subject, tech, minutes, onsite}; at: Date (or null); tech: id
     function confirmBooking(ticket, at, techId) {
+        // The ticket's details come with the dialog, so they can be checked as it is scheduled
+        return request('GET', {details: ticket.id}).then(function (details) {
+            return confirmBookingDialog(ticket, at, techId, details);
+        });
+    }
+
+    function confirmBookingDialog(ticket, at, techId, details) {
         const start = at || (function () {
             const d = new Date(state.date.getTime());
             d.setHours(9, 0, 0, 0);
@@ -155,12 +190,30 @@
             + '<div class="form-check"><input class="form-check-input" type="radio" name="mdWhere" id="mdOnsite" value="1"' + (ticket.onsite ? ' checked' : '') + '><label class="form-check-label" for="mdOnsite">Onsite</label></div>'
             + '<div class="form-check"><input class="form-check-input" type="radio" name="mdWhere" id="mdRemote" value="0"' + (ticket.onsite ? '' : ' checked') + '><label class="form-check-label" for="mdRemote">Remote</label></div>'
             + '<div class="form-check ms-auto"><input class="form-check-input" type="checkbox" id="mdContact"' + (contactDefault ? ' checked' : '') + '><label class="form-check-label" for="mdContact">Email the contact</label></div>'
-            + '</div></div></div>';
+            + '</div>' + detailsHtml(details) + '</div></div>';
 
         return Swal.fire({
             theme: document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light',
             titleText: 'Schedule ' + ticket.reference,
             html: html,
+            width: details && !details.error ? '40rem' : undefined,
+            didOpen: function () {
+                // Another client: its contacts, and a word on what moving it does
+                const client = document.getElementById('mdClient');
+                if (!client) {
+                    return;
+                }
+                const original = client.value;
+                client.addEventListener('change', function () {
+                    document.getElementById('mdClientNote').hidden = client.value === original;
+                    const contact = document.getElementById('mdContactPick');
+                    contact.disabled = true;
+                    request('GET', {contacts: client.value}).then(function (list) {
+                        contact.innerHTML = options([{id: 0, name: 'No contact'}].concat(Array.isArray(list) ? list : []), Array.isArray(list) && list.length ? list[0].id : 0);
+                        contact.disabled = false;
+                    });
+                });
+            },
             showCancelButton: true,
             confirmButtonText: 'Schedule it',
             reverseButtons: true,
@@ -174,14 +227,22 @@
                     Swal.showValidationMessage('Pick the date and start time');
                     return false;
                 }
-                return request('POST', {
+                const post = {
                     book: 1, csrf_token: csrf, ticket_id: ticket.id,
                     tech_id: document.getElementById('mdTech').value,
                     start: date + ' ' + time + ':00',
                     minutes: document.getElementById('mdLength').value,
                     onsite: document.getElementById('mdOnsite').checked ? 1 : 0,
                     contact: document.getElementById('mdContact').checked ? 1 : 0
-                }).then(function (json) {
+                };
+                if (document.getElementById('mdClient')) {
+                    post.detail_client_id = document.getElementById('mdClient').value;
+                    post.detail_contact_id = document.getElementById('mdContactPick').value;
+                    post.detail_priority = document.getElementById('mdPriority').value;
+                    post.detail_category_id = document.getElementById('mdCategory').value;
+                    post.detail_sla = document.getElementById('mdSla').value;
+                }
+                return request('POST', post).then(function (json) {
                     if (json.error) {
                         Swal.showValidationMessage(json.error);
                         return false;
