@@ -10,7 +10,8 @@
  * Outlook, is told when a client replies, and gets their own booking emails. The customer's
  * emails stay about the lead's booking only.
  *
- * A helper row for whoever is now the lead is ignored everywhere (they are the lead).
+ * A helper row for whoever is now the lead is ignored everywhere (they are the lead), and cleared
+ * by mitTicketTechsTidy().
  */
 
 /** Is the table there yet? (The code can be updated before the database update runs.) */
@@ -25,6 +26,20 @@ function mitTicketTechsReady() {
         }
     }
     return $ready;
+}
+
+/**
+ * A helper who has since become the ticket's lead is no longer a helper. ITFlow changes the lead in
+ * several places (the assignee picker, Edit ticket, bulk assign, the API), so instead of a hook in
+ * each, those rows are cleared whenever helpers are read - once per request.
+ */
+function mitTicketTechsTidy() {
+    global $mysqli;
+    static $done = false;
+    if (!$done && mitTicketTechsReady()) {
+        $done = true;
+        mysqli_query($mysqli, "DELETE tt FROM mit_ticket_techs tt JOIN tickets ON tickets.ticket_id = tt.ticket_id WHERE tt.user_id = tickets.ticket_assigned_to");
+    }
 }
 
 // A helper's booking: the lead's when they follow the lead, else their own. Alias tt = mit_ticket_techs.
@@ -50,6 +65,7 @@ function mitTicketTechs($ticket_id) {
     if (!$ticket_id || !mitTicketTechsReady()) {
         return [];
     }
+    mitTicketTechsTidy();
     $result = mysqli_query($mysqli, "SELECT tt.*, user_name, user_email, user_avatar,
             " . MIT_HELPER_START_SQL . " AS start, " . MIT_HELPER_END_SQL . " AS end
         FROM mit_ticket_techs tt
@@ -73,6 +89,7 @@ function mitTicketTechNames() {
     if ($names === null) {
         $names = [];
         if (mitTicketTechsReady()) {
+            mitTicketTechsTidy();
             $result = mysqli_query($mysqli, "SELECT tt.ticket_id, tt.user_id, user_name FROM mit_ticket_techs tt
                 JOIN tickets ON tickets.ticket_id = tt.ticket_id
                 JOIN users ON users.user_id = tt.user_id
@@ -474,6 +491,7 @@ function mitTicketTechOutlookBookings($user_id, $past_days) {
     if (!mitTicketTechsReady()) {
         return [];
     }
+    mitTicketTechsTidy();
     $user_id = intval($user_id);
     $default_minutes = intval(CALENDAR_TICKET_MINUTES);
     $past_days = intval($past_days);

@@ -134,7 +134,8 @@ model: see DEPLOYMENT.md.
   + `agent/ticket_kanban.php` (`mitTicketTechsListBadge`), `cron/ticket_email_parser.php` +
   `client/post.php` (`mitTicketTechsCopyMail` after the lead's reply email). Ours: helper clashes
   in `mitScheduleConflicts`, helper bookings in `mitOutlookBookings`, busy-copy skips
-  `ticket-<id>-tech-<user>@` invites. Customer emails stay about the lead's booking only.
+  `ticket-<id>-tech-<user>@` invites. A helper who becomes the lead is cleared by `mitTicketTechsTidy()`
+  on read (no hooks in ITFlow's four reassign paths). Customer emails stay about the lead's booking only.
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files
   upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
   SSRF, broken tag links, Clients/Tickets/dashboard/search performance.
