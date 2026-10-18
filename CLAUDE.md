@@ -46,13 +46,15 @@ model: see DEPLOYMENT.md.
   `scripts/setup_cli.php` (default `$repo_branch`).
 - `DEPLOYMENT.md`, `CLAUDE.md`, `scripts/install.sh` (Debian one-line installer), `tests/smoke/` (Playwright smoke
   tests, see its README) – ours.
+- `.htaccess`: one extra line (404 for `CLAUDE.md` / `DEPLOYMENT.md`, which map our code). Keep it if upstream changes the file.
 - Removed `.github/workflows/first-interaction.yml` (upstream's welcome bot – it points people
   to ITFlow's forum). If an upstream merge brings it back, delete it again.
 - Bug and security fixes made here ahead of upstream (Oct 2026, "Phase 1" – see `git log`):
   portal contacts, saved-card charging, income/transactions XSS, API client checks, recurring
   invoices/expenses, payments, autopay, contract templates, ticket time rounding, time
   reports, quote due date (`agent/post/quote.php` add_quote_to_invoice due from the invoice date),
-  invoice stock, task rows, Admin > Modules, setup_cli/restore_cli. Also removed
+  invoice stock, task rows, Admin > Modules, setup_cli/restore_cli. Oct 18: `js/itflow_select.js` ties a moved select to its form
+  (quote / invoice add-item rows lost the Tax choice - upstream develop), `agent/post/quote_model.php` quote_discount default. Also removed
   `agent/client_autopay.php` (unlinked, broken queries) and the `agent/custom/post.php` require of a
   missing `post/ai.php` (commit 2985b652) - if an upstream merge brings them back, check they work first.
   These fixes carry no "Mountaineer IT" marker (they are plain bug fixes, meant to match upstream's
@@ -175,7 +177,10 @@ model: see DEPLOYMENT.md.
   `admin/includes/mit_admin_nav.php`), `functions.php` (require). PO numbers are unique (M015); a PO
   needs approval when over the limit or when a line has no cost - unless approval is switched off (`procurement_approval_on`) -
   approvers are Full Procurement access + admins (roles - `mitPoApprovers`); nobody approves their own PO unless
-  they are an admin (logged as self-approved) or the only approver (`mitPoMayApprove`). Draft POs can be deleted at Edit (level 2) on purpose -
+  they are an admin (logged as self-approved) or the only approver (`mitPoMayApprove`). "Their own" = made or shaped it
+  (`mitPoShapers`: created, added items, changed quantities / costs, submitted - from `mit_po_history`), and Approve carries the
+  total the approver saw (refused if the PO changed since). Receiving and billing parts run under a DB lock (`mitProcLock`).
+  A part's client is its ticket's client now (`MIT_PART_CLIENT_SQL`), so a ticket moved to another client takes its parts along. Draft POs can be deleted at Edit (level 2) on purpose -
   nothing was ordered yet. Daily cron job `mit_procurement_tidy` (`cron/mit_procurement_tidy.php`,
   `mitProcTidy`) cancels waiting items of deleted tickets/clients and frees parts whose invoice line went;
   a deleted ticket's unbilled stock parts go back on the shelf through `mitTicketPartsDeleting` (one line in
@@ -247,6 +252,10 @@ model: see DEPLOYMENT.md.
   expenses (`mitReimbRecordExpenses`, `ts_reimb_category` / `ts_reimb_account`). Box `mitReimbTicketCard` - one line in
   `agent/ticket.php` under Parts (layout box `reimburse`, fa-receipt) - modal `agent/modals/mit_reimburse/reimburse.php`,
   handlers `agent/post/mit_reimbursements.php`; payroll report columns Miles / Mileage / Purchases / Reimburse.
+  Receipts open for the person, their timesheet viewers, or Financial access to the client (`mitReimbMaySeeReceipt`).
+  Reply time is locked once its timesheet is submitted / approved: one guarded line in `agent/post/ticket.php` edit_ticket_reply
+  (`mitTsReplyTimeGuard`). Days inside an approved sheet stay locked after a pay-period change (`mitTsApprovedDates`); a
+  California sheet is not approved while the person has changes to acknowledge.
   California non-exempt (M018): `functions/mit_ts_california.php` (ours, required from mit_timesheets.php) - per person
   `mit_timesheet_people.ca_rules` (NULL = on for hourly; People modal), from `mit_settings` ts_ca_start on (set to the day M018
   ran - earlier days and periods keep their old hours; `mitTsCaOn($user_id, $date)`). Typed start / meal / end times per day
@@ -313,7 +322,7 @@ model: see DEPLOYMENT.md.
   them back when Tickets is opened with none; saved only when picked on the page itself (Referer), never q / page /
   open, not in a client's ticket list. Hooks in `agent/tickets.php`: one line after `enforceUserPermission`
   (`mitListViewRestore('tickets')`, then filter_header.php runs again so sort / order / dates follow) and
-  `mitListViewResetButton('tickets')` before the List / Board group (`?mit_reset_view=1`). `functions.php` (require).
+  `mitListViewResetButton('tickets')` before the List / Board group (`?mit_reset_view=<csrf token>`). `functions.php` (require).
 - Cron health (Oct 2026): `functions/mit_cron_health.php` (ours) reads ITFlow's own `cron_jobs` / `config_cron_last_dispatch_at`
   (`mitCronProblems`: not running > 5 min, switched off, a job Failed, stuck Running > 2 h, or late - interval jobs past two
   intervals (min +10 min), daily ones past 26 h). Shown as a warning next to the bell for admins (`includes/mit_cron_nav.php`,

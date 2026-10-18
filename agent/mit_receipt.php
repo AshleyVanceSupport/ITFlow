@@ -2,7 +2,7 @@
 
 /*
  * Mountaineer IT - a reimbursement's receipt (functions/mit_reimbursements.php), shown inline. For the person
- * it belongs to, whoever may see their timesheet, and agents who can see the ticket's client.
+ * it belongs to, whoever may see their timesheet, and Financial access to the client (mitReimbMaySeeReceipt).
  */
 
 require_once "../config.php";
@@ -10,8 +10,7 @@ require_once "../functions.php";
 require_once "../includes/check_login.php";
 
 $row = mitReimbOn() ? mitReimbRow($_GET['id'] ?? 0) : null;
-$allowed = $row && !empty($row['receipt']) && (intval($row['user_id']) === intval($session_user_id) || mitTsMaySee($row['user_id'])
-    || (lookupUserPermission('module_support') >= 1 && (!intval($row['client_id']) || hasClientAccess($row['client_id']))));
+$allowed = $row && !empty($row['receipt']) && mitReimbMaySeeReceipt($row);
 $path = $allowed ? dirname(__DIR__) . '/' . MIT_REIMB_RECEIPT_DIR . '/' . basename($row['receipt']) : '';
 if (!$allowed || !is_file($path)) {
     http_response_code(404);

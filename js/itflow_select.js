@@ -253,6 +253,14 @@
             control.setAttribute('aria-required', 'true');
         }
 
+        // A form inside a table row (the quote / invoice add-item rows) owns its fields only through the HTML parser -
+        // moving the select would cut it loose and its value would not be sent, so tie it to its form by id first
+        if (select.form && !select.form.contains(select) && !select.hasAttribute('form')) {
+            if (!select.form.id) {
+                select.form.id = 'itflow-form-' + Math.random().toString(36).slice(2);
+            }
+            select.setAttribute('form', select.form.id);
+        }
         select.parentNode.insertBefore(wrap, select);
         wrap.appendChild(control);
         wrap.appendChild(select);

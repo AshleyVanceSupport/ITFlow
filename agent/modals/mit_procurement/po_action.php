@@ -54,6 +54,7 @@ ob_start();
         <?php if ($action === 'approve' || $action === 'reject') { ?>
             <p class="mb-3"><?= escapeHtml($po['vendor_name']) ?> · <strong><?= mitMoney($po['total']) ?></strong> · from <?= escapeHtml($po['created_by_name'] ?: 'someone') ?></p>
             <input type="hidden" name="decision" value="<?= $action ?>">
+            <input type="hidden" name="total" value="<?= escapeHtml((string) $po['total']) ?>"><?php // what the approver saw - refused if it changed since ?>
             <label class="form-label"><?= $action === 'approve' ? 'Note (optional)' : 'Why - they see this on the PO' ?></label>
             <input type="text" class="form-control" name="note" maxlength="255" <?= $action === 'reject' ? 'required' : '' ?>>
 

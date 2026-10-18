@@ -195,9 +195,17 @@ class MitGraphMessageQuery {
             return ($row['flag']['flagStatus'] ?? '') !== 'flagged';
         }));
         $messages = [];
+        $bytes = 0;
         foreach (array_slice($rows, 0, $this->limit) as $row) {
+            // A run holds every message it reads in memory - past 64 MB the rest wait for the next run, so a pile of
+            // large mails cannot run PHP out of memory and jam the parser on the same messages every minute
+            if ($bytes > 64 * 1024 * 1024) {
+                break;
+            }
             try {
-                $messages[] = new MitGraphMessage($this->mailbox, $row['id'], $this->mailbox->mime($row['id']));
+                $mime = $this->mailbox->mime($row['id']);
+                $bytes += strlen($mime);
+                $messages[] = new MitGraphMessage($this->mailbox, $row['id'], $mime);
             } catch (Throwable $e) {
                 // One message that will not download must not hold up the rest - flag it, as the parser does
                 // with mail it cannot process, so it is not tried again every minute

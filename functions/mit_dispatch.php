@@ -189,6 +189,9 @@ function mitDispatchBook($ticket_id, $tech_id, $start, $minutes, $onsite, $tell_
     if (!isset(mitDispatchTechs()[$tech_id])) {
         return [false, 'Pick an agent.', []];
     }
+    if (intval($row['ticket_client_id']) && !mitAgentCanSeeClient($tech_id, $row['ticket_client_id'])) {
+        return [false, mitDispatchTechs()[$tech_id]['name'] . ' does not have access to this client.', []];
+    }
     if ($tech_id !== intval($row['ticket_assigned_to'])) {
         mitScheduleLeadChanging($row, $tech_id);
         [$assigned_ok, $assigned_message] = ticketChangeAssignee($row['ticket_id'], $tech_id);

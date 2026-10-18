@@ -1191,6 +1191,7 @@ if (isset($_POST['edit_ticket_reply'])) {
     // Public or internal - anything else keeps what it was
     $ticket_reply_type = in_array($_POST['ticket_reply_type'] ?? '', ['Public', 'Internal'], true) ? $_POST['ticket_reply_type'] : $reply['ticket_reply_type'];
     $ticket_reply_time_worked = escapeSql(ticketTimeWorked($_POST['time'] ?? ''));
+    if (function_exists('mitTsReplyTimeGuard')) { mitTsReplyTimeGuard($ticket_reply_id, $ticket_reply_time_worked); } // Mountaineer IT: time on a submitted timesheet stays
 
     mysqli_query($mysqli, "UPDATE ticket_replies SET ticket_reply = '$ticket_reply', ticket_reply_type = '$ticket_reply_type', ticket_reply_time_worked = '$ticket_reply_time_worked' WHERE ticket_reply_id = $ticket_reply_id");
 

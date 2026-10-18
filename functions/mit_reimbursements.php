@@ -151,6 +151,9 @@ function mitReimbWhyLocked(array $row) {
     if ($user_id !== intval($session_user_id) && !mitTsMayCorrect($user_id)) {
         return 'Only ' . ($row['user_name'] ?? 'they') . ', or whoever corrects their timesheet, can change it.';
     }
+    if (mitTsApprovedDates($user_id, $row['entry_date'], $row['entry_date'])) {
+        return 'This day is in an approved timesheet and locked.';
+    }
     return mitTsWhyLocked(mitTsSheet($user_id, mitTsPeriodFor($row['entry_date'])));
 }
 
@@ -333,19 +336,31 @@ function mitReimbRecordExpenses($user_id, array $period) {
  * ---------- on the page ----------
  */
 
+/**
+ * May the signed-in agent open this entry's receipt (it can show card details)? The person who paid, whoever sees their
+ * timesheet (approver, Timesheets view), or someone with Financial access to the client - not everyone on the ticket.
+ */
+function mitReimbMaySeeReceipt(array $row) {
+    global $session_user_id;
+    return intval($row['user_id']) === intval($session_user_id) || mitTsMaySee($row['user_id'])
+        || (lookupUserPermission('module_financial') >= 1 && (!intval($row['client_id']) || hasClientAccess($row['client_id'])));
+}
+
 /** A list of entries as rows (for the ticket box and the timesheet). $show: 'ticket' | 'agent' - what to name besides. */
 function mitReimbListHtml(array $rows, $show, $can_change = null) {
     $html = '<div class="list-group list-group-flush">';
     foreach ($rows as $row) {
         $icon = $row['kind'] === 'mileage' ? 'fa-car' : 'fa-shopping-bag';
-        $by = $show === 'ticket' ? escapeHtml(mitReimbTicketText($row)) . ($row['ticket_subject'] ?? '' ? ' · ' . escapeHtml($row['ticket_subject']) : '')
+        // The ticket's subject only for someone who may see that client's tickets (a timesheet viewer may not)
+        $subject = ($row['ticket_subject'] ?? '') !== '' && lookupUserPermission('module_support') >= 1 && (!intval($row['client_id']) || hasClientAccess($row['client_id']));
+        $by = $show === 'ticket' ? escapeHtml(mitReimbTicketText($row)) . ($subject ? ' · ' . escapeHtml($row['ticket_subject']) : '')
             : escapeHtml($row['user_name'] ?? '');
         $change = $can_change === null ? mitReimbWhyLocked($row) === '' : $can_change;
         $html .= '<div class="list-group-item px-3 py-2"><div class="d-flex align-items-start gap-2"><i class="fas fa-fw ' . $icon . ' text-muted mt-1"></i>'
             . '<div class="flex-grow-1" style="min-width:0"><div class="text-truncate" title="' . escapeHtml(mitReimbWhat($row)) . '">' . escapeHtml(mitReimbWhat($row)) . '</div>'
             . '<div class="small text-muted">' . escapeHtml(date('M j', strtotime($row['entry_date']))) . ' · ' . $by
             . ($row['kind'] === 'mileage' && $row['rate'] !== null ? ' · ' . mitMoney($row['rate']) . '/mi' : '')
-            . (!empty($row['receipt']) ? ' · <a href="/agent/mit_receipt.php?id=' . intval($row['reimb_id']) . '" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>receipt</a>' : '')
+            . (!empty($row['receipt']) && mitReimbMaySeeReceipt($row) ? ' · <a href="/agent/mit_receipt.php?id=' . intval($row['reimb_id']) . '" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>receipt</a>' : '')
             . (intval($row['expense_id']) ? ' · <span class="badge text-bg-light border">Expense recorded</span>' : '')
             . '</div></div><div class="text-end small text-nowrap fw-semibold">' . mitMoney($row['amount']) . '</div>';
         if ($change) {

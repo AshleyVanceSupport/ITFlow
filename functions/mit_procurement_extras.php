@@ -61,6 +61,10 @@ function mitProcAfterReceive(array $line, $qty, $serials, $receipt_id, array $op
             $serial_list = $serials === '' ? [] : array_values(array_filter(array_map('trim', explode("\n", $serials))));
             $po = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT vendor_id, order_date FROM mit_purchase_orders WHERE po_id = " . intval($line['po_id'])));
             $ticket_id = intval($proc['ticket_id'] ?? 0);
+            // A ticket moved to another client since the part was ordered: the asset is the ticket's client's
+            if ($ticket_id && intval(getFieldById('tickets', $ticket_id, 'ticket_client_id'))) {
+                $client_id = intval(getFieldById('tickets', $ticket_id, 'ticket_client_id'));
+            }
             $asset_ids = [];
             $done['capped'] = intval($qty) > 50 ? 1 : 0;
             for ($i = 0; $i < min(50, intval($qty)); $i++) {

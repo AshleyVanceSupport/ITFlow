@@ -66,7 +66,8 @@ function mitListViewRestore($page) {
     }
     $preference = "listview.$page";
 
-    if (isset($_GET['mit_reset_view'])) {
+    // Reset carries the session's CSRF token, so another site cannot wipe someone's saved view with a link or image
+    if (isset($_GET['mit_reset_view']) && hash_equals((string) ($_SESSION['csrf_token'] ?? ''), (string) $_GET['mit_reset_view'])) {
         unset($_GET['mit_reset_view']);
         $mit_list_view_restored = 'reset';
         try {
@@ -110,7 +111,7 @@ function mitListViewResetButton($page) {
     if (isset($_GET['client_id'])) {
         return '';
     }
-    $html = "<a href='?mit_reset_view=1' class='btn btn-outline-secondary text-nowrap' title='Reset view - back to the default filters and sort'>"
+    $html = "<a href='?mit_reset_view=" . rawurlencode((string) ($_SESSION['csrf_token'] ?? '')) . "' class='btn btn-outline-secondary text-nowrap' title='Reset view - back to the default filters and sort'>"
         . "<i class='fas fa-fw fa-undo'></i><span class='d-none d-xl-inline ms-1'>Reset</span></a>";
     if ($mit_list_view_restored === 'reset') {
         $html .= "<script>history.replaceState(null, '', location.pathname);</script>";

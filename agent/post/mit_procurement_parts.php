@@ -45,7 +45,7 @@ if (isset($_POST['mit_proc_from_invoice'])) {
         mitProcAddItem([
             'source' => 'invoice', 'invoice_id' => $invoice_id, 'invoice_item_id' => intval($item_id), 'client_id' => $client_id, 'project_id' => $project_id,
             'product_id' => intval($item['item_product_id']), 'vendor_id' => isset(mitProcVendors()[$vendor_id]) ? $vendor_id : 0,
-            'name' => $item['item_name'], 'description' => $item['item_description'], 'quantity' => $qty, 'unit_cost' => is_numeric($cost) ? $cost : null,
+            'name' => $item['item_name'], 'description' => $item['item_description'], 'quantity' => $qty, 'unit_cost' => is_numeric($cost) && (float) $cost >= 0 ? $cost : null,
         ]);
         $sent++;
     }
@@ -92,8 +92,11 @@ if (isset($_POST['mit_parts_bill'])) {
     enforceUserPermission('module_sales', 2);
 
     $ticket = ticketForRequest($_POST['ticket_id'] ?? 0, 2);
+    // One billing at a time, so a double-click cannot bill the same parts twice
+    mitProcLock('bill');
     [$invoice_id, $message] = mitTicketPartsBill($ticket, (array) ($_POST['part_ids'] ?? []), (array) ($_POST['prices'] ?? []),
         $_POST['invoice_id'] ?? 0, $_POST['date'] ?? '', $_POST['category'] ?? 0);
+    mitProcUnlock('bill');
     if (!$invoice_id) {
         flashAlert(escapeHtml($message), 'error');
         redirect();

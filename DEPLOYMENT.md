@@ -336,6 +336,8 @@ Admin > Maintenance > Cron has a **Cron alerts** card. Admins get a warning next
 when a cron job fails, gets stuck or falls behind. An email can't report that cron itself has stopped, so
 copy the card's **health address** into an uptime monitor (Uptime Kuma, UptimeRobot...) and have it check
 every 5 minutes. It answers `OK`, or HTTP 503 when something is wrong. Do this on production and beta.
+If the monitor can send a header, send the key as `X-Health-Key: <key>` and leave `?key=` off the address, so the
+key does not end up in the web server's access log.
 
 ## Smoke tests
 

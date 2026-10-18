@@ -382,19 +382,50 @@ function mitPoNeedsApproval($total) {
     return $over <= 0 || (float) $total > $over;
 }
 
+/** A database lock around receiving or billing (two clicks at once wait for each other); released when the request ends anyway. */
+function mitProcLock($what) {
+    global $mysqli;
+    mysqli_query($mysqli, "SELECT GET_LOCK('mit_proc_" . preg_replace('/[^a-z]/', '', $what) . "', 15)");
+}
+
+function mitProcUnlock($what) {
+    global $mysqli;
+    mysqli_query($mysqli, "SELECT RELEASE_LOCK('mit_proc_" . preg_replace('/[^a-z]/', '', $what) . "')");
+}
+
 /**
- * May the signed-in agent approve this PO? Full Procurement access (admins always have it), and not their own PO - unless
- * they are an admin (the history says self-approved) or nobody else can approve it, so a PO is never stuck.
+ * Who shaped this PO - made it, added items, changed quantities or costs, or sent it for approval: user ids, from its
+ * history. Approving one of these is approving their own PO, whoever created the draft.
+ */
+function mitPoShapers(array $po) {
+    global $mysqli;
+    $ids = [intval($po['created_by']) => true];
+    $result = mysqli_query($mysqli, "SELECT user_id, description FROM mit_po_history WHERE po_id = " . intval($po['po_id']));
+    while ($row = mysqli_fetch_assoc($result)) {
+        if (preg_match('/ (created the PO|added \d+ items?$|sent it for approval|submitted it|changed the quantities and costs|took .+ off the PO)/', $row['description'])) {
+            $ids[intval($row['user_id'])] = true;
+        }
+    }
+    unset($ids[0]);
+    return array_keys($ids);
+}
+
+/** Is this PO the signed-in agent's own - did they make or shape it? */
+function mitPoIsOwn(array $po) {
+    global $session_user_id;
+    return in_array(intval($session_user_id), mitPoShapers($po), true);
+}
+
+/**
+ * May the signed-in agent approve this PO? Full Procurement access (admins always have it), and not their own PO (made or
+ * shaped by them) - unless they are an admin (the history says self-approved) or nobody else can approve it, so a PO is never stuck.
  */
 function mitPoMayApprove(array $po) {
     global $session_user_id, $session_is_admin;
     if (mitProcLevel() < 3) {
         return false;
     }
-    if (!empty($session_is_admin)) {
-        return true;
-    }
-    if (intval($po['created_by']) !== intval($session_user_id)) {
+    if (!empty($session_is_admin) || !mitPoIsOwn($po)) {
         return true;
     }
     return !array_diff(array_keys(mitPoApprovers()), [intval($session_user_id)]);
@@ -403,8 +434,9 @@ function mitPoMayApprove(array $po) {
 /** Who else can approve this PO, as "Ann, Bob" - for the "waiting for approval" note. */
 function mitPoApproverNames(array $po) {
     $names = [];
+    $shapers = mitPoShapers($po);
     foreach (mitPoApprovers() as $user_id => $approver) {
-        if ($user_id !== intval($po['created_by'])) {
+        if (!in_array($user_id, $shapers, true)) {
             $names[] = $approver['user_name'];
         }
     }
@@ -487,7 +519,7 @@ function mitPoDecide(array $po, $approve, $note) {
     $note_sql = $note === '' ? 'NULL' : "'" . escapeSql(mb_substr($note, 0, 255)) . "'";
     if ($approve) {
         mysqli_query($mysqli, "UPDATE mit_purchase_orders SET status = 'approved', approved_by = " . intval($session_user_id) . ", approved_at = NOW(), approval_note = $note_sql WHERE po_id = $po_id");
-        $own = intval($po['created_by']) === intval($session_user_id);
+        $own = mitPoIsOwn($po);
         mitPoLog($po_id, mitProcWho() . ($own ? ' approved their own PO (self-approved)' : ' approved it') . ($note !== '' ? " - $note" : ''));
     } else {
         mysqli_query($mysqli, "UPDATE mit_purchase_orders SET status = 'draft', approved_by = 0, approved_at = NULL, approval_note = $note_sql WHERE po_id = $po_id");

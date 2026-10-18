@@ -34,9 +34,10 @@ foreach ($parts as $part) {
 uasort($groups, function ($a, $b) {
     return strcasecmp($a['name'], $b['name']);
 });
-$clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT DISTINCT clients.client_id, client_name FROM mit_ticket_parts parts JOIN clients ON clients.client_id = parts.client_id
+$clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT DISTINCT clients.client_id, client_name FROM mit_ticket_parts parts LEFT JOIN tickets ON tickets.ticket_id = parts.ticket_id
+    JOIN clients ON clients.client_id = " . MIT_PART_CLIENT_SQL . "
     LEFT JOIN invoices ON invoices.invoice_id = parts.invoice_id AND parts.invoice_id > 0
-    WHERE (parts.invoice_id = 0 OR invoices.invoice_id IS NULL)" . clientScopeSql('parts.client_id') . " ORDER BY client_name"), MYSQLI_ASSOC);
+    WHERE (parts.invoice_id = 0 OR invoices.invoice_id IS NULL)" . clientScopeSql(MIT_PART_CLIENT_SQL) . " ORDER BY client_name"), MYSQLI_ASSOC);
 
 ?>
 

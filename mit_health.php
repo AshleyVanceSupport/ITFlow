@@ -17,7 +17,9 @@ header('Cache-Control: no-store');
 header('X-Robots-Tag: noindex');
 
 $key = (string) mitSetting('cron_health_key', '');
-if ($key === '' || !hash_equals($key, (string) ($_GET['key'] ?? ''))) {
+// The key in an X-Health-Key header keeps it out of web server logs; ?key= still works for monitors that cannot send headers
+$given = (string) ($_SERVER['HTTP_X_HEALTH_KEY'] ?? ($_GET['key'] ?? ''));
+if ($key === '' || !hash_equals($key, $given)) {
     http_response_code(403);
     exit("Forbidden\n");
 }

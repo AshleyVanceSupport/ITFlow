@@ -595,6 +595,45 @@ function mitTsAutoLocked(array $sheet) {
     return $days > 0 && $sheet['status'] !== 'approved' && date('Y-m-d') > date('Y-m-d', strtotime($sheet['period_end'] . " +$days days"));
 }
 
+/**
+ * Days from $start to $end that sit in an approved timesheet of this person: date => true. Normally none for an open
+ * period, but after the pay period setting changes a new period can overlap one approved under the old setting - those
+ * days stay locked.
+ */
+function mitTsApprovedDates($user_id, $start, $end) {
+    global $mysqli;
+    $locked = [];
+    $result = mysqli_query($mysqli, "SELECT period_start, period_end FROM mit_timesheets WHERE user_id = " . intval($user_id) . " AND status = 'approved'
+        AND period_start <= '" . escapeSql($end) . "' AND period_end >= '" . escapeSql($start) . "'");
+    while ($row = mysqli_fetch_assoc($result)) {
+        for ($day = max($row['period_start'], $start); $day <= min($row['period_end'], $end); $day = date('Y-m-d', strtotime("$day +1 day"))) {
+            $locked[$day] = true;
+        }
+    }
+    return $locked;
+}
+
+/**
+ * Hook in ITFlow's reply edit (agent/post/ticket.php edit_ticket_reply): the time on a reply counts on its author's
+ * timesheet, so once that period is submitted or approved its time stays as it was - refused with a message (and the
+ * edit not saved) when it would change. The words can still be edited with the time left alone.
+ */
+function mitTsReplyTimeGuard($ticket_reply_id, $new_time) {
+    global $mysqli;
+    if (!mitTsReady() || !mitModuleOn('timesheets')) {
+        return;
+    }
+    $reply = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT ticket_reply_by, ticket_reply_time_worked, DATE(ticket_reply_created_at) AS reply_date FROM ticket_replies WHERE ticket_reply_id = " . intval($ticket_reply_id)));
+    if (!$reply || (string) $reply['ticket_reply_time_worked'] === (string) $new_time) {
+        return;
+    }
+    $sheet = mitTsSheet($reply['ticket_reply_by'], mitTsPeriodFor($reply['reply_date']));
+    if (in_array($sheet['status'], ['submitted', 'approved'], true) || mitTsApprovedDates($reply['ticket_reply_by'], $reply['reply_date'], $reply['reply_date'])) {
+        flashAlert('The time on this reply is on a timesheet that is ' . ($sheet['status'] === 'submitted' ? 'submitted' : 'approved') . ' - it stays ' . escapeHtml($reply['ticket_reply_time_worked']) . '. Take the timesheet back (or reopen it) to change it.', 'error');
+        redirect();
+    }
+}
+
 /** May the signed-in agent change this timesheet's hours? Returns '' or why not. */
 function mitTsWhyLocked(array $sheet) {
     global $session_user_id;
@@ -931,7 +970,8 @@ function mitTsSaveCells(array $sheet, array $period, array $cells, array $notes 
     $user_id = intval($sheet['user_id']);
     $codes = mitTsCodes(true);
     $allowed = mitTsCodesFor($user_id);
-    $dates = array_flip(mitTsDates($period));
+    // Days already approved (in a period from before a pay period change) are left as they are
+    $dates = array_diff_key(array_flip(mitTsDates($period)), mitTsApprovedDates($user_id, $period['start'], $period['end']));
     $tickets = mitTsTicketMinutes([$user_id], $period['start'], $period['end'])[$user_id] ?? [];
     $current = mitTsEntries([$user_id], $period['start'], $period['end'])[$user_id] ?? [];
     $wanted = [];
@@ -1210,6 +1250,10 @@ function mitTsDecide(array $sheet, array $period, $decision, $note = '') {
         }
         if (mitTsCaOn($sheet['user_id'], $period['end']) && mitTsSettings()['approval'] && !mitTsCaAttestation($sheet['sheet_id'])) {
             return [false, 'It needs their signed attestation first - they sign it when they submit it.'];
+        }
+        // Times someone else changed after they signed: they acknowledge the change before it is approved
+        if (mitTsCaOn($sheet['user_id'], $period['end']) && ($waiting = count(mitTsCaUnacknowledged($sheet['user_id'], $period)))) {
+            return [false, "They have $waiting change" . ($waiting === 1 ? '' : 's') . ' to their times to acknowledge first - it shows on their timesheet.'];
         }
         mitTsFillClosures($sheet['user_id'], $period);
         $sheet = mitTsSheetSaved($sheet['user_id'], $period);

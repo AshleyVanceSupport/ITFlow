@@ -29,11 +29,22 @@ if (isset($_POST['mit_proc_save_item'])) {
         redirect();
     }
     $cost = mitProcNumber($_POST['unit_cost'] ?? '');
+    if ($cost !== null && $cost < 0) {
+        flashAlert('A cost cannot be below zero.', 'error');
+        redirect();
+    }
     $fields = [
         'name' => $name, 'quantity' => $quantity, 'unit_cost' => $cost, 'vendor_id' => intval($_POST['vendor_id'] ?? 0),
         'client_id' => $client_id, 'project_id' => intval($_POST['project_id'] ?? 0), 'note' => (string) ($_POST['note'] ?? ''),
         'product_id' => intval($_POST['product_id'] ?? 0),
     ];
+    // Only vendors this agent may use, and a product that exists
+    if (!isset(mitProcVendors()[$fields['vendor_id']])) {
+        $fields['vendor_id'] = 0;
+    }
+    if ($fields['product_id'] && !getFieldById('products', $fields['product_id'], 'product_id')) {
+        $fields['product_id'] = 0;
+    }
 
     if ($item_id) {
         $item = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT proc.item_id, proc.source, proc.client_id, proc.project_id, proc.invoice_id, proc.invoice_item_id, proc.ticket_id, proc.product_id, proc.vendor_id, proc.name, proc.description, proc.quantity, proc.unit_cost, proc.status, proc.note, proc.created_by, proc.created_at, proc.updated_at FROM mit_procurement_items proc WHERE item_id = $item_id AND status = 'waiting'" . clientScopeSql('proc.client_id')));
@@ -48,9 +59,6 @@ if (isset($_POST['mit_proc_save_item'])) {
         if ($fields['project_id'] && intval(getFieldById('projects', $fields['project_id'], 'project_client_id')) !== $client_id) {
             $fields['project_id'] = 0;
             $project_dropped = true;
-        }
-        if (!isset(mitProcVendors()[$fields['vendor_id']])) {
-            $fields['vendor_id'] = 0;
         }
         mysqli_query($mysqli, "UPDATE mit_procurement_items SET name = '" . escapeSql(mb_substr($name, 0, 255)) . "', quantity = $quantity,
             unit_cost = " . ($cost === null ? 'NULL' : $cost) . ", vendor_id = " . $fields['vendor_id'] . ", client_id = $client_id, project_id = " . $fields['project_id'] . ",
@@ -189,10 +197,15 @@ if (isset($_POST['mit_po_decide'])) {
         redirect();
     }
     if (!mitPoMayApprove($po)) {
-        flashAlert('You cannot approve this PO - someone else approves a PO you made.', 'error');
+        flashAlert('You cannot approve this PO - someone else approves a PO you made or changed.', 'error');
         redirect();
     }
     $approve = ($_POST['decision'] ?? '') === 'approve';
+    // Approve what was on screen: refused when the PO was changed and sent again while the window was open
+    if ($approve && round((float) ($_POST['total'] ?? -1), 2) !== round((float) $po['total'], 2)) {
+        flashAlert('This PO changed while you were looking at it (now ' . mitMoney($po['total']) . ') - open it again and check before approving.', 'error');
+        redirect();
+    }
     mitPoDecide($po, $approve, $_POST['note'] ?? '');
     flashAlert($approve ? 'Approved - it can be ordered' : 'Sent back to draft', $approve ? 'success' : 'error');
     redirect();
@@ -363,7 +376,10 @@ if (isset($_POST['mit_po_receive'])) {
     validateCSRFToken();
     enforceUserPermission('module_procurement', 2);
 
+    // One receive at a time, so a double-click cannot receive (and make assets or stock for) the same items twice
+    mitProcLock('receive');
     [$lines, $pos, $extras] = mitPoReceive((array) ($_POST['received'] ?? []), (array) ($_POST['options'] ?? []));
+    mitProcUnlock('receive');
     if (!$lines) {
         flashAlert('Nothing was ticked as received.', 'error');
         redirect();

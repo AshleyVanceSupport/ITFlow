@@ -31,6 +31,14 @@ $mit_m365_cert_expired = $mit_m365_app && $mit_m365_app['cert_expires'] !== '' &
     </div>
     <div class="card-body">
 
+        <?php if (mitSecretKey() === '') { ?>
+            <div class="alert alert-danger">
+                <strong>ITFlow cannot keep its own secret key</strong> - <code>config.php</code> cannot be written by the web server, so the
+                certificate and Outlook sign-ins would be locked with a key anyone with the installation id could work out. Add a line
+                <code>$config_mit_secret_key = '&lt;48 random letters and digits&gt;';</code> to <code>config.php</code> (or let the web server write it once).
+            </div>
+        <?php } ?>
+
         <?php if ($mit_m365_app) {
             $mit_m365_expires = $mit_m365_app['cert_expires'] ? strtotime($mit_m365_app['cert_expires']) : 0; ?>
 

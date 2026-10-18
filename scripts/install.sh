@@ -370,6 +370,7 @@ fi
 # ---------------------------------------------------------------------------- ITFlow setup
 
 info "Running ITFlow setup"
+SETUP_LOG="$(mktemp)"   # private to root (not a guessable /tmp name)
 (
     cd "$INSTALL_DIR/scripts"
     sudo_web php setup_cli.php --non-interactive \
@@ -377,10 +378,12 @@ info "Running ITFlow setup"
         --base-url="$DOMAIN" --locale="$LOCALE" --timezone="$TIMEZONE" --currency="$CURRENCY" \
         --company-name="$COMPANY_NAME" --country="$COUNTRY" \
         --user-name="$ADMIN_NAME" --user-email="$ADMIN_EMAIL" --user-password="$ADMIN_PASSWORD" \
-        --repo-branch="$BRANCH" < /dev/null > /tmp/itflow-setup.log 2>&1
-) || { cat /tmp/itflow-setup.log >&2; die "ITFlow setup failed (output above)."; }
-grep -q "config_enable_setup = 0" "$INSTALL_DIR/config.php" || { cat /tmp/itflow-setup.log >&2; die "ITFlow setup did not finish."; }
-rm -f /tmp/itflow-setup.log
+        --repo-branch="$BRANCH" < /dev/null > "$SETUP_LOG" 2>&1
+) || { cat "$SETUP_LOG" >&2; die "ITFlow setup failed (output above)."; }
+grep -q "config_enable_setup = 0" "$INSTALL_DIR/config.php" || { cat "$SETUP_LOG" >&2; die "ITFlow setup did not finish."; }
+rm -f "$SETUP_LOG"
+# Our own secret key (Microsoft 365 certificate, Outlook sign-ins) - made now, so it never falls back to a weaker one
+grep -q 'config_mit_secret_key' "$INSTALL_DIR/config.php" || printf "\n// Mountaineer IT: key for the Microsoft 365 certificate and Outlook sign-ins - keep it with the backup key\n\$config_mit_secret_key = '%s';\n" "$(random_password)$(random_password)" >> "$INSTALL_DIR/config.php"
 chmod 640 "$INSTALL_DIR/config.php"
 if [[ "$SSL_MODE" == "none" ]]; then
     # The proxy talks to ITFlow over plain HTTP, so ITFlow must not insist on HTTPS itself

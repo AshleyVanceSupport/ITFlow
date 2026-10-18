@@ -214,6 +214,17 @@ function mitIpIsPublic($ip) {
     if (stripos($ip, '::ffff:') === 0) {
         return mitIpIsPublic(substr($ip, 7));
     }
+    // IPv6 that carries an IPv4 address through a gateway (NAT64 64:ff9b::/96 and 64:ff9b:1::/48, 6to4 2002::/16,
+    // Teredo 2001::/32) could reach the inside network that way - not fetched at all
+    $bytes = @inet_pton($ip);
+    if ($bytes !== false && strlen($bytes) === 16) {
+        $hex = bin2hex($bytes);
+        foreach (['0064ff9b0000000000000000', '0064ff9b0001', '2002', '20010000'] as $prefix) {
+            if (strpos($hex, $prefix) === 0) {
+                return false;
+            }
+        }
+    }
     return true;
 }
 
@@ -262,6 +273,8 @@ function mitFetchPublic($url, $max_bytes = MIT_IMAGE_MAX_BYTES, $deadline = null
             CURLOPT_TIMEOUT => min(15, $time_left),
             CURLOPT_CONNECTTIMEOUT => min(8, $time_left),
             CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_PROXY => '', // no proxy from the environment - it would look the name up again itself
+            CURLOPT_NOPROXY => '*',
             CURLOPT_RESOLVE => ["$host_plain:$port:" . (strpos($ips[0], ':') !== false ? "[{$ips[0]}]" : $ips[0])],
             CURLOPT_USERAGENT => 'Mozilla/5.0 (compatible; ITFlow image fetch)',
             CURLOPT_HTTPHEADER => ['Accept: image/*,text/html;q=0.9,*/*;q=0.5'],

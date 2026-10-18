@@ -8,7 +8,8 @@ test('Tickets list remembers the view, and Reset forgets it', async ({ page }) =
     const pill = () => page.locator('.card-header nav a.nav-link.active, nav.nav a.nav-link.active').first().innerText();
     const go = (selector) => Promise.all([page.waitForNavigation(), page.click(selector)]);
 
-    await visit(page, 'agent/tickets.php?mit_reset_view=1');
+    await visit(page, 'agent/tickets.php');
+    await go('a[href^="?mit_reset_view="]');
     await go('a[title="Board"]');
     await go('nav a.nav-link:has-text("Unassigned")');
     await go('a[title="List"]');
@@ -19,13 +20,19 @@ test('Tickets list remembers the view, and Reset forgets it', async ({ page }) =
     expect(await pill()).toContain('Unassigned');
     await expect(page.locator('a[title="List"]')).toHaveClass(/btn-dark/);
 
+    // A reset link without the session's token (as another site could make) leaves the view alone
+    await visit(page, 'agent/tickets.php?mit_reset_view=1');
+    await visit(page, 'agent/dashboard.php');
+    await go('.app-sidebar a[href$="/agent/tickets.php"]');
+    expect(await pill()).toContain('Unassigned');
+
     // A link from somewhere else shows what it points to, and is not remembered
     await visit(page, 'agent/tickets.php?show=closed');
     await visit(page, 'agent/dashboard.php');
     await go('.app-sidebar a[href$="/agent/tickets.php"]');
     expect(await pill()).toContain('Unassigned');
 
-    await go('a[href="?mit_reset_view=1"]');
+    await go('a[href^="?mit_reset_view="]');
     expect(await pill()).toContain('Open');
     await visit(page, 'agent/tickets.php');
     expect(await pill()).toContain('Open');
@@ -36,7 +43,8 @@ test('ticket board and filters', async ({ page }) => {
     for (const url of ['agent/tickets.php?view=kanban', 'agent/tickets.php?show=all&sort=ticket_priority&order=ASC', 'agent/tickets.php?show=scheduled', 'agent/tickets.php?q=smoke']) {
         await visit(page, url, errors);
     }
-    await visit(page, 'agent/tickets.php?mit_reset_view=1', errors);
+    await visit(page, 'agent/tickets.php', errors);
+    await Promise.all([page.waitForNavigation(), page.click('a[href^="?mit_reset_view="]')]);
 });
 
 test('timesheet and payroll report', async ({ page }) => {

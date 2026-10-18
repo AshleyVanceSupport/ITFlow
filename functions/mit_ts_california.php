@@ -338,7 +338,7 @@ function mitTsCaSave(array $sheet, array $period, array $times, array $answers, 
     $user_id = intval($sheet['user_id']);
     $own = $user_id === intval($session_user_id);
     $reason = trim((string) $reason);
-    $dates = array_flip(mitTsDates($period));
+    $dates = array_diff_key(array_flip(mitTsDates($period)), mitTsApprovedDates($user_id, $period['start'], $period['end']));
     $current = mitTsCaPeriods([$user_id], $period['start'], $period['end'])[$user_id] ?? [];
     $wanted = [];
     $problems = [];

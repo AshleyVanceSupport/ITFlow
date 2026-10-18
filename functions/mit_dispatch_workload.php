@@ -243,6 +243,9 @@ function mitDispatchAssign($ticket_id, $tech_id) {
     if (!isset(mitDispatchTechs()[$tech_id])) {
         return [false, 'Pick an agent.'];
     }
+    if (intval($row['ticket_client_id']) && !mitAgentCanSeeClient($tech_id, $row['ticket_client_id'])) {
+        return [false, mitDispatchTechs()[$tech_id]['name'] . ' does not have access to this client.'];
+    }
     if ($tech_id === intval($row['ticket_assigned_to'])) {
         return [true, ticketReference($row) . ' is already theirs.'];
     }
