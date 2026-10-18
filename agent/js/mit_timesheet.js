@@ -461,6 +461,12 @@
     // Submitting: the last save first; on California rules, the signing window
     const form = document.getElementById('mitTsForm');
     const sign = document.getElementById('mitCaSign');
+    if (sign) {
+        // The window lives in the fixed bottom bar, whose own stacking layer would put the grey backdrop over it:
+        // it moves to the page body, and its fields stay part of the form through their form attribute
+        sign.querySelectorAll('input, textarea, select, button[type=submit]').forEach((el) => el.setAttribute('form', form.id));
+        document.body.appendChild(sign);
+    }
     form.addEventListener('submit', function (e) {
         const by = e.submitter;
         if (!by || !by.matches('[data-mit-ts-submit]') || form.dataset.ready === '1') return;

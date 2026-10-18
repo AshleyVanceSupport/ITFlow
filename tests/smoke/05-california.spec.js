@@ -41,3 +41,17 @@ test('a day: times, meal check, saves as you type', async ({ page }) => {
     await expect(page.locator(`.mit-ts-day[data-date="${date}"]`)).not.toContainText('8:00 AM');
     await expectClean(page, errors);
 });
+
+test('the signing window can be used (nothing covers it)', async ({ page }) => {
+    await visit(page, 'agent/mit_timesheet.php');
+    const submit = page.locator('[data-mit-ts-submit]');
+    test.skip(await submit.count() === 0, 'nothing to sign in this period (submitted, locked or not on California rules)');
+    await submit.click();
+    const sign = page.locator('#mitCaSign');
+    await expect(sign).toBeVisible();
+    // A real click - it fails when the grey backdrop is on top of the window
+    await sign.locator('#mitCaAccurate').check({ timeout: 5000 });
+    await sign.locator('input[name=mit_ca_signature]').fill('test');
+    await sign.locator('[data-bs-dismiss="modal"]').last().click();
+    await expect(sign).toBeHidden();
+});
