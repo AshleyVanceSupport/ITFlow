@@ -51,3 +51,23 @@ test('a technician cannot save admin settings', async ({ page, browser }) => {
     await admin.close();
     expect(after.mit_po_prefix, 'a technician changed the PO prefix').toBe(before.mit_po_prefix);
 });
+
+test('procurement shows only with the Procurement permission (menu and ticket Parts box agree)', async ({ page }) => {
+    await visit(page, 'agent/dashboard.php');
+    const hasProcurement = await page.locator('.app-sidebar .nav-header:has-text("PROCUREMENT")').count() > 0;
+    // An open ticket (a closed one with no parts has no Parts box for anyone)
+    await visit(page, 'agent/tickets.php?show=open');
+    const ticket = page.locator('a[href*="ticket.php?"][href*="ticket_id="]').first();
+    test.skip(await ticket.count() === 0, 'no tickets');
+    await visit(page, await ticket.evaluate((a) => a.href));
+    await page.waitForTimeout(500);
+    const partsBox = await page.locator('.card-title:has(i.fa-microchip)').count() > 0;
+    expect(partsBox, 'Parts box shown exactly when the role has Procurement').toBe(hasProcurement);
+    if (!hasProcurement) {
+        const { status, text } = await page.evaluate(async () => {
+            const r = await fetch('/agent/mit_procurement.php');
+            return { status: r.status, text: await r.text() };
+        });
+        expect(text, 'procurement page for a role without it').not.toContain('To order</h3>');
+    }
+});

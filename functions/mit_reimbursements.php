@@ -253,7 +253,7 @@ function mitReimbSave(array $ticket, ?array $row, array $post, array $files) {
         $part = !empty($row['part_id']) ? (mitTicketParts($ticket_id)[intval($row['part_id'])] ?? null) : null;
         if ($part && !intval($part['invoice_id'])) {
             mysqli_query($mysqli, "UPDATE mit_ticket_parts SET name = '" . escapeSql(mb_substr($description, 0, 255)) . "', unit_cost = $amount WHERE part_id = " . intval($part['part_id']));
-        } elseif (!$row && !empty($post['add_part'])) {
+        } elseif (!$row && !empty($post['add_part']) && mitProcLevel() >= 2) {
             $price = mitReimbAmount($post['sell_price'] ?? '') ?? $amount;
             [$ok, , $part_id] = mitTicketPartSave($ticket, ['name' => $description, 'quantity' => 1, 'unit_cost' => $amount, 'unit_price' => max(0, $price), 'source' => 'other',
                 'description' => 'Bought' . ($vendor !== '' ? " at $vendor" : '') . " by " . (getFieldById('users', $user_id, 'user_name') ?: 'the agent') . ' - reimbursed']) + [2 => 0];

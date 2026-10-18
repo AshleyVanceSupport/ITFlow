@@ -60,7 +60,8 @@ function mitProcVendorOptions($selected) {
 /** The product modals' "Order from" field (agent/modals/product/product_add.php / product_edit.php). */
 function mitProductVendorField($product_id) {
     global $mysqli;
-    if (!mitProductVendorReady() || !mitProcOn()) {
+    // Procurement's own field: only for roles with Procurement Edit
+    if (!mitProductVendorReady() || mitProcLevel() < 2) {
         return '';
     }
     $current = intval($product_id) ? intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT product_vendor_id FROM products WHERE product_id = " . intval($product_id)))[0] ?? 0) : 0;
@@ -71,7 +72,7 @@ function mitProductVendorField($product_id) {
 /** Save it (called from mitProductSave). */
 function mitProductVendorSave($product_id, array $post) {
     global $mysqli;
-    if (!mitProductVendorReady() || !isset($post['product_vendor_id'])) {
+    if (!mitProductVendorReady() || !isset($post['product_vendor_id']) || mitProcLevel() < 2) {
         return;
     }
     $vendor_id = intval($post['product_vendor_id']);
@@ -314,9 +315,11 @@ function mitTicketPartStatus(array $part) {
 
 /** The ticket page's Parts box (agent/ticket.php, side column, above Linked). */
 function mitTicketPartsCard(array $ticket, $can_edit) {
-    if (!mitProcOn() || !mitTicketPartsReady()) {
+    // Part of Procurement: seen with Procurement View in the role, added and changed with Procurement Edit
+    if (!mitProcOn() || !mitTicketPartsReady() || mitProcLevel() < 1) {
         return '';
     }
+    $can_edit = $can_edit && mitProcLevel() >= 2;
     $ticket_id = intval($ticket['ticket_id']);
     $parts = mitTicketParts($ticket_id);
     $can_bill = lookupUserPermission('module_sales') >= 2 && intval($ticket['ticket_client_id']);

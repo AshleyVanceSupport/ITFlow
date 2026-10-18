@@ -61,6 +61,7 @@ if (isset($_POST['mit_proc_from_invoice'])) {
 if (isset($_POST['mit_part_save'])) {
 
     validateCSRFToken();
+    enforceUserPermission('module_procurement', 2);
 
     $ticket = ticketForRequest($_POST['ticket_id'] ?? 0, 2);
     if (!empty($ticket['ticket_closed_at'])) {
@@ -75,6 +76,7 @@ if (isset($_POST['mit_part_save'])) {
 if (isset($_GET['mit_part_remove'])) {
 
     validateCSRFToken();
+    enforceUserPermission('module_procurement', 2);
 
     $ticket = ticketForRequest($_GET['ticket_id'] ?? 0, 2);
     if (!empty($ticket['ticket_closed_at'])) {
@@ -89,6 +91,7 @@ if (isset($_GET['mit_part_remove'])) {
 if (isset($_POST['mit_parts_bill'])) {
 
     validateCSRFToken();
+    enforceUserPermission('module_procurement');
     enforceUserPermission('module_sales', 2);
 
     $ticket = ticketForRequest($_POST['ticket_id'] ?? 0, 2);

@@ -188,7 +188,9 @@ model: see DEPLOYMENT.md.
   `agent/ticket.php` (side column, above Linked; icon fa-microchip = layout box `parts`), modals
   `part.php` / `parts_bill.php`, handlers `agent/post/mit_procurement_parts.php`. From-stock parts take
   product_stock at once (billed lines have no item_product_id, so ITFlow does not take it again);
-  to-order parts become procurement items (source ticket). Procurement > Unbilled Parts (`agent/mit_unbilled_parts.php`, side-menu
+  to-order parts become procurement items (source ticket). Everything of Procurement follows the role's Procurement permission:
+  the Parts box needs View (adding / changing parts Edit - part modal and handlers too), the product "Order from" field and the
+  reimbursement "add to the ticket's parts" tick need Edit, billing parts View + Sales edit. Procurement > Unbilled Parts (`agent/mit_unbilled_parts.php`, side-menu
   link with a count in `agent/includes/mit_procurement_nav.php`): every part not on an invoice, by client and ticket, with
   Bill parts (`mitUnbilledParts` / `mitUnbilledPartsCount`, sharing `mitTicketPartsWhere` with `mitTicketParts`). Project pickers (item modal, from-invoice, quote convert) use `mitProcProjectField` - the client's open
   projects (client 0 = projects without a client), with a note when there are none; the item modal's list follows its client.
