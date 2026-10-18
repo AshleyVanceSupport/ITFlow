@@ -8,8 +8,6 @@ require_once '../../../includes/modal_header.php';
 
 mitModuleRequire('procurement', true);
 
-enforceUserPermission('module_procurement', 2);
-
 $ticket = ticketForModal($_GET['ticket_id'] ?? 0, 2);
 $ticket_id = intval($ticket['ticket_id']);
 $client_id = intval($ticket['ticket_client_id']);

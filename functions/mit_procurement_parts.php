@@ -302,7 +302,9 @@ function mitTicketPartStatus(array $part) {
     if (!$part['po_id']) {
         return '<span class="badge rounded-pill text-bg-warning">Waiting to order</span>';
     }
-    $po_link = '<a href="mit_purchase_order.php?po_id=' . intval($part['po_id']) . '" class="small">' . escapeHtml($part['po_prefix'] . $part['po_number']) . '</a>';
+    $po_link = mitProcLevel() >= 1
+        ? '<a href="mit_purchase_order.php?po_id=' . intval($part['po_id']) . '" class="small">' . escapeHtml($part['po_prefix'] . $part['po_number']) . '</a>'
+        : '<span class="small text-muted">' . escapeHtml($part['po_prefix'] . $part['po_number']) . '</span>';
     if ($part['proc_status'] === 'received') {
         return '<span class="badge rounded-pill text-bg-success">Received</span> ' . $po_link;
     }
@@ -315,11 +317,11 @@ function mitTicketPartStatus(array $part) {
 
 /** The ticket page's Parts box (agent/ticket.php, side column, above Linked). */
 function mitTicketPartsCard(array $ticket, $can_edit) {
-    // Part of Procurement: seen with Procurement View in the role, added and changed with Procurement Edit
-    if (!mitProcOn() || !mitTicketPartsReady() || mitProcLevel() < 1) {
+    // For everyone on the ticket (a tech adds parts and asks for them to be ordered); the rest of Procurement - POs,
+    // receiving - stays with the role's Procurement permission, so PO numbers are only links for those who have it
+    if (!mitProcOn() || !mitTicketPartsReady()) {
         return '';
     }
-    $can_edit = $can_edit && mitProcLevel() >= 2;
     $ticket_id = intval($ticket['ticket_id']);
     $parts = mitTicketParts($ticket_id);
     $can_bill = lookupUserPermission('module_sales') >= 2 && intval($ticket['ticket_client_id']);

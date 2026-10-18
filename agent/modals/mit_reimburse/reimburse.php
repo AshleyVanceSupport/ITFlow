@@ -32,7 +32,7 @@ $settings = mitReimbSettings();
 $value = function ($key, $default = '') use ($row) {
     return escapeHtml((string) ($row[$key] ?? $default));
 };
-$can_add_part = !$row && $kind === 'purchase' && $ticket && function_exists('mitProcLevel') && mitProcLevel() >= 2 && intval($ticket['ticket_client_id']);
+$can_add_part = !$row && $kind === 'purchase' && $ticket && function_exists('mitProcOn') && mitProcOn() && intval($ticket['ticket_client_id']);
 
 ob_start();
 
