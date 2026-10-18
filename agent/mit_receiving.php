@@ -107,6 +107,10 @@ foreach ($by_po as $lines) {
                             <input class="form-check-input" type="checkbox" name="options[assets]" value="1" id="mitOptAssets" checked>
                             <label class="form-check-label" for="mitOptAssets">Make client items assets</label>
                         </div>
+                        <div class="form-check mb-0" title="Opens the asset window for each new asset in turn - rename it, add make, model, status, assignment">
+                            <input class="form-check-input" type="checkbox" name="options[review]" value="1" id="mitOptReview" checked>
+                            <label class="form-check-label" for="mitOptReview">Fill in each asset's details</label>
+                        </div>
                         <div class="form-check mb-0" title="Items ordered for our own stock are added to the product's stock">
                             <input class="form-check-input" type="checkbox" name="options[stock]" value="1" id="mitOptStock" checked>
                             <label class="form-check-label" for="mitOptStock">Add stock items to stock</label>
@@ -129,6 +133,7 @@ foreach ($by_po as $lines) {
                             form.querySelectorAll('[data-mit-asset-type]').forEach(function (row) {
                                 row.classList.toggle('d-none', !assets.checked);
                             });
+                            document.getElementById('mitOptReview').closest('.form-check').classList.toggle('d-none', !assets.checked);
                         });
                     }
                     function sum() {
@@ -159,4 +164,54 @@ foreach ($by_po as $lines) {
 </div>
 
 <?php
+// Assets just made by receiving (?mit_review_assets=1,2,3): ITFlow's own asset window for each in turn. The address
+// drops each one as its window opens, so saving (which comes back here) carries on with the rest; Cancel skips it.
+$mit_review = array_values(array_filter(array_map('intval', explode(',', (string) ($_GET['mit_review_assets'] ?? '')))));
+if ($mit_review) { ?>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const queue = <?= json_encode($mit_review) ?>;
+            const total = Math.max(<?= intval($_GET['mit_review_total'] ?? 0) ?>, queue.length);
+            function address(rest) {
+                const url = new URL(location.href);
+                if (rest.length) {
+                    url.searchParams.set('mit_review_assets', rest.join(','));
+                } else {
+                    url.searchParams.delete('mit_review_assets');
+                    url.searchParams.delete('mit_review_total');
+                }
+                return url.pathname + url.search;
+            }
+            function next() {
+                const id = queue.shift();
+                if (!id) {
+                    history.replaceState(null, '', address([]));
+                    return;
+                }
+                history.replaceState(null, '', address(queue));
+                const opener = document.createElement('a');
+                opener.className = 'ajax-modal d-none';
+                opener.dataset.modalSize = 'lg';
+                opener.dataset.modalUrl = 'modals/asset/asset_edit.php?id=' + id;
+                document.body.appendChild(opener);
+                opener.click();
+                opener.remove();
+                // Once the window is up: say where we are, and move on when it is closed without saving
+                const watch = setInterval(function () {
+                    const modal = document.querySelector('.modal.show');
+                    if (!modal || !modal.querySelector('form')) return;
+                    clearInterval(watch);
+                    const title = modal.querySelector('.modal-title');
+                    if (title) title.insertAdjacentHTML('beforeend', ' <span class="badge text-bg-light ms-2">New asset ' + (total - queue.length) + ' of ' + total + '</span>');
+                    let saving = false;
+                    modal.querySelector('form').addEventListener('submit', function () { saving = true; });
+                    modal.addEventListener('hidden.bs.modal', function () {
+                        if (!saving) next();
+                    }, { once: true });
+                }, 100);
+            }
+            next();
+        });
+    </script>
+<?php }
 require_once "../includes/footer.php";

@@ -48,7 +48,7 @@ function mitProcGuessAssetType($name) {
  */
 function mitProcAfterReceive(array $line, $qty, $serials, $receipt_id, array $options, array $in) {
     global $mysqli, $session_user_id, $asset_types_array;
-    $done = ['assets' => 0, 'stock' => 0, 'notes' => 0, 'capped' => 0];
+    $done = ['assets' => 0, 'stock' => 0, 'notes' => 0, 'capped' => 0, 'asset_ids' => []];
     $proc = intval($line['proc_item_id']) ? mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT item_id, source, ticket_id, product_id, invoice_id, invoice_item_id FROM mit_procurement_items WHERE item_id = " . intval($line['proc_item_id']))) : null;
     $po_reference = $line['po_prefix'] . $line['po_number'];
     $client_id = intval($line['client_id']);
@@ -65,7 +65,9 @@ function mitProcAfterReceive(array $line, $qty, $serials, $receipt_id, array $op
             $done['capped'] = intval($qty) > 50 ? 1 : 0;
             for ($i = 0; $i < min(50, intval($qty)); $i++) {
                 $serial = $serial_list[$i] ?? '';
-                mysqli_query($mysqli, "INSERT INTO assets SET asset_type = '" . escapeSql($type) . "', asset_name = '" . escapeSql(mb_substr($line['name'], 0, 200)) . "',
+                // Several of the same: "Laptop #1", "Laptop #2" so they can be told apart until they are renamed
+                $asset_name = mb_substr($line['name'], 0, 190) . (intval($qty) > 1 ? ' #' . ($i + 1) : '');
+                mysqli_query($mysqli, "INSERT INTO assets SET asset_type = '" . escapeSql($type) . "', asset_name = '" . escapeSql($asset_name) . "',
                     asset_make = '', asset_model = '" . escapeSql(mb_substr($line['name'], 0, 200)) . "', asset_serial = " . ($serial === '' ? 'NULL' : "'" . escapeSql(mb_substr($serial, 0, 200)) . "'") . ",
                     asset_status = 'Ready to Deploy', asset_purchase_reference = '" . escapeSql($po_reference) . "',
                     asset_purchase_date = " . ($po && $po['order_date'] ? "'" . escapeSql($po['order_date']) . "'" : 'CURDATE()') . ",
@@ -87,6 +89,7 @@ function mitProcAfterReceive(array $line, $qty, $serials, $receipt_id, array $op
                 mitPoLog($line['po_id'], mitProcWho() . ' added ' . count($asset_ids) . ' asset' . (count($asset_ids) === 1 ? '' : 's') . " ($type) for $client_name");
                 logAudit('Asset', 'Create', escapeSql(mitProcWho() . ' added ' . count($asset_ids) . " $type asset(s) received on $po_reference"), $client_id, $asset_ids[0]);
                 $done['assets'] += count($asset_ids);
+                $done['asset_ids'] = $asset_ids;
             }
         }
     }

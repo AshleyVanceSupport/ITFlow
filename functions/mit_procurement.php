@@ -533,7 +533,7 @@ function mitPoReceive(array $received, array $options = []) {
     global $mysqli, $session_user_id;
     $count = 0;
     $touched = [];
-    $extras = ['assets' => 0, 'stock' => 0, 'notes' => 0, 'capped' => 0];
+    $extras = ['assets' => 0, 'stock' => 0, 'notes' => 0, 'capped' => 0, 'asset_ids' => []];
     foreach ($received as $line_id => $in) {
         $qty = round((float) ($in['qty'] ?? 0), 2);
         if ($qty <= 0) {
@@ -553,7 +553,7 @@ function mitPoReceive(array $received, array $options = []) {
         $receipt_id = mysqli_insert_id($mysqli);
         mysqli_query($mysqli, "UPDATE mit_po_lines SET received_qty = received_qty + $qty WHERE line_id = " . intval($line_id));
         foreach (mitProcAfterReceive($line, $qty, $serials, $receipt_id, $options, $in) as $key => $done) {
-            $extras[$key] += $done;
+            $extras[$key] = is_array($done) ? array_merge($extras[$key], $done) : $extras[$key] + $done;
         }
         mitPoLog($line['po_id'], mitProcWho() . ' received ' . mitQty($qty) . ' × ' . $line['name'] . ($serials !== '' ? ' (serials: ' . str_replace("\n", ', ', $serials) . ')' : ''));
         $touched[intval($line['po_id'])] = true;

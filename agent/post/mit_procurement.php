@@ -382,5 +382,12 @@ if (isset($_POST['mit_po_receive'])) {
     }
     logAudit('Purchase Order', 'Edit', escapeSql(mitProcWho() . " received $lines line(s) on $pos PO(s)"));
     flashAlert("Received $lines line" . ($lines === 1 ? '' : 's') . " on $pos PO" . ($pos === 1 ? '' : 's') . ($also ? ' - ' . implode(', ', $also) : ''));
+    // "Fill in each asset's details": back to Receiving, which opens ITFlow's asset window for each new asset in turn
+    if (!empty($_POST['options']['review']) && $extras['asset_ids']) {
+        $back = (string) ($_SERVER['HTTP_REFERER'] ?? 'mit_receiving.php');
+        $back = preg_replace('/([?&])mit_review_(assets|total)=[^&]*&?/', '$1', $back);
+        redirect(rtrim($back, '?&') . (strpos(rtrim($back, '?&'), '?') === false ? '?' : '&') . 'mit_review_assets=' . implode(',', array_map('intval', $extras['asset_ids']))
+            . '&mit_review_total=' . count($extras['asset_ids']));
+    }
     redirect();
 }

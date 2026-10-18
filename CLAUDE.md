@@ -194,7 +194,10 @@ model: see DEPLOYMENT.md.
   Part 3: `functions/mit_procurement_extras.php` (ours, required from mit_procurement.php), M011
   (`mit_po_receipts.asset_ids`). Receiving (`mitPoReceive` options -> `mitProcAfterReceive`): client
   lines become assets (one per unit, serial, type picked per line on `agent/mit_receiving.php`, linked
-  to the ticket for ticket parts), stock lines add product_stock, ticket parts get an internal note.
+  to the ticket for ticket parts; several units named "<line> #n"), stock lines add product_stock, ticket parts get an internal note.
+  "Fill in each asset's details" (options[review]) sends Receiving back with `?mit_review_assets=ids&mit_review_total=n`, and
+  `agent/mit_receiving.php` opens ITFlow's own `modals/asset/asset_edit.php` for each in turn (the address drops each id as its
+  window opens, so ITFlow's save-and-redirect carries on with the rest; Cancel skips one).
   "Record vendor bill" on the PO (`po_action.php?action=bill`, needs Financial edit) inserts an ITFlow
   expense (`mitPoRecordBill`, PO `expense_id`). Hooks: `mitProcInvoiceSummary` + `mitProcInvoiceLineStatus`
   in `agent/invoice.php` (above the items / under each line name), `mitProcProjectCard` in
