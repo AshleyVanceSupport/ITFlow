@@ -38,7 +38,8 @@ $approval_over = mitProcSettings()['approval_over'];
 $is_draft = $status === 'draft';
 $csrf = $_SESSION['csrf_token'];
 $modal = function ($action, $size = '') use ($po_id) {
-    return 'class="ajax-modal" data-modal-url="modals/mit_procurement/po_action.php?po_id=' . $po_id . '&action=' . $action . '"' . ($size ? ' data-modal-size="' . $size . '"' : '');
+    // Only the data- attributes: each link has its own class, with ajax-modal in it (two class attributes - the second is ignored)
+    return 'data-modal-url="modals/mit_procurement/po_action.php?po_id=' . $po_id . '&action=' . $action . '"' . ($size ? ' data-modal-size="' . $size . '"' : '');
 };
 
 // The steps along the top
@@ -61,7 +62,7 @@ $at = $order[$status] ?? 0;
             <div class="ms-auto d-flex flex-wrap gap-2">
                 <a href="post.php?mit_po_pdf=<?= $po_id ?>" target="_blank" class="btn btn-light border"><i class="fas fa-file-pdf me-2"></i>PDF</a>
                 <?php if ($level >= 2 && in_array($status, ['approved', 'ordered', 'partial'], true)) { ?>
-                    <a href="#" <?= $modal('email') ?> class="btn btn-light border"><i class="fas fa-paper-plane me-2"></i>Email to vendor</a>
+                    <a href="#" <?= $modal('email') ?> class="ajax-modal btn btn-light border"><i class="fas fa-paper-plane me-2"></i>Email to vendor</a>
                 <?php } ?>
                 <?php if ($level >= 2 && $is_draft) { ?>
                     <a href="post.php?mit_po_submit=<?= $po_id ?>&csrf_token=<?= $csrf ?>" class="btn btn-primary <?= $lines ? '' : 'disabled' ?>">
@@ -69,23 +70,23 @@ $at = $order[$status] ?? 0;
                     </a>
                 <?php } ?>
                 <?php if ($status === 'pending' && mitPoMayApprove($po)) { ?>
-                    <a href="#" <?= $modal('approve') ?> class="btn btn-success"><i class="fas fa-check me-2"></i>Approve</a>
-                    <a href="#" <?= $modal('reject') ?> class="btn btn-outline-danger">Send back</a>
+                    <a href="#" <?= $modal('approve') ?> class="ajax-modal btn btn-success"><i class="fas fa-check me-2"></i>Approve</a>
+                    <a href="#" <?= $modal('reject') ?> class="ajax-modal btn btn-outline-danger">Send back</a>
                 <?php } ?>
                 <?php if ($level >= 2 && $status === 'approved') { ?>
-                    <a href="#" <?= $modal('ordered') ?> class="btn btn-primary"><i class="fas fa-shopping-cart me-2"></i>Mark ordered</a>
+                    <a href="#" <?= $modal('ordered') ?> class="ajax-modal btn btn-primary"><i class="fas fa-shopping-cart me-2"></i>Mark ordered</a>
                 <?php } ?>
                 <?php if ($level >= 2 && in_array($status, ['ordered', 'partial'], true)) { ?>
                     <a href="mit_receiving.php?po_id=<?= $po_id ?>" class="btn btn-success"><i class="fas fa-truck-loading me-2"></i>Receive items</a>
                 <?php } ?>
                 <?php if ($level >= 2 && $can_bill && !$expense && in_array($status, ['ordered', 'partial', 'received'], true)) { ?>
-                    <a href="#" <?= $modal('bill') ?> class="btn btn-light border"><i class="fas fa-file-invoice me-2"></i>Record vendor bill</a>
+                    <a href="#" <?= $modal('bill') ?> class="ajax-modal btn btn-light border"><i class="fas fa-file-invoice me-2"></i>Record vendor bill</a>
                 <?php } ?>
                 <?php if ($level >= 2 && !in_array($status, ['received', 'cancelled'], true)) { ?>
                     <div class="dropdown">
                         <button class="btn btn-light border" type="button" data-bs-toggle="dropdown" aria-label="More"><i class="fas fa-ellipsis-v"></i></button>
                         <div class="dropdown-menu dropdown-menu-end">
-                            <a href="#" <?= str_replace('class="ajax-modal"', 'class="dropdown-item ajax-modal"', $modal('details')) ?>><i class="fas fa-fw fa-pen me-2"></i>Edit details</a>
+                            <a href="#" class="dropdown-item ajax-modal" <?= $modal('details') ?>><i class="fas fa-fw fa-pen me-2"></i>Edit details</a>
                             <?php if (in_array($status, ['pending', 'approved'], true)) { ?>
                                 <a class="dropdown-item confirm-link" href="post.php?mit_po_back_to_draft=<?= $po_id ?>&csrf_token=<?= $csrf ?>"><i class="fas fa-fw fa-undo me-2"></i>Back to draft (to change items)</a>
                             <?php } ?>
@@ -132,7 +133,12 @@ $at = $order[$status] ?? 0;
         <?php if ($status === 'pending') { ?>
             <div class="alert alert-warning mt-3 mb-0">
                 <i class="fas fa-hourglass-half me-2"></i>Waiting for approval - the total is over <?= mitMoney($approval_over) ?>, or a line has no cost.
-                <?= mitPoMayApprove($po) ? 'You can approve it.' : ($level >= 3 ? 'Someone else approves a PO you made.' : 'Someone with Full Procurement access approves it.') ?>
+                <?php if (mitPoMayApprove($po)) { ?>
+                    <?= intval($po['created_by']) === intval($session_user_id) ? 'You made it - as an admin you can approve it yourself (the history notes it).' : 'You can approve it.' ?>
+                <?php } else {
+                    $mit_approvers = mitPoApproverNames($po); ?>
+                    <?= $level >= 3 ? 'You made it, so someone else approves it' : 'Someone with Full Procurement access approves it' ?><?= $mit_approvers !== '' ? ': ' . escapeHtml($mit_approvers) . '.' : '.' ?>
+                <?php } ?>
             </div>
         <?php } elseif ($po['approval_note'] && $is_draft) { ?>
             <div class="alert alert-danger mt-3 mb-0"><i class="fas fa-undo me-2"></i>Sent back: <?= escapeHtml($po['approval_note']) ?></div>
@@ -228,7 +234,7 @@ $at = $order[$status] ?? 0;
                 <div class="card-header d-flex align-items-center">
                     <h3 class="card-title"><i class="fas fa-fw fa-shipping-fast me-2"></i>Shipments &amp; tracking</h3>
                     <?php if ($level >= 2 && $status !== 'cancelled') { ?>
-                        <div class="card-tools ms-auto"><a href="#" <?= str_replace('class="ajax-modal"', 'class="btn btn-sm btn-outline-primary ajax-modal"', $modal('tracking')) ?>><i class="fas fa-plus me-1"></i>Add tracking</a></div>
+                        <div class="card-tools ms-auto"><a href="#" class="btn btn-sm btn-outline-primary ajax-modal" <?= $modal('tracking') ?>><i class="fas fa-plus me-1"></i>Add tracking</a></div>
                     <?php } ?>
                 </div>
                 <div class="list-group list-group-flush">
@@ -264,7 +270,7 @@ $at = $order[$status] ?? 0;
             <div class="card-header d-flex align-items-center">
                 <h3 class="card-title"><i class="fas fa-fw fa-info-circle me-2"></i>Details</h3>
                 <?php if ($level >= 2 && $status !== 'cancelled') { ?>
-                    <div class="card-tools ms-auto"><a href="#" <?= str_replace('class="ajax-modal"', 'class="btn btn-sm btn-light ajax-modal"', $modal('details')) ?> title="Edit details"><i class="fas fa-pen"></i></a></div>
+                    <div class="card-tools ms-auto"><a href="#" class="btn btn-sm btn-light ajax-modal" <?= $modal('details') ?> title="Edit details"><i class="fas fa-pen"></i></a></div>
                 <?php } ?>
             </div>
             <div class="card-body small">

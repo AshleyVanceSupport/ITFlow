@@ -188,7 +188,7 @@ if (isset($_POST['mit_po_decide'])) {
         redirect();
     }
     if (!mitPoMayApprove($po)) {
-        flashAlert('Someone else approves a PO you made.', 'error');
+        flashAlert('You cannot approve this PO - someone else approves a PO you made.', 'error');
         redirect();
     }
     $approve = ($_POST['decision'] ?? '') === 'approve';

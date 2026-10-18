@@ -377,18 +377,29 @@ function mitPoNeedsApproval($total) {
 }
 
 /**
- * May the signed-in agent approve this PO? Full Procurement access, and not their own PO - unless nobody else can
- * approve it, so a PO is never stuck.
+ * May the signed-in agent approve this PO? Full Procurement access, and not their own PO - unless they are an admin
+ * (the history says it was self-approved) or nobody else can approve it, so a PO is never stuck.
  */
 function mitPoMayApprove(array $po) {
-    global $session_user_id;
+    global $session_user_id, $session_is_admin;
     if (mitProcLevel() < 3) {
         return false;
     }
-    if (intval($po['created_by']) !== intval($session_user_id)) {
+    if (intval($po['created_by']) !== intval($session_user_id) || !empty($session_is_admin)) {
         return true;
     }
     return !array_diff(array_keys(mitPoApprovers()), [intval($session_user_id)]);
+}
+
+/** Who else can approve this PO, as "Ann, Bob" - for the "waiting for approval" note. */
+function mitPoApproverNames(array $po) {
+    $names = [];
+    foreach (mitPoApprovers() as $user_id => $approver) {
+        if ($user_id !== intval($po['created_by'])) {
+            $names[] = $approver['user_name'];
+        }
+    }
+    return implode(', ', $names);
 }
 
 /** Agents who can approve POs: Full on Procurement, or admins. user_id => row */
@@ -462,7 +473,8 @@ function mitPoDecide(array $po, $approve, $note) {
     $note_sql = $note === '' ? 'NULL' : "'" . escapeSql(mb_substr($note, 0, 255)) . "'";
     if ($approve) {
         mysqli_query($mysqli, "UPDATE mit_purchase_orders SET status = 'approved', approved_by = " . intval($session_user_id) . ", approved_at = NOW(), approval_note = $note_sql WHERE po_id = $po_id");
-        mitPoLog($po_id, mitProcWho() . ' approved it' . ($note !== '' ? " - $note" : ''));
+        $own = intval($po['created_by']) === intval($session_user_id);
+        mitPoLog($po_id, mitProcWho() . ($own ? ' approved their own PO (self-approved)' : ' approved it') . ($note !== '' ? " - $note" : ''));
     } else {
         mysqli_query($mysqli, "UPDATE mit_purchase_orders SET status = 'draft', approved_by = 0, approved_at = NULL, approval_note = $note_sql WHERE po_id = $po_id");
         mitPoLog($po_id, mitProcWho() . ' sent it back to draft' . ($note !== '' ? " - $note" : ''));

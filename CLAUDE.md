@@ -172,7 +172,7 @@ model: see DEPLOYMENT.md.
   `admin/includes/mit_procurement_card.php`, handler `admin/post/mit_procurement_settings.php`; menu via
   `admin/includes/mit_admin_nav.php`), `functions.php` (require). PO numbers are unique (M015); a PO
   needs approval when over the limit or when a line has no cost, and nobody approves their own PO unless
-  they are the only approver (`mitPoMayApprove`). Draft POs can be deleted at Edit (level 2) on purpose -
+  they are an admin (logged as self-approved) or the only approver (`mitPoMayApprove`). Draft POs can be deleted at Edit (level 2) on purpose -
   nothing was ordered yet. Daily cron job `mit_procurement_tidy` (`cron/mit_procurement_tidy.php`,
   `mitProcTidy`) cancels waiting items of deleted tickets/clients and frees parts whose invoice line went;
   a deleted ticket's unbilled stock parts go back on the shelf through `mitTicketPartsDeleting` (one line in

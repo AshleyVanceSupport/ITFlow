@@ -86,3 +86,15 @@ test('cron health address and alert settings', async ({ page }) => {
     // The top bar warning matches: shown exactly when the address reports a problem
     await expect(page.locator('#mitCronHealth')).toHaveCount(right.status === 503 ? 1 : 0);
 });
+
+test('purchase order action buttons are buttons', async ({ page }) => {
+    await visit(page, 'agent/mit_purchase_orders.php');
+    const link = page.locator('a[href*="mit_purchase_order.php?po_id="]').first();
+    test.skip(await link.count() === 0, 'no purchase orders');
+    await visit(page, await link.evaluate((a) => a.href));
+    // Every action opening a window keeps its button look (a second class attribute would be dropped by the browser)
+    const plain = await page.locator('[data-modal-url*="po_action.php"]').evaluateAll((links) => links
+        .filter((a) => !a.classList.contains('ajax-modal') || !(a.classList.contains('btn') || a.classList.contains('dropdown-item')))
+        .map((a) => a.textContent.trim()));
+    expect(plain).toEqual([]);
+});
