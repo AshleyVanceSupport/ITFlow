@@ -1,6 +1,7 @@
-// California non-exempt timesheets (functions/mit_ts_california.php), as the Technician (ITFLOW_TECH_EMAIL,
-// who must be hourly / on California rules). Read-only: times are typed into the page to see the hours and
-// meal checks worked out, never saved.
+// California non-exempt timesheets (functions/mit_ts_california.php) and the timesheet page (agent/js/mit_timesheet.js),
+// as the Technician (ITFLOW_TECH_EMAIL, who must be hourly / on California rules). Types times on a past day of the
+// current period that has none, checks the meal check and that it saves on its own, then clears them again (the
+// change history keeps both - this is a test login).
 
 const fs = require('fs');
 const path = require('path');
@@ -11,29 +12,32 @@ const techState = path.join(__dirname, '.auth', 'tech.json');
 test.skip(!fs.existsSync(techState), 'no ITFLOW_TECH_EMAIL / ITFLOW_TECH_PASSWORD given');
 test.use({ storageState: techState });
 
-test('hours worked card works out hours and meal periods', async ({ page }) => {
+test('a day: times, meal check, saves as you type', async ({ page }) => {
     const errors = watch(page);
     await visit(page, 'agent/mit_timesheet.php', errors);
-    test.skip(await page.locator('#mitTsCa').count() === 0, 'the technician is not on California rules');
-    const row = page.locator('tr[data-mit-ca-day]').first();
-    // Typed in by script so a locked period still works - nothing is saved
-    const type = (values) => row.evaluate((tr, values) => {
-        for (const [box, value] of Object.entries(values)) {
-            const input = tr.querySelector(`input[data-box="${box}"]`);
-            input.value = value;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-    }, values);
+    await expect(page.locator('.mit-ts-day').first()).toBeVisible();
+    const data = JSON.parse(await page.locator('#mitTsData').textContent());
+    test.skip(!data.ca, 'the technician is not on California rules');
+    test.skip(data.locked !== '', 'this period is locked: ' + data.locked);
+    const date = Object.keys(data.days).find((d) => !data.days[d].future && data.days[d].ca && !data.days[d].ca.boxes.start);
+    test.skip(!date, 'no past day without times in this period');
 
-    await type({ start: '08:00', meal_out: '12:00', meal_in: '12:30', meal2_out: '', meal2_in: '', end: '17:00' });
-    await expect(row.locator('[data-mit-ca-worked]')).toHaveText(/^8(\.5|:30)$/);
-    await expect(row.locator('[data-mit-ca-meal="1"]')).toBeHidden();
+    const week = data.weeks.findIndex((w) => w.includes(date));
+    await page.click(`#mitTsWeeks [data-week="${week}"]`);
+    await page.click(`.mit-ts-day[data-date="${date}"]`);
+    const panel = page.locator('#mitTsDay');
+    await panel.locator('[data-box="start"]').fill('08:00');
+    await panel.locator('[data-box="end"]').fill('14:00');
+    await expect(panel.locator('[data-worked]')).toHaveText(/^6(:00)? h$/);
+    await expect(panel.locator('[data-issues]')).toContainText('No meal period');
+    await expect(panel.locator('[data-mit-day-status]')).toContainText('Saved', { timeout: 10000 });
+    await expect(page.locator(`.mit-ts-day[data-date="${date}"]`)).toContainText('8:00 AM - 2:00 PM');
 
-    await type({ meal_out: '', meal_in: '', end: '14:00' });
-    await expect(row.locator('[data-mit-ca-meal="1"]')).toBeVisible();
-    await expect(row.locator('[data-mit-ca-meal="1"] [data-mit-ca-issue]')).toContainText('No 1st meal period');
-
-    await type({ meal_out: '13:10', meal_in: '13:40', end: '15:00' });
-    await expect(row.locator('[data-mit-ca-meal="1"] [data-mit-ca-issue]')).toContainText('after the end of the 5th hour');
+    // Clear it again
+    await panel.locator('[data-box="start"]').fill('');
+    await panel.locator('[data-box="end"]').fill('');
+    await expect(panel.locator('[data-mit-day-status]')).toContainText('Saved', { timeout: 10000 });
+    await page.waitForTimeout(300);
+    await expect(page.locator(`.mit-ts-day[data-date="${date}"]`)).not.toContainText('8:00 AM');
     await expectClean(page, errors);
 });

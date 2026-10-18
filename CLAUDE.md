@@ -220,7 +220,11 @@ model: see DEPLOYMENT.md.
   (schedule, approver - who can then see, correct and approve them -, employee_id, pay_type: salaried = no
   overtime, keeps_timesheet - M015); personal `mit_user_preferences` timesheet.format / .view / .hidden_codes / .reminders.
   Closure days fill in the closure code on save / submit / approve / cron; a filled day cleared by hand keeps a
-  0 row so it is not filled again. Grid script `agent/js/mit_timesheet.js`.
+  0 row so it is not filled again. The page (Oct 2026 redesign): a week at a time, a row a day, drawn by `agent/js/mit_timesheet.js`
+  from JSON built by `functions/mit_timesheet_view.php` (`mitTsViewDays`, `mitTsViewCodes`, `mitTsViewSummary`); clicking a day
+  opens a side panel (times, meal answers, hours by code, notes) that saves as it is typed through `agent/mit_timesheet_ajax.php`
+  (`save_day` - `mitTsCaSave` + `mitTsSaveCells` for that date, returns the day, summary, leave box, sign problems); a fixed bar
+  holds the save state and Submit / Approve. The old form handler (`mit_ts_save`) is kept for submitting and signing.
   Lunch and breaks (M016): charge-code kind `break` (Lunch seeded, unpaid) - logged by people, accounted for (not
   lost) but not worked; paid short breaks are automatic, `mitTsBreakFor` from ts_break_minutes / ts_break_per (or a
   person's `mit_timesheet_people.break_minutes` / `break_per`), counted in paid hours, the total and overtime, not in
@@ -244,8 +248,8 @@ model: see DEPLOYMENT.md.
   (`mit_ts_attestations`: statement text + version, typed name, IP, UA, breaks answer / exceptions, JSON snapshot) via the
   window `mitTsCaSignModal`; `mitTsSubmit` / approve refuse without one; withdraw / send back / reopen set it aside
   (`mitTsCaSupersede`). Hooks in mit_timesheets.php: mitTsDays, mitTsDayWorked, mitTsTotals (double, premiums), mitTsSubmit,
-  mitTsWithdraw, mitTsDecide, mitTsReopen. UI: `agent/mit_timesheet.php` (card, sign window, changes box, tiles),
-  `agent/js/mit_ts_california.js`, decide modal (`mitTsCaApproverNote`), payroll report (Double time, Meal / Rest premium
+  mitTsWithdraw, mitTsDecide, mitTsReopen. UI: the day panel of `agent/js/mit_timesheet.js` (Work times section, same meal rules
+  in JS), `agent/mit_timesheet.php` (sign window, changes box), decide modal (`mitTsCaApproverNote`), payroll report (Double time, Meal / Rest premium
   columns; detail "Work times" rows). No FKs on the M018 tables: records outlive deleted logins (keep 3 years).
   Cron job `mit_timesheets` (`cron/mit_timesheets.php`, entry in `includes/cron_jobs.php`, hourly: closure days
   of the period just ended, reminders - `mit_timesheets.reminded_due_at` / `reminded_late_at` -, leave earned

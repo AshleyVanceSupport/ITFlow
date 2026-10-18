@@ -1380,3 +1380,4 @@ function mitTsSendReminders() {
 require_once __DIR__ . '/mit_leave.php';
 require_once __DIR__ . '/mit_reimbursements.php';
 require_once __DIR__ . '/mit_ts_california.php';
+require_once __DIR__ . '/mit_timesheet_view.php';

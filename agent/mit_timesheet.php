@@ -1,9 +1,12 @@
 <?php
 
 /*
- * Mountaineer IT - a timesheet (functions/mit_timesheets.php): one person's pay period, week by week.
- * Ticket time fills itself in; hours go against charge codes, with notes. ?user_id= (Timesheets View,
- * or their approver, to see someone else's) and ?start= (any date in the period).
+ * Mountaineer IT - a timesheet (functions/mit_timesheets.php): one person's pay period, a week at a time,
+ * a row a day. Clicking a day opens it on the side - start, meal and end times (California non-exempt,
+ * functions/mit_ts_california.php), ticket time, and hours by charge code with notes - and it saves as
+ * it is typed (agent/mit_timesheet_ajax.php). The rows are drawn by agent/js/mit_timesheet.js from the
+ * data at the bottom (functions/mit_timesheet_view.php). ?user_id= (Timesheets View, or their approver,
+ * to see someone else's) and ?start= (any date in the period).
  */
 
 require_once "includes/inc_all.php";
@@ -38,263 +41,198 @@ $own = $user_id === intval($session_user_id);
 $may_approve = $own ? mitTsLevel() >= 3 : mitTsMayApprove($user_id);
 $sheet = mitTsSheet($user_id, $period);
 $locked = mitTsWhyLocked($sheet);
-$format = mitTsFormat();
-$codes_all = mitTsCodes(true);
-$entries = mitTsEntries([$user_id], $period['start'], $period['end'])[$user_id] ?? [];
-$days = mitTsDays([$user_id], $period['start'], $period['end'])[$user_id];
-$totals = mitTsTotals([$user_id], $period['start'], $period['end'])[$user_id];
 $today = date('Y-m-d');
-
-// Rows: the codes this person uses (less any they hid), and any code with hours in this period
-$used = [];
-foreach ($entries as $by_code) {
-    foreach ($by_code as $code_id => $entry) {
-        $used[$code_id] = true;
-    }
-}
-$allowed = mitTsCodesFor($user_id);
-$hidden = array_flip(mitTsHiddenCodes($user_id));
-// California non-exempt (functions/mit_ts_california.php): start, meal and end times are typed in; meals are not a charge code
 $ca = mitTsCaOn($user_id, $period['end']);
-$codes = array_filter($codes_all, function ($code) use ($used, $allowed, $hidden, $ca) {
-    $id = intval($code['code_id']);
-    return isset($used[$id]) || (isset($allowed[$id]) && !isset($hidden[$id]) && !($ca && $code['code_kind'] === 'break'));
-});
-$closure_code = mitTsClosureCode($user_id);
-$weeks = mitTsWeeks($period);
-$fold = mitUserPreference($session_user_id, 'timesheet.view', 'period') === 'week' && $period['start'] <= $today && $period['end'] >= $today;
+$approval = $settings['approval'];
+$attest = $ca ? mitTsCaAttestation($sheet['sheet_id']) : null;
+$open = in_array($sheet['status'], ['open', 'returned'], true);
+// Submitting: on California rules only the person signs and submits; otherwise they, or someone who corrects their hours
+$can_submit = $approval && !$locked && $open && ($ca ? $own : ($own || mitTsMayCorrect($user_id)));
+$can_sign = $ca && $own && !$locked && $open && !$approval && !$attest;
+$csrf = $_SESSION['csrf_token'];
 $prev = mitTsPeriodShift($period, -1);
 $next = mitTsPeriodShift($period, 1);
 $url = function (array $p, $uid = null) use ($user_id) {
     return 'mit_timesheet.php?user_id=' . intval($uid ?? $user_id) . '&start=' . $p['start'];
 };
-$approval = $settings['approval'];
-$can_submit = $approval && !$locked && in_array($sheet['status'], ['open', 'returned'], true) && ($own || mitTsMayCorrect($user_id));
-$csrf = $_SESSION['csrf_token'];
-$break_rule = $ca ? [0, 240] : mitTsBreakRule($user_id);
-$show_breaks = $break_rule[0] > 0 || $totals['break_paid'] > 0;
-$ca_sign = $ca && $own && !$locked && in_array($sheet['status'], ['open', 'returned'], true);
-$tiles = [
-    ['Total hours', mitTsHours($totals['total'], false), 'Worked plus leave' . ($totals['break_paid'] ? ', incl. ' . mitTsHours($totals['break_paid']) . ' paid breaks' : '')],
-    ['Billable', mitTsHours($totals['billable'], false), mitTsBillableShare($totals) . ' of hours worked'],
-    ['Other ticket time', mitTsHours($totals['other'], false), 'Tickets not billable'],
-    ['Admin & other work', mitTsHours($totals['work'], false), 'Charge codes'],
-    ['Lost time', mitTsHours($totals['lost'], false), $totals['auto_lost'] ? mitTsHours($totals['auto_lost']) . ' unaccounted' . ($settings['auto_lost_paid'] ? '' : ' (unpaid)') : ''],
-    ['Leave', mitTsHours($totals['leave_paid'], false), $totals['leave'] > $totals['leave_paid'] ? mitTsHours($totals['leave'] - $totals['leave_paid']) . ' unpaid' : 'Paid'],
-];
-if ($ca) {
-    $tiles[0] = ['Hours worked', mitTsHours($totals['worked'], false), 'From your start, meal and end times' . ($totals['leave'] ? ', plus ' . mitTsHours($totals['leave']) . ' leave' : '')];
-    $tiles[] = ['Overtime', mitTsHours($totals['overtime'], false), mitTsHours($totals['double'], false) . ' double time'];
-    $premiums = intdiv($totals['meal_premium'], 60) + intdiv($totals['rest_premium'], 60);
-    $tiles[] = ['Premium pay', $premiums . ' h', $premiums ? intdiv($totals['meal_premium'], 60) . ' meal, ' . intdiv($totals['rest_premium'], 60) . ' rest' : 'No missed breaks'];
-} elseif ($settings['ot_day'] || $settings['ot_week']) {
-    $tiles[] = ['Overtime', mitTsHours($totals['overtime'], false), mitTsPerson($user_id)['pay_type'] === 'salary' ? 'Salaried - none' : 'Over ' . trim(($settings['ot_day'] ? mitTsHours($settings['ot_day']) . '/day ' : '') . ($settings['ot_week'] ? mitTsHours($settings['ot_week']) . '/week' : ''))];
+
+// The week to open on: this week when the period is the current one
+$weeks = mitTsWeeks($period);
+$open_week = 0;
+foreach ($weeks as $i => $week) {
+    if ($week[0] <= $today && end($week) >= $today) {
+        $open_week = $i;
+    }
 }
+$data = [
+    'user_id' => $user_id, 'start' => $period['start'], 'csrf' => $csrf, 'own' => $own, 'locked' => $locked, 'ca' => $ca,
+    'format' => mitTsFormat(), 'today' => $today, 'future' => $settings['future'], 'ticket_time' => (bool) $settings['ticket_time'],
+    'weeks' => $weeks, 'open_week' => $open_week, 'days' => mitTsViewDays($user_id, $period), 'codes' => mitTsViewCodes($user_id, $period),
+    'answers' => MIT_TS_CA_ANSWERS, 'problems' => $ca ? mitTsCaProblems($user_id, $period) : [],
+];
+$status_text = [
+    'open' => $approval ? 'Not submitted yet' : 'Saved as you go',
+    'returned' => 'Sent back - see below',
+    'submitted' => 'Submitted ' . ($sheet['submitted_at'] ? date('M j, g:i A', strtotime($sheet['submitted_at'])) : ''),
+    'approved' => 'Approved by ' . ($sheet['decided_by_name'] ?: '-') . ($sheet['decided_at'] ? ' on ' . date('M j', strtotime($sheet['decided_at'])) : '') . ($sheet['decision_note'] ? ' - ' . $sheet['decision_note'] : ''),
+][$sheet['status']] ?? '';
 
 ?>
 
-<div class="card">
-    <div class="card-header bg-dark py-2 d-flex flex-wrap align-items-center gap-2">
-        <h3 class="card-title mt-2 me-auto"><i class="fas fa-fw fa-business-time me-2"></i>Timesheet<?= $own ? '' : ' · ' . escapeHtml($person['user_name']) ?></h3>
+<div class="mit-ts" id="mitTs">
+
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <div class="me-auto">
+            <h1 class="h4 mb-1"><?= $own ? 'My timesheet' : escapeHtml($person['user_name']) . "'s timesheet" ?></h1>
+            <div class="small text-body-secondary d-flex flex-wrap align-items-center gap-2">
+                <?php if ($approval || $sheet['status'] === 'approved') { ?><?= mitTsBadge($sheet['status']) ?><?php } ?>
+                <span><?= escapeHtml($status_text) ?></span>
+                <?php if ($ca) { ?><span class="badge text-bg-light border fw-normal" title="Start, meal and end times are recorded; California overtime and premium pay">California non-exempt</span><?php } ?>
+            </div>
+        </div>
         <?php if (count($people) > 1) { ?>
-            <select class="form-select form-select-sm w-auto" aria-label="Person" onchange="location.href = 'mit_timesheet.php?start=<?= $period['start'] ?>&user_id=' + this.value">
+            <select class="form-select w-auto" aria-label="Person" onchange="location.href = 'mit_timesheet.php?start=<?= $period['start'] ?>&user_id=' + this.value">
                 <?php foreach ($people as $uid => $p) { ?>
                     <option value="<?= intval($uid) ?>" <?= $uid === $user_id ? 'selected' : '' ?>><?= escapeHtml($p['user_name']) ?></option>
                 <?php } ?>
             </select>
         <?php } ?>
-        <div class="btn-group">
-            <a class="btn btn-light btn-sm" href="<?= $url($prev) ?>" title="Previous period"><i class="fas fa-chevron-left"></i></a>
-            <a class="btn btn-light btn-sm fw-semibold" href="<?= $url(mitTsPeriodFor()) ?>" title="This period"><?= escapeHtml($period['label']) ?></a>
-            <a class="btn btn-light btn-sm" href="<?= $url($next) ?>" title="Next period"><i class="fas fa-chevron-right"></i></a>
+        <div class="btn-group" role="group" aria-label="Pay period">
+            <a class="btn btn-outline-secondary" href="<?= $url($prev) ?>" title="Previous period"><i class="fas fa-chevron-left"></i></a>
+            <a class="btn btn-outline-secondary fw-semibold" href="<?= $url(mitTsPeriodFor()) ?>" title="Go to this period"><?= escapeHtml($period['label']) ?></a>
+            <a class="btn btn-outline-secondary" href="<?= $url($next) ?>" title="Next period"><i class="fas fa-chevron-right"></i></a>
         </div>
         <?php if (mitTsLevel() >= 1 || mitTsMyReports()) { ?>
-            <a class="btn btn-outline-light btn-sm" href="mit_timesheets.php?start=<?= $period['start'] ?>"><i class="fas fa-users me-2"></i>Everyone</a>
+            <a class="btn btn-outline-secondary" href="mit_timesheets.php?start=<?= $period['start'] ?>" title="Everyone's timesheets"><i class="fas fa-users"></i><span class="d-none d-lg-inline ms-2">Everyone</span></a>
         <?php } ?>
     </div>
 
-    <div class="card-body">
-        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-            <?php if ($approval || $sheet['status'] === 'approved') { ?><?= mitTsBadge($sheet['status']) ?><?php } ?>
-            <?php if ($sheet['status'] === 'submitted') { ?>
-                <span class="small text-muted">Submitted <?= escapeHtml(date('M j, g:ia', strtotime($sheet['submitted_at']))) ?></span>
-            <?php } elseif ($sheet['status'] === 'approved') { ?>
-                <span class="small text-muted">Approved by <?= escapeHtml($sheet['decided_by_name'] ?: '-') ?> <?= escapeHtml(date('M j', strtotime($sheet['decided_at']))) ?><?= $sheet['decision_note'] ? ' - ' . escapeHtml($sheet['decision_note']) : '' ?></span>
-            <?php } ?>
-            <?php if ($locked) { ?><span class="small text-muted ms-auto"><i class="fas fa-lock me-1"></i><?= escapeHtml($locked) ?></span><?php } ?>
-        </div>
-        <?php if ($sheet['status'] === 'returned') { ?>
-            <div class="alert alert-danger py-2"><i class="fas fa-undo me-2"></i>Sent back by <?= escapeHtml($sheet['decided_by_name'] ?: '-') ?>: <?= escapeHtml($sheet['decision_note']) ?></div>
-        <?php } ?>
+    <?php if ($sheet['status'] === 'returned') { ?>
+        <div class="alert alert-danger py-2"><i class="fas fa-undo me-2"></i>Sent back by <?= escapeHtml($sheet['decided_by_name'] ?: '-') ?>: <?= escapeHtml($sheet['decision_note']) ?></div>
+    <?php } ?>
+    <?php if ($locked) { ?>
+        <div class="alert alert-light border py-2 small"><i class="fas fa-lock me-2"></i><?= escapeHtml($locked) ?></div>
+    <?php } ?>
 
-        <div class="row g-2 mb-3">
-            <?php foreach ($tiles as [$label, $value, $sub]) { ?>
-                <div class="col-6 col-md-4 col-xl">
-                    <div class="border rounded p-2 h-100">
-                        <div class="small text-muted"><?= $label ?></div>
-                        <div class="fs-5 fw-semibold"><?= $value ?></div>
-                        <?php if ($sub !== '') { ?><div class="small text-muted"><?= escapeHtml($sub) ?></div><?php } ?>
-                    </div>
+    <div class="row g-3">
+        <div class="col-xl-8">
+            <div id="mitTsSummary"><?= mitTsViewSummary($user_id, $period) ?></div>
+
+            <div class="card mit-ts-card">
+                <div class="card-header bg-transparent">
+                    <ul class="nav nav-pills mit-ts-weeks" id="mitTsWeeks"></ul>
                 </div>
-            <?php } ?>
+                <div class="list-group list-group-flush mit-ts-days" id="mitTsDays"></div>
+                <div class="card-footer bg-transparent small text-body-secondary">
+                    <?= $locked ? 'Click a day to see it.' : 'Click a day to fill it in - it saves as you type.' ?>
+                    <?= $ca ? 'Your hours worked are your start and end times, less the meal period between "meal out" and "back".' : '' ?>
+                    <?= $settings['ticket_time'] ? 'Ticket time comes in on its own from the time logged on ticket replies.' : '' ?>
+                </div>
+            </div>
         </div>
 
-        <?= mitLeaveTimesheetBox($user_id, $period) ?>
-        <?= mitReimbTimesheetBox($user_id, $period) ?>
-        <?= mitTsCaChangesBox($user_id, $period, $own) ?>
-
-        <form action="post.php" method="post" autocomplete="off" id="mitTsForm" data-format="<?= $format ?>" data-today="<?= $today ?>" data-auto-lost="<?= $ca ? 0 : $settings['auto_lost'] ?>" data-started="<?= escapeHtml(mitTsStartDate($user_id)) ?>"
-            data-break-minutes="<?= $break_rule[0] ?>" data-break-per="<?= $break_rule[1] ?>">
-            <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
-            <input type="hidden" name="user_id" value="<?= $user_id ?>">
-            <input type="hidden" name="start" value="<?= $period['start'] ?>">
-
-            <?= mitTsCaCard($user_id, $period, $locked, $own) ?>
-            <?= $ca_sign ? mitTsCaSignModal($user_id, $period) : '' ?>
-
-            <?php foreach ($weeks as $week) {
-                $open = !$fold || ($week[0] <= $today && end($week) >= $today); ?>
-                <details class="mb-3" <?= $open ? 'open' : '' ?>>
-                    <summary class="fw-semibold mb-2">Week of <?= escapeHtml(date('M j', strtotime($week[0]))) ?> <span class="text-muted fw-normal ms-2" data-mit-ts-week-summary></span></summary>
-                    <div class="table-responsive">
-                        <table class="table table-sm table-bordered align-middle mb-0 mit-ts-table">
-                            <thead>
-                                <tr class="text-center small">
-                                    <th class="text-start" style="min-width: 190px"></th>
-                                    <?php foreach ($week as $date) {
-                                        $closure = mitTsClosure($date);
-                                        $expected = mitTsExpected($user_id, $date); ?>
-                                        <th class="<?= $expected ? '' : 'bg-body-tertiary' ?> <?= $date === $today ? 'text-primary' : '' ?>" style="min-width: 74px">
-                                            <?= date('D', strtotime($date)) ?><br><?= date('M j', strtotime($date)) ?>
-                                            <?php if ($closure !== '') { ?><div><span class="badge text-bg-success text-truncate" style="max-width: 70px" title="<?= escapeHtml($closure) ?>"><?= escapeHtml($closure) ?></span></div><?php } ?>
-                                        </th>
-                                    <?php } ?>
-                                    <th style="min-width: 70px">Week</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if ($settings['ticket_time']) {
-                                    foreach (['billable' => ['Ticket time - billable', 'text-success'], 'other' => ['Ticket time - other', 'text-secondary']] as $kind => [$label, $class]) { ?>
-                                        <tr>
-                                            <td><i class="fas fa-fw fa-life-ring <?= $class ?> me-1"></i><?= $label ?> <span class="small text-muted">(auto)</span></td>
-                                            <?php foreach ($week as $date) {
-                                                $m = intval($days[$date][$kind] ?? 0); ?>
-                                                <td class="text-center <?= mitTsExpected($user_id, $date) ? '' : 'bg-body-tertiary' ?>" data-mit-ts-auto data-worked="1" data-date="<?= $date ?>" data-minutes="<?= $m ?>">
-                                                    <?php if ($m) { ?>
-                                                        <a href="#" class="ajax-modal" data-modal-url="modals/mit_timesheet/day.php?user_id=<?= $user_id ?>&date=<?= $date ?>" title="The tickets"><?= mitTsHours($m) ?></a>
-                                                    <?php } ?>
-                                                </td>
-                                            <?php } ?>
-                                            <td class="text-center fw-semibold" data-mit-ts-row-total></td>
-                                        </tr>
-                                    <?php }
-                                } ?>
-                                <?php foreach ($codes as $code_id => $code) {
-                                    $note_required = intval($code['code_note_required'] ?? 0);
-                                    $max = intval($code['code_daily_max'] ?? 0); ?>
-                                    <tr>
-                                        <td>
-                                            <?= mitTsCodeDot($code) ?><?= escapeHtml($code['code_name']) ?>
-                                            <?php if (!intval($code['code_paid'])) { ?><span class="badge text-bg-light border ms-1">Unpaid</span><?php } ?>
-                                            <?php if ($note_required) { ?><i class="fas fa-comment-dots text-muted ms-1" title="Needs a note"></i><?php } ?>
-                                            <?php if ($code['code_archived_at'] !== null || !isset($allowed[$code_id])) { ?><span class="badge text-bg-light border ms-1">No longer used</span><?php } ?>
-                                        </td>
-                                        <?php foreach ($week as $date) {
-                                            $entry = $entries[$date][$code_id] ?? ['minutes' => 0, 'note' => null];
-                                            $m = intval($entry['minutes']);
-                                            $future = mitTsFutureBlock($date, $code);
-                                            $hint = $closure_code && intval($closure_code['code_id']) === $code_id && mitTsClosure($date) !== '' && !isset($entries[$date][$code_id])
-                                                ? mitTsHours(mitTsSchedule($user_id)[intval(date('N', strtotime($date)))] ?? 0) : ''; ?>
-                                            <td class="p-1 position-relative <?= mitTsExpected($user_id, $date) ? '' : 'bg-body-tertiary' ?>">
-                                                <input type="text" inputmode="decimal" class="form-control form-control-sm text-center" name="cells[<?= $date ?>][<?= $code_id ?>]"
-                                                    value="<?= mitTsHours($m) ?>" <?= $hint !== '' ? 'placeholder="' . $hint . '" title="Closed - ' . escapeHtml(mitTsClosure($date)) . ' (filled in when you save)"' : '' ?>
-                                                    data-date="<?= $date ?>" data-code="<?= escapeHtml($code['code_name']) ?>" data-note-required="<?= $note_required ?>" data-max="<?= $max ?>"
-                                                    data-worked="<?= in_array($code['code_kind'], ['work', 'lost'], true) && intval($code['code_paid']) ? 1 : 0 ?>"
-                                                    aria-label="<?= escapeHtml($code['code_name'] . ' ' . date('M j', strtotime($date))) ?>" <?= $locked || ($future !== '' && !$m) ? 'disabled' : '' ?>
-                                                    <?= $future !== '' && !$m ? 'title="' . escapeHtml($future) . '"' : '' ?>>
-                                                <input type="hidden" name="notes[<?= $date ?>][<?= $code_id ?>]" value="<?= escapeHtml((string) $entry['note']) ?>" <?= $locked ? 'disabled' : '' ?>>
-                                                <span class="position-absolute top-0 end-0 me-1 text-primary small <?= (string) $entry['note'] === '' ? 'd-none' : '' ?>" data-mit-ts-note-dot title="<?= escapeHtml((string) $entry['note']) ?>"><i class="fas fa-comment-dots"></i></span>
-                                            </td>
-                                        <?php } ?>
-                                        <td class="text-center fw-semibold" data-mit-ts-row-total></td>
-                                    </tr>
-                                <?php } ?>
-                                <?php if ($show_breaks) { ?>
-                                    <tr class="text-success">
-                                        <td><i class="fas fa-fw fa-coffee me-1"></i>Breaks <span class="small text-muted">(paid, auto)</span></td>
-                                        <?php foreach ($week as $date) { ?>
-                                            <td class="text-center <?= mitTsExpected($user_id, $date) ? '' : 'bg-body-tertiary' ?>" data-mit-ts-breaks="<?= $date ?>"
-                                                <?= $sheet['status'] === 'approved' ? 'data-fixed="' . intval($days[$date]['break_paid'] ?? 0) . '"' : '' ?>></td>
-                                        <?php } ?>
-                                        <td class="text-center fw-semibold" data-mit-ts-breaks-total></td>
-                                    </tr>
-                                <?php } ?>
-                                <?php if (!$ca && ($settings['auto_lost'] || $totals['auto_lost'])) { ?>
-                                    <tr class="text-danger">
-                                        <td><i class="fas fa-fw fa-hourglass-half me-1"></i>Unaccounted <span class="small text-muted">(lost, auto<?= $settings['auto_lost_paid'] ? '' : ', unpaid' ?>)</span></td>
-                                        <?php foreach ($week as $date) { ?>
-                                            <td class="text-center <?= mitTsExpected($user_id, $date) ? '' : 'bg-body-tertiary' ?>" data-mit-ts-unaccounted="<?= $date ?>"
-                                                <?= $sheet['status'] === 'approved' || !$settings['auto_lost'] ? 'data-fixed="' . intval($days[$date]['auto_lost'] ?? 0) . '"' : '' ?>></td>
-                                        <?php } ?>
-                                        <td class="text-center fw-semibold" data-mit-ts-unaccounted-total></td>
-                                    </tr>
-                                <?php } ?>
-                            </tbody>
-                            <tfoot>
-                                <tr class="fw-semibold">
-                                    <td>Day total</td>
-                                    <?php foreach ($week as $date) { ?>
-                                        <td class="text-center" data-mit-ts-day="<?= $date ?>" data-expected="<?= $ca ? 0 : mitTsExpected($user_id, $date) ?>"></td>
-                                    <?php } ?>
-                                    <td class="text-center" data-mit-ts-week-total></td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                    <div class="input-group input-group-sm mt-2 d-none" data-mit-ts-note-bar>
-                        <span class="input-group-text"><i class="fas fa-comment-dots me-2"></i><span data-mit-ts-note-label></span></span>
-                        <input type="text" class="form-control" maxlength="255" placeholder="Note (optional)" aria-label="Note" data-mit-ts-note-input <?= $locked ? 'disabled' : '' ?>>
-                    </div>
-                </details>
-            <?php } ?>
-
-            <p class="small text-muted">
-                Type hours as 7.5 or 7:30; click into a box to add a note. Ticket time comes from the time logged on ticket replies each day.
-                A day under its normal hours is shown in orange. <?php if ($ca) { ?>Your hours worked are the start and end times above; these rows say what the time was spent on.<?php } else { ?>Put lunch on its own line (it is not paid, and not lost time)<?= $break_rule[0] > 0 ? '; short paid breaks - ' . intval($break_rule[0]) . ' minutes for every ' . mitTsHours($break_rule[1], false, 'decimal') . ' hours worked - are added for you' : '' ?>.<?php } ?>
-            </p>
-
-            <div class="d-flex flex-wrap align-items-center gap-2 p-3 rounded bg-body-tertiary border">
-                <?php if (!$locked) { ?>
-                    <button type="submit" name="mit_ts_save" value="save" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save</button>
-                <?php } ?>
-                <?php if ($can_submit && (!$ca || $ca_sign)) { ?>
-                    <button type="submit" name="mit_ts_save" value="submit" class="btn btn-success"><i class="fas <?= $ca ? 'fa-file-signature' : 'fa-paper-plane' ?> me-2"></i><?= $ca ? 'Sign and submit for approval' : 'Save and submit for approval' ?></button>
-                <?php } elseif ($ca_sign && !$approval && !mitTsCaAttestation($sheet['sheet_id'])) { ?>
-                    <button type="submit" name="mit_ts_save" value="submit" class="btn btn-success"><i class="fas fa-file-signature me-2"></i>Sign my hours</button>
-                <?php } ?>
-                <?php if ($ca && ($attest = mitTsCaAttestation($sheet['sheet_id']))) { ?>
-                    <span class="small text-success"><i class="fas fa-file-signature me-1"></i>Signed by <?= escapeHtml($attest['signature_name']) ?> <?= escapeHtml(date('M j, g:i A', strtotime($attest['attested_at']))) ?></span>
-                <?php } ?>
-                <?php if ($approval && $own && $sheet['status'] === 'submitted') { ?>
-                    <a class="btn btn-light border" href="post.php?mit_ts_withdraw=<?= intval($sheet['sheet_id']) ?>&csrf_token=<?= $csrf ?>"><i class="fas fa-undo me-2"></i>Take it back</a>
-                <?php } ?>
-                <span class="ms-auto"></span>
-                <?php if ($may_approve && $approval && $sheet['status'] !== 'approved') { ?>
-                    <a href="#" class="btn btn-success ajax-modal" data-modal-url="modals/mit_timesheet/decide.php?user_id=<?= $user_id ?>&start=<?= $period['start'] ?>&decision=approve"><i class="fas fa-check me-2"></i>Approve</a>
-                    <?php if ($sheet['status'] === 'submitted') { ?>
-                        <a href="#" class="btn btn-outline-danger ajax-modal" data-modal-url="modals/mit_timesheet/decide.php?user_id=<?= $user_id ?>&start=<?= $period['start'] ?>&decision=return">Send back</a>
-                    <?php } ?>
-                <?php } ?>
-                <?php if ($may_approve && $sheet['status'] === 'approved') { ?>
-                    <a class="btn btn-light border confirm-link" href="post.php?mit_ts_reopen=<?= intval($sheet['sheet_id']) ?>&csrf_token=<?= $csrf ?>"><i class="fas fa-lock-open me-2"></i>Reopen</a>
-                <?php } ?>
-            </div>
-        </form>
+        <div class="col-xl-4">
+            <div id="mitTsChanges"><?= mitTsCaChangesBox($user_id, $period, $own) ?></div>
+            <div id="mitTsLeave"><?= mitLeaveTimesheetBox($user_id, $period) ?></div>
+            <?= mitReimbTimesheetBox($user_id, $period) ?>
+        </div>
     </div>
+
+    <!-- Always in reach: whether it is saved, and what to do next -->
+    <form action="post.php" method="post" autocomplete="off" id="mitTsForm" class="mit-ts-bar">
+        <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
+        <input type="hidden" name="user_id" value="<?= $user_id ?>">
+        <input type="hidden" name="start" value="<?= $period['start'] ?>">
+        <span class="small text-body-secondary me-auto" id="mitTsSaved"><?= $locked ? '<i class="fas fa-lock me-1"></i>Read only' : '<i class="fas fa-check-circle text-success me-1"></i>All changes saved' ?></span>
+        <?php if ($attest) { ?>
+            <span class="small text-success d-none d-md-inline"><i class="fas fa-file-signature me-1"></i>Signed by <?= escapeHtml($attest['signature_name']) ?>, <?= escapeHtml(date('M j, g:i A', strtotime($attest['attested_at']))) ?></span>
+        <?php } ?>
+        <?php if ($approval && $own && $sheet['status'] === 'submitted') { ?>
+            <a class="btn btn-outline-secondary" href="post.php?mit_ts_withdraw=<?= intval($sheet['sheet_id']) ?>&csrf_token=<?= $csrf ?>"><i class="fas fa-undo me-2"></i>Take it back</a>
+        <?php } ?>
+        <?php if ($may_approve && $approval && $sheet['status'] === 'submitted') { ?>
+            <a href="#" class="btn btn-outline-danger ajax-modal" data-modal-url="modals/mit_timesheet/decide.php?user_id=<?= $user_id ?>&start=<?= $period['start'] ?>&decision=return">Send back</a>
+        <?php } ?>
+        <?php if ($may_approve && $approval && $sheet['status'] !== 'approved') { ?>
+            <a href="#" class="btn btn-success ajax-modal" data-modal-url="modals/mit_timesheet/decide.php?user_id=<?= $user_id ?>&start=<?= $period['start'] ?>&decision=approve"><i class="fas fa-check me-2"></i>Approve</a>
+        <?php } ?>
+        <?php if ($may_approve && $sheet['status'] === 'approved') { ?>
+            <a class="btn btn-outline-secondary confirm-link" href="post.php?mit_ts_reopen=<?= intval($sheet['sheet_id']) ?>&csrf_token=<?= $csrf ?>"><i class="fas fa-lock-open me-2"></i>Reopen</a>
+        <?php } ?>
+        <?php if ($can_submit || $can_sign) { ?>
+            <button type="submit" name="mit_ts_save" value="submit" class="btn btn-primary" data-mit-ts-submit>
+                <i class="fas <?= $ca ? 'fa-file-signature' : 'fa-paper-plane' ?> me-2"></i><?= $ca ? ($approval ? 'Sign and submit' : 'Sign my hours') : 'Submit for approval' ?>
+            </button>
+        <?php } ?>
+        <?= ($can_submit || $can_sign) && $ca ? mitTsCaSignModal($user_id, $period) : '' ?>
+    </form>
+
+    <!-- One day, on the side -->
+    <div class="offcanvas offcanvas-end mit-ts-panel" tabindex="-1" id="mitTsDay" aria-labelledby="mitTsDayTitle">
+        <div class="offcanvas-header border-bottom">
+            <div class="me-auto">
+                <h5 class="offcanvas-title mb-0" id="mitTsDayTitle"></h5>
+                <div class="small text-body-secondary" data-mit-day-sub></div>
+            </div>
+            <div class="btn-group btn-group-sm me-2">
+                <button type="button" class="btn btn-outline-secondary" data-mit-day-step="-1" title="Previous day"><i class="fas fa-chevron-up"></i></button>
+                <button type="button" class="btn btn-outline-secondary" data-mit-day-step="1" title="Next day"><i class="fas fa-chevron-down"></i></button>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body" data-mit-day-body></div>
+        <div class="border-top px-3 py-2 d-flex align-items-center gap-2">
+            <span class="small text-body-secondary me-auto" data-mit-day-status></span>
+            <span class="fw-semibold" data-mit-day-total></span>
+        </div>
+    </div>
+
 </div>
 
-<script src="/agent/js/mit_timesheet.js"></script>
-<?php if ($ca) { ?><script src="/agent/js/mit_ts_california.js"></script><?php } ?>
+
+<style>
+    /* Mountaineer IT - the timesheet page (agent/js/mit_timesheet.js draws the rows) */
+    .mit-ts { padding-bottom: 4.5rem; }
+    .mit-ts-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+    .mit-ts-stat { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .75rem; padding: .75rem 1rem; }
+    .mit-ts-stat-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--bs-secondary-color); }
+    .mit-ts-stat-value { font-size: 1.5rem; font-weight: 600; line-height: 1.3; }
+    .mit-ts-stat-sub { font-size: .8rem; color: var(--bs-secondary-color); }
+    .mit-ts-card { border-radius: .75rem; overflow: hidden; }
+    .mit-ts-weeks { gap: .25rem; flex-wrap: nowrap; overflow-x: auto; }
+    .mit-ts-weeks .nav-link { display: flex; flex-direction: column; align-items: flex-start; padding: .4rem .9rem; line-height: 1.2; white-space: nowrap; }
+    .mit-ts-week-total { font-size: .75rem; opacity: .75; }
+    .mit-ts-day { display: flex; align-items: center; gap: 1rem; padding: .8rem 1rem; border-left: 3px solid transparent; }
+    .mit-ts-day.is-today { border-left-color: var(--bs-primary); }
+    .mit-ts-day.is-off { background: var(--bs-tertiary-bg); }
+    .mit-ts-day.active-day { background: var(--bs-primary-bg-subtle); }
+    .mit-ts-day-date { width: 4.5rem; flex: none; }
+    .mit-ts-dow { font-size: .75rem; text-transform: uppercase; color: var(--bs-secondary-color); letter-spacing: .04em; }
+    .mit-ts-dnum { font-weight: 600; }
+    .mit-ts-day-main { flex: 1; min-width: 0; }
+    .mit-ts-times { font-weight: 500; }
+    .mit-ts-day-total { font-size: 1.1rem; font-weight: 600; min-width: 3rem; text-align: right; font-variant-numeric: tabular-nums; }
+    .mit-ts-chips { display: flex; flex-wrap: wrap; gap: .3rem; }
+    .mit-ts-chip { display: inline-flex; align-items: center; gap: .35rem; font-size: .78rem; padding: .1rem .55rem; border-radius: 1rem; background: var(--bs-secondary-bg); color: var(--bs-body-color); }
+    .mit-ts-chip i { width: .5rem; height: .5rem; border-radius: 50%; display: inline-block; }
+    .mit-ts-chip-danger { background: var(--bs-danger-bg-subtle); color: var(--bs-danger-text-emphasis); }
+    .mit-ts-chip-warning { background: var(--bs-warning-bg-subtle); color: var(--bs-warning-text-emphasis); }
+    .mit-ts-chip-muted { background: transparent; border: 1px dashed var(--bs-border-color); color: var(--bs-secondary-color); }
+    .mit-ts-week-foot { display: flex; justify-content: space-between; padding: .6rem 1rem; color: var(--bs-secondary-color); font-size: .9rem; }
+    .mit-ts-week-foot b { color: var(--bs-body-color); padding-right: 1.6rem; }
+    .mit-ts-bar { position: fixed; bottom: 0; right: 0; left: var(--mit-ts-left, 0); z-index: 1030; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem;
+        padding: .6rem 1.25rem; background: var(--bs-body-bg); border-top: 1px solid var(--bs-border-color); box-shadow: 0 -2px 8px rgba(0, 0, 0, .05); }
+    @media (min-width: 992px) { .sidebar-expand-lg:not(.sidebar-collapse) .mit-ts-bar { left: var(--lte-sidebar-width, 250px); } }
+    .mit-ts-panel { --bs-offcanvas-width: 480px; }
+    .mit-ts-section { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--bs-secondary-color); margin-bottom: .75rem; }
+    .mit-ts-code { padding: .6rem 0; border-bottom: 1px solid var(--bs-border-color-translucent); }
+    .mit-ts-hours { width: 5.5rem; }
+    .mit-ts-dot { width: .6rem; height: .6rem; border-radius: 50%; flex: none; }
+    .mit-ts-auto { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; padding: .5rem .75rem; margin-bottom: .5rem; border-radius: .5rem; background: var(--bs-tertiary-bg); text-decoration: none; }
+    .mit-ts-issue { padding: .5rem .75rem; border-radius: .5rem; background: var(--bs-warning-bg-subtle); color: var(--bs-warning-text-emphasis); }
+</style>
+<script type="application/json" id="mitTsData"><?= json_encode($data, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
+<script src="/agent/js/mit_timesheet.js" defer></script><?php // after the footer's Bootstrap ?>
 
 <?php
 require_once "../includes/footer.php";

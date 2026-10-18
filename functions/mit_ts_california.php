@@ -546,67 +546,8 @@ function mitTsCaUnacknowledged($user_id, array $period) {
 }
 
 /*
- * ---------- on the timesheet page (agent/mit_timesheet.php) ----------
+ * ---------- on the timesheet page (agent/mit_timesheet.php - the day rows and panel are agent/js/mit_timesheet.js) ----------
  */
-
-/** The "Hours worked" card: a row a day with its start, meal and end times, the hours, and the meal questions. */
-function mitTsCaCard($user_id, array $period, $locked, $own) {
-    if (!mitTsCaOn($user_id, $period['end'])) {
-        return '';
-    }
-    $user_id = intval($user_id);
-    $ca = mitTsCaDays([$user_id], $period['start'], $period['end'])[$user_id] ?? [];
-    $today = date('Y-m-d');
-    $second = false;
-    foreach ($ca as $c) {
-        $second = $second || count($c['periods']) > 2 || $c['clocked'] > 600;
-    }
-    $dis = $locked !== '' ? ' disabled' : '';
-    $answer_dis = $locked !== '' || !$own ? ' disabled' : '';
-    $html = '<div class="card mb-3 border-primary-subtle" id="mitTsCa" data-second="' . ($second ? 1 : 0) . '"><div class="card-header py-2 d-flex flex-wrap align-items-center gap-2">'
-        . '<h3 class="card-title h6 mb-0 me-auto"><i class="fas fa-fw fa-user-clock me-2"></i>Hours worked <span class="badge text-bg-light border fw-normal ms-1">California non-exempt</span></h3>'
-        . '<button type="button" class="btn btn-sm btn-light border" data-mit-ca-second' . ($second ? ' hidden' : '') . '><i class="fas fa-plus me-1"></i>2nd meal period</button></div>'
-        . '<div class="table-responsive"><table class="table table-sm align-middle mb-0 mit-ca-table"><thead class="small text-muted"><tr>'
-        . '<th>Day</th><th>Start</th><th>Meal out</th><th>Meal back</th><th data-mit-ca-col2>2nd meal out</th><th data-mit-ca-col2>2nd meal back</th><th>End</th><th class="text-center">Worked</th><th>Meal periods and rest breaks</th></tr></thead><tbody>';
-    foreach ($ca as $date => $c) {
-        $boxes = mitTsCaBoxes($c['periods']);
-        $future = $date > $today;
-        $row_dis = $future && !$c['periods'] ? ' disabled' : $dis;
-        $html .= '<tr data-mit-ca-day="' . $date . '"' . (mitTsExpected($user_id, $date) ? '' : ' class="table-light"') . '><td class="text-nowrap small' . ($date === $today ? ' text-primary fw-semibold' : '') . '">'
-            . date('D M j', strtotime($date)) . '</td>';
-        foreach ($boxes as $key => $value) {
-            $col2 = in_array($key, ['meal2_out', 'meal2_in'], true) ? ' data-mit-ca-col2' : '';
-            $html .= '<td' . $col2 . ' style="min-width: 105px"><input type="time" step="60" class="form-control form-control-sm" name="ca_times[' . $date . '][' . $key . ']" value="' . $value . '" data-box="' . $key . '"'
-                . ' aria-label="' . escapeHtml(date('M j', strtotime($date)) . ' ' . str_replace('_', ' ', $key)) . '"' . $row_dis . '></td>';
-        }
-        $html .= '<td class="text-center fw-semibold" data-mit-ca-worked>' . mitTsHours($c['clocked']) . '</td><td class="small" style="min-width: 260px">';
-        // A question for each meal period that was due and missed, late or short (also worked out live by the script)
-        foreach ([1, 2] as $n) {
-            $status = $c['issues'][$n] ?? '';
-            $given = $c['answers']["meal$n"];
-            $html .= '<div class="mb-1" data-mit-ca-meal="' . $n . '"' . ($status === '' ? ' hidden' : '') . '><div class="text-warning-emphasis"><i class="fas fa-exclamation-triangle me-1"></i><span data-mit-ca-issue>'
-                . escapeHtml(mitTsCaIssueText($n, $status)) . '</span></div><select class="form-select form-select-sm' . ($status !== '' && $given === '' ? ' is-invalid' : '') . '" name="ca_answers[' . $date . '][meal' . $n . ']"' . $answer_dis . '>'
-                . '<option value="">Why? - choose</option>';
-            foreach (MIT_TS_CA_ANSWERS as $value => $label) {
-                $html .= '<option value="' . $value . '"' . ($given === $value ? ' selected' : '') . '>' . escapeHtml($label) . '</option>';
-            }
-            $html .= '</select></div>';
-        }
-        $html .= '<div class="form-check form-check-inline m-0" data-mit-ca-rest' . ($c['clocked'] || $c['answers']['rest_missed'] ? '' : ' hidden') . '>'
-            . '<input class="form-check-input" type="checkbox" name="ca_answers[' . $date . '][rest_missed]" value="1" id="mitCaRest' . $date . '"' . ($c['answers']['rest_missed'] ? ' checked' : '') . $answer_dis . '>'
-            . '<label class="form-check-label text-muted" for="mitCaRest' . $date . '">I could not take a rest break</label></div>'
-            . (($c['meal_premium'] || $c['rest_premium']) ? '<div class="text-danger"><i class="fas fa-coins me-1"></i>Premium owed: ' . mitTsHours($c['meal_premium'] + $c['rest_premium'], false) . ' h</div>' : '')
-            . '</td></tr>';
-    }
-    $html .= '</tbody></table></div><div class="card-body py-2 small text-muted">'
-        . 'Type the times you started and stopped work, and when each meal period began and ended - to the minute (an end earlier than the start is the next day). '
-        . 'A day over 5 hours needs a 30-minute meal period starting by the end of the 5th hour, a day over 10 hours a second one by the end of the 10th. '
-        . 'Rest breaks are paid and are not typed in. These times are your hours worked; the charge codes below say what the time was spent on.'
-        . (!$own && $locked === '' ? '<div class="mt-2"><label class="form-label text-body mb-1">Why are you changing their times? <span class="text-danger">*</span> <span class="text-muted">(they see it and are asked to acknowledge it)</span></label>'
-            . '<input type="text" class="form-control form-control-sm" name="ca_reason" maxlength="255"></div>' : '')
-        . '</div></div>';
-    return $html;
-}
 
 /** Changes to the times: the person acknowledges those others made; everyone sees the history. */
 function mitTsCaChangesBox($user_id, array $period, $own) {
@@ -649,9 +590,8 @@ function mitTsCaSignModal($user_id, array $period) {
     return '<div class="modal fade" id="mitCaSign" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-lg"><div class="modal-content">'
         . '<div class="modal-header bg-dark"><h5 class="modal-title"><i class="fas fa-file-signature me-2"></i>Sign and submit your hours</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>'
         . '<div class="modal-body">'
-        . ($problems ? '<div class="alert alert-warning small"><strong>Before you can submit:</strong><ul class="mb-0">' . implode('', array_map(function ($p) {
-            return '<li>' . escapeHtml($p) . '</li>';
-        }, $problems)) . '</ul><div class="mt-1">Save after fixing them - this list is from the last save.</div></div>' : '')
+        // Kept current by the page's script after each save
+        . '<div data-mit-ca-problems>' . mitTsCaProblemsHtml($problems) . '</div>'
         . '<p class="border rounded p-3 bg-body-tertiary">' . escapeHtml(mitTsCaStatement($user['user_name'], $period)) . '</p>'
         . '<div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="mit_ca_accurate" value="1" id="mitCaAccurate"><label class="form-check-label" for="mitCaAccurate">'
         . 'I certify the times on this timesheet are complete and accurate, and I did not work off the clock.</label></div>'
@@ -666,6 +606,13 @@ function mitTsCaSignModal($user_id, array $period) {
         . '<div class="form-text">Signed electronically with the date, time and where it was sent from. Your manager is told about anything you report.</div>'
         . '</div><div class="modal-footer"><button type="submit" name="mit_ts_save" value="submit" class="btn btn-success"><i class="fas fa-file-signature me-2"></i>Sign and submit</button>'
         . '<button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button></div></div></div></div>';
+}
+
+/** The "before you can submit" list for the signing window ('' when there is nothing). */
+function mitTsCaProblemsHtml(array $problems) {
+    return $problems ? '<div class="alert alert-warning small"><strong>Before you can submit:</strong><ul class="mb-0">' . implode('', array_map(function ($p) {
+        return '<li>' . escapeHtml($p) . '</li>';
+    }, $problems)) . '</ul></div>' : '';
 }
 
 /** What the approver sees about the signature, in the Approve window. */
