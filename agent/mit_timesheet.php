@@ -55,7 +55,7 @@ foreach ($entries as $by_code) {
 $allowed = mitTsCodesFor($user_id);
 $hidden = array_flip(mitTsHiddenCodes($user_id));
 // California non-exempt (functions/mit_ts_california.php): start, meal and end times are typed in; meals are not a charge code
-$ca = mitTsCaOn($user_id);
+$ca = mitTsCaOn($user_id, $period['end']);
 $codes = array_filter($codes_all, function ($code) use ($used, $allowed, $hidden, $ca) {
     $id = intval($code['code_id']);
     return isset($used[$id]) || (isset($allowed[$id]) && !isset($hidden[$id]) && !($ca && $code['code_kind'] === 'break'));

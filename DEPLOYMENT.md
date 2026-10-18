@@ -324,7 +324,8 @@ The beta server picks it up; test there (including the smoke tests below), then 
 
 ## California timesheets
 
-Hourly people are on California non-exempt rules unless switched off in Admin > Timesheets > People. They type start,
+Hourly people are on California non-exempt rules unless switched off in Admin > Timesheets > People, from the day the
+database update (M018) runs - earlier periods keep their hours as they were. They type start,
 meal and end times each day, answer for a missed, late or short meal period, and sign a statement when they submit.
 The payroll report adds double time and meal / rest premium hours. Have an employment lawyer check the statement
 wording (`mitTsCaStatement` in `functions/mit_ts_california.php`) and the rules before relying on them.

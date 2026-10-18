@@ -14,7 +14,8 @@
  *   - mit_ts_attestations: what the person signed when submitting a period, word for word, with a copy of
  *     the times they signed for.
  * No foreign keys on purpose: time records are kept for years (at least 3) even if the login is deleted.
- * mit_timesheet_people.ca_rules: 1 on, 0 off, NULL = by pay type (on for hourly).
+ * mit_timesheet_people.ca_rules: 1 on, 0 off, NULL = by pay type (on for hourly). mit_settings ts_ca_start: the first
+ * day the rules apply (the day this update ran).
  */
 
 defined('ITFLOW_MIT_DB_UPDATES') || die("Direct file access is not allowed");
@@ -82,3 +83,6 @@ mysqli_query($mysqli, "CREATE TABLE IF NOT EXISTS `mit_ts_attestations` (
 if (!mitColumnExists($mysqli, 'mit_timesheet_people', 'ca_rules')) {
     mysqli_query($mysqli, "ALTER TABLE `mit_timesheet_people` ADD `ca_rules` tinyint(1) NULL DEFAULT NULL");
 }
+
+// The rules apply from today on: days before keep their hours as they were (charge codes, no times typed)
+mysqli_query($mysqli, "INSERT IGNORE INTO mit_settings SET setting_name = 'ts_ca_start', setting_value = CURDATE()");

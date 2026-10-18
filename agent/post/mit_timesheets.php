@@ -26,7 +26,7 @@ if (isset($_POST['mit_ts_save'])) {
         redirect();
     }
     // California non-exempt (functions/mit_ts_california.php): the start, meal and end times and the meal answers first
-    $ca = mitTsCaOn($user_id);
+    $ca = mitTsCaOn($user_id, $period['end']);
     if ($ca) {
         [$ok, $message, $ca_changed] = mitTsCaSave($sheet, $period, (array) ($_POST['ca_times'] ?? []), (array) ($_POST['ca_answers'] ?? []), $_POST['ca_reason'] ?? '');
         if (!$ok) {

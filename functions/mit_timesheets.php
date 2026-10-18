@@ -818,7 +818,8 @@ function mitTsTotals(array $user_ids, $from, $to) {
     foreach ($user_ids as $user_id) {
         $user_id = intval($user_id);
         $t = ['billable' => 0, 'other' => 0, 'codes' => [], 'work' => 0, 'lost' => 0, 'auto_lost' => 0, 'leave_paid' => 0, 'unpaid' => 0, 'overtime' => 0,
-            'break' => 0, 'break_paid' => 0, 'double' => 0, 'clocked' => 0, 'unallocated' => 0, 'meal_premium' => 0, 'rest_premium' => 0, 'ca' => mitTsCaOn($user_id)];
+            'break' => 0, 'break_paid' => 0, 'double' => 0, 'clocked' => 0, 'unallocated' => 0, 'meal_premium' => 0, 'rest_premium' => 0, 'ca' => mitTsCaOn($user_id, $to)];
+        $ca_adjust = 0;  // California days: their hours worked are the typed times, not what is on codes
         $leave_unpaid = 0;
         $unpaid_work = 0;
         foreach ($all_days[$user_id] as $date => $d) {
@@ -835,22 +836,20 @@ function mitTsTotals(array $user_ids, $from, $to) {
             $unpaid_work += $d['unpaid_work'];
             $t['break'] += $d['break'];
             $t['break_paid'] += $d['break_paid'] + $d['break_code_paid'];
+            if ($d['ca']) {
+                $ca_adjust += $d['clocked'] - ($d['billable'] + $d['other'] + $d['work'] + $d['lost']);
+            }
         }
         $t['unpaid'] = $leave_unpaid + $unpaid_work;
-        $t['worked'] = $t['billable'] + $t['other'] + $t['work'] + $t['lost'];
+        $t['worked'] = $t['billable'] + $t['other'] + $t['work'] + $t['lost'] + $ca_adjust;
         $t['leave'] = $t['leave_paid'] + $leave_unpaid;
         $t['paid'] = $t['worked'] - $unpaid_work + $t['leave_paid'] + $t['break_paid'];
         $t['total'] = $t['worked'] + $t['leave'] + $t['break_paid'];
 
         if ($t['ca']) {
-            // California non-exempt: hours worked are the typed times; overtime, double time and the 7th day by California's rules
-            $t['worked'] = $t['clocked'];
-            $t['unpaid'] = $leave_unpaid;
-            $t['paid'] = $t['worked'] + $t['leave_paid'];
-            $t['total'] = $t['worked'] + $t['leave'];
-            $clocked = array_map(function ($d) {
-                return $d['clocked'];
-            }, $all_days[$user_id]);
+            // California non-exempt: overtime, double time and the 7th day by California's rules, on the hours worked
+            // (the typed times - or, on days before the rules started, the hours as they were)
+            $clocked = array_map('mitTsDayWorked', $all_days[$user_id]);
             foreach (mitTsCaOvertime($clocked) as $date => $split) {
                 if ($date >= $from) {
                     $t['overtime'] += $split['overtime'];
@@ -1137,7 +1136,7 @@ function mitTsSubmit(array $sheet, array $period) {
     mitTsFillClosures($sheet['user_id'], $period);
     $sheet = mitTsSheetSaved($sheet['user_id'], $period);
     // California non-exempt: only once they have signed (mitTsCaAttest, from the submit form)
-    if (mitTsCaOn($sheet['user_id']) && !mitTsCaAttestation($sheet['sheet_id'])) {
+    if (mitTsCaOn($sheet['user_id'], $period['end']) && !mitTsCaAttestation($sheet['sheet_id'])) {
         return [false, 'It needs their signed attestation - they submit it themselves.'];
     }
     mysqli_query($mysqli, "UPDATE mit_timesheets SET status = 'submitted', submitted_at = NOW(), decision_note = NULL WHERE sheet_id = " . intval($sheet['sheet_id']));
@@ -1203,7 +1202,7 @@ function mitTsDecide(array $sheet, array $period, $decision, $note = '') {
         if (!in_array($sheet['status'], ['submitted', 'open', 'returned'], true)) {
             return [false, 'This timesheet is already approved.'];
         }
-        if (mitTsCaOn($sheet['user_id']) && mitTsSettings()['approval'] && !mitTsCaAttestation($sheet['sheet_id'])) {
+        if (mitTsCaOn($sheet['user_id'], $period['end']) && mitTsSettings()['approval'] && !mitTsCaAttestation($sheet['sheet_id'])) {
             return [false, 'It needs their signed attestation first - they sign it when they submit it.'];
         }
         mitTsFillClosures($sheet['user_id'], $period);

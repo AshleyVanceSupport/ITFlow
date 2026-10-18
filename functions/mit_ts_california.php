@@ -47,9 +47,18 @@ function mitTsCaReady() {
     return $ready;
 }
 
-/** Is this person on California non-exempt rules? The People tab setting, else on for hourly people. */
-function mitTsCaOn($user_id) {
-    if (!mitTsCaReady()) {
+/** The first day the rules apply (mit_settings ts_ca_start - the day database update M018 ran). */
+function mitTsCaStart() {
+    $start = (string) mitSetting('ts_ca_start', '');
+    return preg_match('/^\d{4}-\d{2}-\d{2}$/', $start) ? $start : '2000-01-01';
+}
+
+/**
+ * Is this person on California non-exempt rules? The People tab setting, else on for hourly people. With a date
+ * (a day, or a period's last day): only from the day the rules started - earlier days keep their hours as they were.
+ */
+function mitTsCaOn($user_id, $date = null) {
+    if (!mitTsCaReady() || ($date !== null && $date < mitTsCaStart())) {
         return false;
     }
     $row = mitTsPeople()[intval($user_id)] ?? [];
@@ -173,8 +182,9 @@ function mitTsCaDays(array $user_ids, $from, $to) {
     }
     $periods = mitTsCaPeriods($ca_users, $from, $to);
     $answers = mitTsCaAnswers($ca_users, $from, $to);
+    $first = mitTsCaStart();
     foreach ($ca_users as $user_id) {
-        foreach (mitTsDates(['start' => $from, 'end' => $to]) as $date) {
+        foreach (mitTsDates(['start' => max($from, $first), 'end' => $to]) as $date) {
             $day_periods = $periods[$user_id][$date] ?? [];
             $a = mitTsCaAnalyze($day_periods);
             $answer = $answers[$user_id][$date] ?? ['meal1' => '', 'meal2' => '', 'rest_missed' => 0];
@@ -541,7 +551,7 @@ function mitTsCaUnacknowledged($user_id, array $period) {
 
 /** The "Hours worked" card: a row a day with its start, meal and end times, the hours, and the meal questions. */
 function mitTsCaCard($user_id, array $period, $locked, $own) {
-    if (!mitTsCaOn($user_id)) {
+    if (!mitTsCaOn($user_id, $period['end'])) {
         return '';
     }
     $user_id = intval($user_id);
@@ -600,7 +610,7 @@ function mitTsCaCard($user_id, array $period, $locked, $own) {
 
 /** Changes to the times: the person acknowledges those others made; everyone sees the history. */
 function mitTsCaChangesBox($user_id, array $period, $own) {
-    if (!mitTsCaOn($user_id)) {
+    if (!mitTsCaOn($user_id, $period['end'])) {
         return '';
     }
     $changes = mitTsCaChanges($user_id, $period);
@@ -660,7 +670,7 @@ function mitTsCaSignModal($user_id, array $period) {
 
 /** What the approver sees about the signature, in the Approve window. */
 function mitTsCaApproverNote($user_id, array $period, array $sheet) {
-    if (!mitTsCaOn($user_id)) {
+    if (!mitTsCaOn($user_id, $period['end'])) {
         return '';
     }
     $attest = mitTsCaAttestation($sheet['sheet_id']);

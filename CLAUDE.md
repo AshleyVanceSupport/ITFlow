@@ -233,7 +233,8 @@ model: see DEPLOYMENT.md.
   `agent/ticket.php` under Parts (layout box `reimburse`, fa-receipt) - modal `agent/modals/mit_reimburse/reimburse.php`,
   handlers `agent/post/mit_reimbursements.php`; payroll report columns Miles / Mileage / Purchases / Reimburse.
   California non-exempt (M018): `functions/mit_ts_california.php` (ours, required from mit_timesheets.php) - per person
-  `mit_timesheet_people.ca_rules` (NULL = on for hourly; People modal). Typed start / meal / end times per day
+  `mit_timesheet_people.ca_rules` (NULL = on for hourly; People modal), from `mit_settings` ts_ca_start on (set to the day M018
+  ran - earlier days and periods keep their old hours; `mitTsCaOn($user_id, $date)`). Typed start / meal / end times per day
   (`mit_ts_work_periods`, gaps = meal periods, never rounded) are the hours worked - codes and ticket time only allocate them
   (`unallocated` = paid work on no code); no auto lost time, no unpaid work codes, no auto paid breaks, break-kind codes hidden.
   Meal rules (`mitTsCaAnalyze`: 30 min by end of hour 5 / 10), the person's answer per missed/late/short meal and
