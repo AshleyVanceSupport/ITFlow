@@ -43,6 +43,9 @@ foreach ($people as $user_id => $person) {
     $can_approve[$user_id] = $approval && mitTsMayApprove($user_id) && ($user_id !== intval($session_user_id) || mitTsLevel() >= 3);
 }
 $bulk = in_array(true, $can_approve, true);
+// Behind on timesheets: ended periods not submitted (everyone the agent sees, not themselves)
+$behind = mitTsBehind(array_diff(array_keys(mitTsVisibleUsers()), [intval($session_user_id)]));
+$period_ended = $period['end'] < date('Y-m-d');
 
 ?>
 
@@ -59,6 +62,33 @@ $bulk = in_array(true, $can_approve, true);
         <?php } ?>
     </div>
     <div class="card-body">
+        <?php if ($behind) { ?>
+            <div class="border border-warning-subtle bg-warning-subtle rounded p-3 mb-3" data-mit-ts-behind>
+                <form action="post.php" method="post">
+                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        <strong><i class="fas fa-exclamation-triangle text-warning-emphasis me-2"></i>Behind on timesheets</strong>
+                        <span class="small text-muted">Pay periods that have ended and not been submitted, in the last <?= MIT_TS_BEHIND_PERIODS ?></span>
+                        <?php foreach (array_keys($behind) as $user_id) { ?><input type="hidden" name="remind_ids[]" value="<?= intval($user_id) ?>"><?php } ?>
+                        <?php if (count($behind) > 1) { ?>
+                            <button type="submit" name="mit_ts_remind" value="all" class="btn btn-sm btn-warning ms-auto"><i class="fas fa-bell me-2"></i>Remind all <?= count($behind) ?></button>
+                        <?php } ?>
+                    </div>
+                    <div class="list-group">
+                        <?php foreach ($behind as $user_id => $late) {
+                            $user = mitTsUsers([$user_id])[$user_id] ?? ['user_name' => "user $user_id"]; ?>
+                            <div class="list-group-item d-flex flex-wrap align-items-center gap-2 py-2">
+                                <a class="fw-semibold" href="mit_timesheet.php?user_id=<?= intval($user_id) ?>&start=<?= $late['periods'][0]['start'] ?>"><?= escapeHtml($user['user_name']) ?></a>
+                                <span class="small"><?= count($late['periods']) ?> period<?= count($late['periods']) === 1 ? '' : 's' ?>: <?= escapeHtml(implode(', ', array_column($late['periods'], 'label'))) ?></span>
+                                <span class="small text-muted ms-auto"><?= $late['reminded_at'] !== '' ? 'Reminded ' . escapeHtml(timeAgo($late['reminded_at'])) : 'Not reminded yet' ?></span>
+                                <button type="submit" name="mit_ts_remind" value="<?= intval($user_id) ?>" class="btn btn-sm btn-outline-dark"><i class="fas fa-bell me-1"></i>Remind</button>
+                            </div>
+                        <?php } ?>
+                    </div>
+                    <div class="small text-muted mt-2">A reminder is an app notification and an email. Automatic reminders are set in Admin &gt; Timesheets.</div>
+                </form>
+            </div>
+        <?php } ?>
         <p class="text-muted"><?= count($people) ?> people · <?= mitTsHours($sum['total'], false) ?> hours · <?= mitTsBillableShare($sum) ?> of hours worked billable · <?= mitTsHours($sum['lost'], false) ?> lost<?= $waiting ? " · <strong>$waiting waiting for approval</strong>" : '' ?></p>
         <form action="post.php" method="post">
             <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
@@ -77,7 +107,7 @@ $bulk = in_array(true, $can_approve, true);
                             <th class="text-end">Total</th>
                             <?php if ($overtime) { ?><th class="text-end">Overtime</th><?php } ?>
                             <th class="text-end">Billable %</th>
-                            <?php if ($approval) { ?><th>Status</th><?php } ?>
+                            <?php if ($approval) { ?><th>Status</th><th></th><?php } ?>
                         </tr>
                     </thead>
                     <tbody>
@@ -98,7 +128,14 @@ $bulk = in_array(true, $can_approve, true);
                                 <td class="text-end fw-semibold"><?= mitTsHours($t['total'], false) ?></td>
                                 <?php if ($overtime) { ?><td class="text-end"><?= mitTsHours($t['overtime'], false) ?></td><?php } ?>
                                 <td class="text-end"><?= mitTsBillableShare($t) ?></td>
-                                <?php if ($approval) { ?><td><?= mitTsBadge($status) ?></td><?php } ?>
+                                <?php if ($approval) { ?>
+                                    <td class="text-nowrap"><?= mitTsBadge($status) ?><?= $period_ended && in_array($status, ['open', 'returned'], true) && isset($behind[$user_id]) ? ' <span class="badge text-bg-danger">Late</span>' : '' ?></td>
+                                    <td class="text-end text-nowrap">
+                                        <?php if ($status === 'submitted' && $can_approve[$user_id]) { ?>
+                                            <a href="#" class="btn btn-sm btn-outline-danger ajax-modal" data-modal-url="modals/mit_timesheet/decide.php?user_id=<?= intval($user_id) ?>&start=<?= $period['start'] ?>&decision=return"><i class="fas fa-undo me-1"></i>Send back</a>
+                                        <?php } ?>
+                                    </td>
+                                <?php } ?>
                             </tr>
                         <?php } ?>
                     </tbody>

@@ -1273,7 +1273,8 @@ function mitTsDecide(array $sheet, array $period, $decision, $note = '') {
         $text = 'sent back';
     }
     if (intval($sheet['user_id']) !== intval($session_user_id)) {
-        mitTsNotify($sheet['user_id'], 'Your timesheet for ' . $period['label'] . " was $text by " . mitTsWho() . ($note !== '' ? " - $note" : ''), mitTsLink($sheet['user_id'], $period), $sheet['sheet_id']);
+        // Sent back: by email too, so they know to fix it
+        mitTsNotify($sheet['user_id'], 'Your timesheet for ' . $period['label'] . " was $text by " . mitTsWho() . ($note !== '' ? " - $note" : ''), mitTsLink($sheet['user_id'], $period), $sheet['sheet_id'], $decision !== 'approve');
     }
     $user = mitTsUsers([$sheet['user_id']])[intval($sheet['user_id'])] ?? ['user_name' => 'user ' . intval($sheet['user_id'])];
     logAudit('Timesheet', 'Edit', escapeSql(mitTsWho() . " $text the timesheet of " . $user['user_name'] . ' for ' . $period['label']), 0, intval($sheet['user_id']));
@@ -1425,6 +1426,74 @@ function mitTsSendReminders() {
         }
     }
     return $log;
+}
+
+/** Periods looked back over for "behind on timesheets" (the team page and its Remind buttons). */
+const MIT_TS_BEHIND_PERIODS = 6;
+
+/**
+ * Who is behind: people (of $user_ids) with ended pay periods not submitted - open, or sent back and not sent again - in
+ * the last MIT_TS_BEHIND_PERIODS periods, from when they started. Only with approval on. user_id => [periods => [period,
+ * ...] oldest first, reminded_at => when the newest reminder went (automatic or by hand), or ''].
+ */
+function mitTsBehind(array $user_ids) {
+    global $mysqli;
+    if (!mitTsSettings()['approval'] || !$user_ids) {
+        return [];
+    }
+    $periods = [];
+    $period = mitTsPeriodShift(mitTsPeriodFor(), -1);
+    for ($i = 0; $i < MIT_TS_BEHIND_PERIODS; $i++) {
+        array_unshift($periods, $period);
+        $period = mitTsPeriodShift($period, -1);
+    }
+    $ids = implode(',', array_map('intval', $user_ids));
+    $stored = [];
+    $result = mysqli_query($mysqli, "SELECT user_id, period_start, status, GREATEST(COALESCE(reminded_due_at, '1000-01-01'), COALESCE(reminded_late_at, '1000-01-01')) AS reminded
+        FROM mit_timesheets WHERE user_id IN ($ids) AND period_start >= '" . escapeSql($periods[0]['start']) . "'");
+    while ($row = mysqli_fetch_assoc($result)) {
+        $stored[intval($row['user_id'])][$row['period_start']] = $row;
+    }
+    $behind = [];
+    foreach (array_map('intval', $user_ids) as $user_id) {
+        $start = mitTsStartDate($user_id);
+        foreach ($periods as $p) {
+            $row = $stored[$user_id][$p['start']] ?? null;
+            if (($start !== '' && $p['end'] < $start) || ($row && !in_array($row['status'], ['open', 'returned'], true))) {
+                continue;
+            }
+            $behind[$user_id]['periods'][] = $p;
+            $reminded = $row && $row['reminded'] > '1000-01-01' ? $row['reminded'] : '';
+            $behind[$user_id]['reminded_at'] = max($behind[$user_id]['reminded_at'] ?? '', $reminded);
+        }
+    }
+    return $behind;
+}
+
+/**
+ * A reminder by hand from the team page: an app notification and an email to someone behind on their timesheets
+ * (sent whatever their own "remind me" choice - that is for the automatic ones). Not again within an hour.
+ * Returns [ok, message].
+ */
+function mitTsRemind($user_id, array $behind) {
+    global $mysqli;
+    $user_id = intval($user_id);
+    $periods = $behind['periods'] ?? [];
+    if (!$periods) {
+        return [false, 'They are up to date.'];
+    }
+    if (($behind['reminded_at'] ?? '') !== '' && strtotime($behind['reminded_at']) > time() - 3600) {
+        return [false, 'They were reminded in the last hour.'];
+    }
+    $oldest = $periods[0];
+    $sheet = mitTsSheetSaved($user_id, $oldest);
+    mysqli_query($mysqli, "UPDATE mit_timesheets SET reminded_late_at = NOW() WHERE sheet_id = " . intval($sheet['sheet_id']));
+    $more = count($periods) - 1;
+    mitTsNotify($user_id, 'Please submit your timesheet for ' . $oldest['label'] . ($more ? " and $more more" : '') . ' - ' . mitTsWho() . ' sent a reminder',
+        mitTsLink($user_id, $oldest), $sheet['sheet_id'], true);
+    $user = mitTsUsers([$user_id])[$user_id] ?? ['user_name' => "user $user_id"];
+    logAudit('Timesheet', 'Edit', escapeSql(mitTsWho() . ' reminded ' . $user['user_name'] . ' to submit their timesheet'), 0, $user_id);
+    return [true, $user['user_name']];
 }
 
 require_once __DIR__ . '/mit_leave.php';

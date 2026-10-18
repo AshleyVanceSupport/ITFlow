@@ -2,7 +2,7 @@
 // alone. Uses the admin login's own preferences - run with a test login.
 
 const { test, expect } = require('@playwright/test');
-const { watch, visit, expectClean, fetchText, getJson } = require('./helpers');
+const { watch, visit, expectClean, fetchText, getJson, csrf } = require('./helpers');
 
 test('Tickets list remembers the view, and Reset forgets it', async ({ page }) => {
     const pill = () => page.locator('.card-header nav a.nav-link.active, nav.nav a.nav-link.active').first().innerText();
@@ -53,6 +53,24 @@ test('timesheet and payroll report', async ({ page }) => {
     await page.waitForTimeout(300);
     await expectClean(page, errors);
     await visit(page, 'agent/reports/mit_payroll.php', errors);
+});
+
+test('timesheets: who is behind, and reminding them', async ({ page }) => {
+    const errors = watch(page);
+    await visit(page, 'agent/mit_timesheets.php', errors);
+    // The handler answers even when there is nobody to remind (yourself is never reminded)
+    const token = await csrf(page);
+    // (fetch follows the redirect back to the page, which shows the message)
+    const answer = await page.evaluate(async (token) => (await fetch('post.php', {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({csrf_token: token, mit_ts_remind: '0'}).toString()})).text(), token);
+    expect(answer, 'the Remind handler').toContain('Nobody to remind');
+    const box = page.locator('[data-mit-ts-behind]');
+    test.skip(await box.count() === 0, 'nobody is behind on their timesheets');
+    // Remind the first person: sent, or already reminded within the hour (a second run)
+    await Promise.all([page.waitForNavigation(), box.locator('button[name=mit_ts_remind]:not([value=all])').first().click()]);
+    await expect(page.locator('body')).toContainText(/Reminder sent to|reminded in the last hour/);
+    await expect(page.locator('[data-mit-ts-behind]')).toContainText(/Reminded /);
+    await expectClean(page, errors);
 });
 
 test('Dispatch board, day and week', async ({ page }) => {

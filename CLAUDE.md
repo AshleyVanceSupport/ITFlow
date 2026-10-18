@@ -271,6 +271,9 @@ model: see DEPLOYMENT.md.
   mitTsWithdraw, mitTsDecide, mitTsReopen. UI: the day panel of `agent/js/mit_timesheet.js` (Work times section, same meal rules
   in JS), `agent/mit_timesheet.php` (sign window, changes box), decide modal (`mitTsCaApproverNote`), payroll report (Double time, Meal / Rest premium
   columns; detail "Work times" rows). No FKs on the M018 tables: records outlive deleted logins (keep 3 years).
+  Behind on timesheets (team page `agent/mit_timesheets.php`): `mitTsBehind` (ended periods not submitted in the last
+  MIT_TS_BEHIND_PERIODS, from the start date, approval on) with Remind / Remind all (`mit_ts_remind` -> `mitTsRemind`:
+  notification + email, sets reminded_late_at, not again within an hour); Late badge and Send back on the rows. Send back emails too.
   Cron job `mit_timesheets` (`cron/mit_timesheets.php`, entry in `includes/cron_jobs.php`, hourly: closure days
   of the period just ended, reminders - `mit_timesheets.reminded_due_at` / `reminded_late_at` -, leave earned
   when approval is off (once the period has settled: auto-lock days, else 7), leave year ends - carry-over

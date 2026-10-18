@@ -116,6 +116,35 @@ if (isset($_GET['mit_ts_reopen'])) {
     redirect();
 }
 
+// Remind people who are behind on their timesheets (the team page): one, or everyone listed
+if (isset($_POST['mit_ts_remind'])) {
+
+    validateCSRFToken();
+
+    $wanted = $_POST['mit_ts_remind'] === 'all' ? array_map('intval', (array) ($_POST['remind_ids'] ?? [])) : [intval($_POST['mit_ts_remind'])];
+    // Only people this agent may see, and not themselves
+    $wanted = array_values(array_filter($wanted, function ($user_id) use ($session_user_id) {
+        return $user_id && $user_id !== intval($session_user_id) && mitTsMaySee($user_id);
+    }));
+    $behind = mitTsBehind($wanted);
+    $sent = [];
+    $skipped = [];
+    foreach ($wanted as $user_id) {
+        [$ok, $result] = mitTsRemind($user_id, $behind[$user_id] ?? []);
+        if ($ok) {
+            $sent[] = $result;
+        } else {
+            $skipped[] = $result;
+        }
+    }
+    if ($sent) {
+        flashAlert('Reminder sent to ' . escapeHtml(implode(', ', $sent)) . ($skipped ? ' (' . count($skipped) . ' not: ' . escapeHtml(implode(' ', array_unique($skipped))) . ')' : ''));
+    } else {
+        flashAlert(escapeHtml($skipped ? implode(' ', array_unique($skipped)) : 'Nobody to remind.'), 'error');
+    }
+    redirect();
+}
+
 if (isset($_POST['mit_ts_bulk_approve'])) {
 
     validateCSRFToken();
