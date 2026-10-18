@@ -26,13 +26,6 @@ if (isset($_POST['mit_edit_procurement_settings'])) {
     mitSetSetting('procurement_po_next', $next);
     mitSetSetting('procurement_approval_over', round((float) $over, 2));
     mitSetSetting('procurement_approval_on', empty($_POST['mit_po_approval_on']) ? '0' : '1');
-    // Who approves: active agents only
-    $approvers = array_unique(array_filter(array_map('intval', (array) ($_POST['mit_po_approvers'] ?? []))));
-    if ($approvers) {
-        $approvers = array_map('intval', array_column(mysqli_fetch_all(mysqli_query($mysqli, "SELECT user_id FROM users WHERE user_type = 1 AND user_status = 1
-            AND user_archived_at IS NULL AND user_id IN (" . implode(',', $approvers) . ")"), MYSQLI_ASSOC), 'user_id'));
-    }
-    mitSetSetting('procurement_approvers', implode(',', $approvers));
     mitSetSetting('procurement_ship_to', trim((string) ($_POST['mit_po_ship_to'] ?? '')));
 
     logAudit("Settings", "Edit", "$session_name edited purchase order settings");

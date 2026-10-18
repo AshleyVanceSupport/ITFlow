@@ -39,16 +39,7 @@ if (function_exists('mitProcReady') && mitProcReady()) {
                             <span class="input-group-text"><i class="fas fa-fw fa-dollar-sign"></i></span>
                             <input type="text" inputmode="decimal" class="form-control" name="mit_po_approval_over" value="<?= number_format($mit_proc['approval_over'], 2, '.', '') ?>" required>
                         </div>
-                        <div class="form-text">0 = every PO needs approving. A PO with a line that has no cost always does.</div>
-                    </div>
-                    <div class="col-md-4" data-mit-approval>
-                        <label class="form-label">Who can approve</label>
-                        <select class="form-select select2" name="mit_po_approvers[]" multiple data-placeholder="Everyone with Full Procurement access">
-                            <?php foreach (mysqli_fetch_all(mysqli_query($mysqli, "SELECT user_id, user_name FROM users WHERE user_type = 1 AND user_status = 1 AND user_archived_at IS NULL ORDER BY user_name"), MYSQLI_ASSOC) as $mit_user) { ?>
-                                <option value="<?= intval($mit_user['user_id']) ?>" <?= in_array(intval($mit_user['user_id']), $mit_proc['approvers'], true) ? 'selected' : '' ?>><?= escapeHtml($mit_user['user_name']) ?></option>
-                            <?php } ?>
-                        </select>
-                        <div class="form-text">They are told when a PO is waiting. Empty = everyone with Full Procurement access. Admins can always approve.</div>
+                        <div class="form-text">0 = every PO needs approving. A PO with a line that has no cost always does. Approvers: roles with Full Procurement access (Admin > Roles), and admins.</div>
                     </div>
                     <script>
                         (function () {

@@ -10,8 +10,7 @@ require_once '../../../includes/modal_header.php';
 mitModuleRequire('procurement', true);
 
 $action = (string) ($_GET['action'] ?? '');
-// Approving: anyone who can see Procurement, if mitPoMayApprove() says they are an approver (Admin > Settings > Procurement)
-$levels = ['approve' => 1, 'reject' => 1, 'ordered' => 2, 'email' => 2, 'tracking' => 2, 'details' => 2, 'bill' => 2];
+$levels = ['approve' => 3, 'reject' => 3, 'ordered' => 2, 'email' => 2, 'tracking' => 2, 'details' => 2, 'bill' => 2];
 if (!isset($levels[$action])) {
     exit(json_encode(['error' => 'Unknown action.']));
 }
