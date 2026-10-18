@@ -170,6 +170,7 @@ $company_week = mitTsCompanySchedule();
                     <div class="col-md-4">
                         <label class="form-label">Billable is</label>
                         <select class="form-select" name="billable">
+                            <option value="all" <?= $settings['billable'] === 'all' ? 'selected' : '' ?>>All ticket time</option>
                             <option value="flag" <?= $settings['billable'] === 'flag' ? 'selected' : '' ?>>Tickets marked billable</option>
                             <option value="client" <?= $settings['billable'] === 'client' ? 'selected' : '' ?>>Every ticket for a client</option>
                         </select>

@@ -124,7 +124,7 @@ if (isset($_POST['mit_ts_settings_save'])) {
         'rounding' => in_array(intval($_POST['rounding'] ?? 0), [0, 6, 15, 30], true) ? intval($_POST['rounding']) : 0,
         'ticket_time' => empty($_POST['ticket_time']) ? 0 : 1,
         'ticket_internal' => empty($_POST['ticket_internal']) ? 0 : 1,
-        'billable' => ($_POST['billable'] ?? '') === 'client' ? 'client' : 'flag',
+        'billable' => in_array($_POST['billable'] ?? '', ['all', 'flag', 'client'], true) ? $_POST['billable'] : 'all',
         'schedule' => $schedule,
         'ot_day' => $ot_day,
         'ot_week' => $ot_week,

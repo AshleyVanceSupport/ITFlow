@@ -216,7 +216,7 @@ model: see DEPLOYMENT.md.
   Admin > Timesheets `admin/mit_timesheets.php` (tabs Settings / Charge codes / People), modals
   `admin/modals/mit_timesheets/`, handlers `admin/post/mit_timesheets.php`. Options (M013): company settings
   `mit_settings` ts_* (`mitTsSettings` - week start, approval on/off, future days, auto-lock, reminders, h:mm,
-  rounding, ticket time / internal notes / billable rule, normal week, overtime day/week (weekly overtime
+  rounding, ticket time / internal notes / billable rule (`ts_billable` all - the default - | flag | client, timesheets only, `mitTsBillableSql`), normal week, overtime day/week (weekly overtime
   falls on the day it is worked), auto lost time - unpaid unless ts_auto_lost_paid, never before the hire
   date or the login's creation);
   codes `code_roles` / `code_note_required` / `code_daily_max` / `code_closure_fill`; `mit_timesheet_people`

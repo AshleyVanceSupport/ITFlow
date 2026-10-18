@@ -98,7 +98,7 @@ function mitTsReportEntry() {
  *   autolock_days (0 = never - otherwise a period locks that many days after it ends);
  *   remind_due 1/0 (on a period's last day); remind_late_days (0 = off); format decimal | hm;
  *   rounding 0 | 6 | 15 | 30 (ticket time per day); ticket_time 1/0; ticket_internal 1/0 (internal
- *   notes' time counts); billable flag | client; schedule '' (from Admin > SLA) or minutes Mon..Sun;
+ *   notes' time counts); billable all | flag | client (what timesheets count as billable); schedule '' (from Admin > SLA) or minutes Mon..Sun;
  *   ot_day / ot_week minutes (0 = off); auto_lost 1/0; auto_lost_paid 1/0 (unaccounted time is
  *   unpaid unless this is on); break_minutes / break_per - paid breaks, break_minutes for every break_per
  *   minutes worked (0 = off; a person can have their own - mitTsBreakRule).
@@ -107,7 +107,7 @@ function mitTsSettings() {
     static $settings = null;
     if ($settings === null) {
         $defaults = ['week_start' => 1, 'approval' => 1, 'future' => 'all', 'autolock_days' => 0, 'remind_due' => 0, 'remind_late_days' => 0,
-            'format' => 'decimal', 'rounding' => 0, 'ticket_time' => 1, 'ticket_internal' => 1, 'billable' => 'flag', 'schedule' => '',
+            'format' => 'decimal', 'rounding' => 0, 'ticket_time' => 1, 'ticket_internal' => 1, 'billable' => 'all', 'schedule' => '',
             'ot_day' => 0, 'ot_week' => 0, 'auto_lost' => 0, 'auto_lost_paid' => 0, 'break_minutes' => 0, 'break_per' => 240];
         $settings = [];
         foreach ($defaults as $key => $default) {
@@ -118,7 +118,8 @@ function mitTsSettings() {
         $settings['future'] = in_array($settings['future'], ['all', 'leave', 'none'], true) ? $settings['future'] : 'all';
         $settings['format'] = $settings['format'] === 'hm' ? 'hm' : 'decimal';
         $settings['rounding'] = in_array($settings['rounding'], [0, 6, 15, 30], true) ? $settings['rounding'] : 0;
-        $settings['billable'] = $settings['billable'] === 'client' ? 'client' : 'flag';
+        // What counts as billable on timesheets (not invoicing): all ticket time, tickets marked billable, or every ticket for a client
+        $settings['billable'] = in_array($settings['billable'], ['all', 'flag', 'client'], true) ? $settings['billable'] : 'all';
         $settings['schedule'] = mitTsScheduleClean($settings['schedule']) ?? '';
     }
     return $settings;
@@ -655,7 +656,7 @@ function mitTsTicketMinutesLive(array $user_ids, $from, $to) {
     if (!$settings['ticket_time']) {
         return $minutes;
     }
-    $billable = $settings['billable'] === 'client' ? 'ticket_client_id > 0' : 'ticket_billable = 1';
+    $billable = mitTsBillableSql($settings['billable']);
     $result = mysqli_query($mysqli, "SELECT ticket_reply_by AS u, DATE(ticket_reply_created_at) AS d,
             SUM(CASE WHEN $billable THEN TIME_TO_SEC(ticket_reply_time_worked) ELSE 0 END) AS b,
             SUM(CASE WHEN $billable THEN 0 ELSE TIME_TO_SEC(ticket_reply_time_worked) END) AS o
@@ -880,6 +881,11 @@ function mitTsTotals(array $user_ids, $from, $to) {
     return $totals;
 }
 
+/** SQL for "this ticket's time is billable" on timesheets: all ticket time, tickets marked billable, or tickets for a client. */
+function mitTsBillableSql($rule) {
+    return $rule === 'flag' ? 'ticket_billable = 1' : ($rule === 'client' ? 'ticket_client_id > 0' : '1 = 1');
+}
+
 /** "62%" of worked hours on billable tickets, or '-'. */
 function mitTsBillableShare(array $t) {
     return $t['worked'] > 0 ? round($t['billable'] / $t['worked'] * 100) . '%' : '-';
@@ -889,7 +895,7 @@ function mitTsBillableShare(array $t) {
 function mitTsDayTickets($user_id, $date) {
     global $mysqli;
     $settings = mitTsSettings();
-    $billable = $settings['billable'] === 'client' ? 'ticket_client_id > 0' : 'ticket_billable = 1';
+    $billable = mitTsBillableSql($settings['billable']);
     $result = mysqli_query($mysqli, "SELECT ticket_id, ticket_prefix, ticket_number, ticket_subject, IF($billable, 1, 0) AS ticket_billable, ticket_client_id, client_name,
             SUM(TIME_TO_SEC(ticket_reply_time_worked)) AS seconds
         FROM ticket_replies JOIN tickets ON ticket_id = ticket_reply_ticket_id LEFT JOIN clients ON client_id = ticket_client_id
