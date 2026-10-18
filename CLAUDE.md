@@ -191,9 +191,9 @@ model: see DEPLOYMENT.md.
   to-order parts become procurement items (source ticket). Procurement's pages, POs and receiving follow the role's
   Procurement permission; the ticket Parts box does not - everyone on the ticket sees it, ticket edit adds parts (to order too),
   billing needs Sales edit, and PO numbers in it are links only with Procurement View. The product "Order from" field needs
-  Procurement Edit. Procurement > Unbilled Parts (`agent/mit_unbilled_parts.php`, side-menu
-  link with a count in `agent/includes/mit_procurement_nav.php`): every part not on an invoice, by client and ticket, with
-  Bill parts (`mitUnbilledParts` / `mitUnbilledPartsCount`, sharing `mitTicketPartsWhere` with `mitTicketParts`). Project pickers (item modal, from-invoice, quote convert) use `mitProcProjectField` - the client's open
+  Procurement Edit. Billing > Unbilled Parts (`agent/mit_unbilled_parts.php`, Sales permission;
+  side-menu link with a count in `agent/includes/mit_billing_nav.php`, one require in `agent/includes/side_nav.php` BILLING after
+  Products): every part not on an invoice, by client and ticket, with Bill parts (`mitUnbilledParts` / `mitUnbilledPartsCount`, sharing `mitTicketPartsWhere` with `mitTicketParts`). Project pickers (item modal, from-invoice, quote convert) use `mitProcProjectField` - the client's open
   projects (client 0 = projects without a client), with a note when there are none; the item modal's list follows its client.
   Product vendor: `mitProductVendorField`
   appended to the product modals' pricing hook line, saved from `mitProductSave`.

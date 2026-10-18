@@ -1,7 +1,7 @@
 <?php
 
 /*
- * Mountaineer IT - Procurement > Unbilled parts (functions/mit_procurement_parts.php): every part put on a ticket
+ * Mountaineer IT - Billing > Unbilled parts (functions/mit_procurement_parts.php): every part put on a ticket
  * that is not on an invoice yet, by client and ticket, oldest first - so equipment that went out is not forgotten.
  * Bill a ticket's parts from here (the same window as the ticket's Parts box). ?client= narrows it to one client.
  */
@@ -10,7 +10,8 @@ require_once "includes/inc_all.php";
 
 mitModuleRequire('procurement');
 
-enforceUserPermission('module_procurement');
+// A billing page: Sales View to see it, Sales Edit to bill (the Procurement permission is not needed)
+enforceUserPermission('module_sales');
 
 $client_filter = intval($_GET['client'] ?? 0);
 $parts = mitUnbilledParts($client_filter);
