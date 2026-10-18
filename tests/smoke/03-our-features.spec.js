@@ -88,7 +88,7 @@ test('cron health address and alert settings', async ({ page }) => {
 });
 
 test('purchase order action buttons are buttons', async ({ page }) => {
-    await visit(page, 'agent/mit_purchase_orders.php');
+    await visit(page, 'agent/mit_purchase_orders.php?show=all');
     const link = page.locator('a[href*="mit_purchase_order.php?po_id="]').first();
     test.skip(await link.count() === 0, 'no purchase orders');
     await visit(page, await link.evaluate((a) => a.href));
