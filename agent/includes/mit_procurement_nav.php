@@ -14,6 +14,7 @@ if (function_exists('mitProcLevel') && mitProcLevel() >= 1) {
         ['mit_procurement.php', 'fa-cart-plus', 'To Order', intval($mit_nav_counts['to_order']), 'Items waiting to be put on a PO', []],
         ['mit_purchase_orders.php', 'fa-file-signature', 'Purchase Orders', intval($mit_nav_counts['pending']), 'Waiting for approval', ['mit_purchase_order.php']],
         ['mit_receiving.php', 'fa-truck-loading', 'Receiving', intval($mit_nav_counts['arriving']), 'Ordered POs still to arrive', []],
+        ['mit_unbilled_parts.php', 'fa-file-invoice-dollar', 'Unbilled Parts', mitUnbilledPartsCount(), 'Parts on tickets not billed yet', []],
     ];
     ?>
     <li class="nav-header mt-3">PROCUREMENT</li>

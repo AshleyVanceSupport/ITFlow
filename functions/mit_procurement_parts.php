@@ -226,21 +226,49 @@ const MIT_PART_SOURCES = ['stock' => 'From stock', 'order' => 'To order', 'other
 
 /** A ticket's parts, with where each one is: its procurement item, PO and invoice. */
 function mitTicketParts($ticket_id) {
+    return mitTicketPartsWhere("parts.ticket_id = " . intval($ticket_id));
+}
+
+/**
+ * Parts on tickets not billed yet, any ticket the agent can see (Procurement > Unbilled parts), oldest first, with
+ * their ticket and client. $client_id narrows it to one client.
+ */
+function mitUnbilledParts($client_id = 0) {
+    return mitTicketPartsWhere("(parts.invoice_id = 0 OR invoices.invoice_id IS NULL)" . (intval($client_id) ? " AND parts.client_id = " . intval($client_id) : '')
+        . clientScopeSql('parts.client_id'), 'parts.created_at, parts.part_id');
+}
+
+/** How many parts are not billed yet (side menu badge). */
+function mitUnbilledPartsCount() {
+    global $mysqli;
+    if (!mitProcReady() || !mitTicketPartsReady()) {
+        return 0;
+    }
+    return intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COUNT(*) FROM mit_ticket_parts parts
+        LEFT JOIN invoices ON invoices.invoice_id = parts.invoice_id AND parts.invoice_id > 0
+        WHERE (parts.invoice_id = 0 OR invoices.invoice_id IS NULL)" . clientScopeSql('parts.client_id')))[0] ?? 0);
+}
+
+/** Parts matching a WHERE (on parts / invoices), with where each one is and its ticket and client. */
+function mitTicketPartsWhere($where, $order = 'parts.part_id') {
     global $mysqli;
     if (!mitProcReady() || !mitTicketPartsReady()) {
         return [];
     }
     $result = mysqli_query($mysqli, "SELECT parts.part_id, parts.ticket_id, parts.client_id, parts.product_id, parts.asset_id, parts.name, parts.description, parts.quantity, parts.unit_cost, parts.unit_price, parts.tax_id, parts.source, parts.proc_item_id, parts.invoice_id, parts.invoice_item_id, parts.billed_at, parts.created_by, parts.created_at, proc.status AS proc_status, po.po_id, po.po_prefix, po.po_number, po.status AS po_status, l.received_qty, l.quantity AS po_qty,
-            invoice_prefix, invoice_number, invoice_status, asset_name
+            invoice_prefix, invoice_number, invoice_status, asset_name,
+            ticket_prefix, ticket_number, ticket_subject, ticket_closed_at, ticket_resolved_at, client_name
         FROM mit_ticket_parts parts
+        LEFT JOIN tickets ON tickets.ticket_id = parts.ticket_id
+        LEFT JOIN clients ON clients.client_id = parts.client_id
         LEFT JOIN mit_procurement_items proc ON proc.item_id = parts.proc_item_id
         LEFT JOIN mit_po_lines l ON l.proc_item_id = proc.item_id AND proc.item_id > 0
             AND l.po_id IN (SELECT po_id FROM mit_purchase_orders WHERE status <> 'cancelled')
         LEFT JOIN mit_purchase_orders po ON po.po_id = l.po_id
         LEFT JOIN invoices ON invoices.invoice_id = parts.invoice_id AND parts.invoice_id > 0
         LEFT JOIN assets ON assets.asset_id = parts.asset_id AND parts.asset_id > 0
-        WHERE parts.ticket_id = " . intval($ticket_id) . "
-        ORDER BY parts.part_id");
+        WHERE $where
+        ORDER BY $order");
     $parts = [];
     while ($row = mysqli_fetch_assoc($result)) {
         // Billed on an invoice that has since been deleted: it can be billed again
