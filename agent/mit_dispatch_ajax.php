@@ -8,6 +8,7 @@
  *   GET  ?contacts=CLIENT_ID                                     a client's contacts
  *   GET  ?contact_tickets=CONTACT_ID&except=TICKET_ID            the contact's other open tickets
  *   GET  ?workload=1&techs=1,2&first_day=0|1                       each tech's open tickets, SLA and booked hours
+ *   GET  ?week_stats=1&techs=1,2&first_day=0|1                     this week: in vs closed, SLA results, per agent
  *   POST assign=1 ticket_id tech_id                               give an unbooked ticket to another agent
  *   POST merge=1 child_id parent_id comment move_replies         merge one ticket into another (ITFlow's merge)
  *   POST book=1 ticket_id tech_id start minutes onsite contact    assign and book (+ detail_* - saved first)
@@ -67,6 +68,11 @@ if (isset($_GET['contact_tickets'])) {
 
 if (isset($_GET['workload'])) {
     echo json_encode(mitDispatchWorkload(explode(',', (string) ($_GET['techs'] ?? '')), intval($_GET['first_day'] ?? 0) === 1 ? 1 : 0));
+    exit;
+}
+
+if (isset($_GET['week_stats'])) {
+    echo json_encode(mitDispatchWeekStats(explode(',', (string) ($_GET['techs'] ?? '')), intval($_GET['first_day'] ?? 0) === 1 ? 1 : 0));
     exit;
 }
 

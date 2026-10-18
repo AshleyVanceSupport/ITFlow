@@ -151,3 +151,25 @@ test('Dispatch workload', async ({ page }) => {
     expect((await assign(owner.id)).ok, 'moved back').toBe(true);
     await expectClean(page, errors);
 });
+
+test('Dispatch this week: in vs closed, SLA, by agent', async ({ page }) => {
+    const errors = watch(page);
+    await visit(page, 'agent/mit_dispatch.php', errors);
+    test.skip(!/mit_dispatch\.php/.test(page.url()), 'Dispatch is switched off');
+    await page.locator('.mit-stats canvas[data-ms-chart]').waitFor();
+    await expect(page.locator('[data-md-stats]')).toContainText('SLA this week');
+
+    const techs = JSON.parse(await page.locator('#mitDispatch').getAttribute('data-techs')).map((t) => t.id);
+    const week = await getJson(page, `mit_dispatch_ajax.php?week_stats=1&first_day=1&techs=${techs.join(',')}`);
+    expect(week.days.length, 'seven days').toBe(7);
+    expect(new Date(week.week[0] + 'T12:00:00').getDay(), 'a Monday week starts on Monday').toBe(1);
+    expect(week.days.reduce((a, d) => a + d.inbound, 0), 'inbound adds up').toBe(week.totals.inbound);
+    expect(week.days.reduce((a, d) => a + d.closed, 0), 'closed adds up').toBe(week.totals.closed);
+    expect(week.totals.net).toBe(week.totals.inbound - week.totals.closed);
+    expect(week.techs.length, 'a row per agent').toBe(techs.length);
+    expect(week.techs.reduce((a, t) => a + t.closed, 0), 'agents close no more than the team').toBeLessThanOrEqual(week.totals.closed);
+    for (const key of ['response_met', 'response_missed', 'resolution_met', 'resolution_missed', 'breached_now', 'at_risk_now']) {
+        expect(typeof week.sla[key], `sla.${key}`).toBe('number');
+    }
+    await expectClean(page, errors);
+});

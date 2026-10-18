@@ -54,6 +54,19 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
     .mit-wl-drop { border-radius: .375rem; padding: .25rem; margin: -.25rem; }
     .mit-wl-drop .mit-dq-item { display: none; }
     .mit-wl-dragging .mit-wl-drop { outline: 2px dashed var(--bs-primary); outline-offset: 2px; background: var(--bs-primary-bg-subtle); }
+    /* This week */
+    .mit-stats { --ms-in: #2a78d6; --ms-out: #eb6834; }
+    [data-bs-theme="dark"] .mit-stats { --ms-in: #3987e5; --ms-out: #d95926; }
+    .mit-ms-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .75rem; }
+    .mit-ms-tile { border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: .75rem 1rem; }
+    .mit-ms-tile .mit-ms-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--bs-secondary-color); }
+    .mit-ms-tile .mit-ms-value { font-size: 1.75rem; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+    .mit-ms-tile .mit-ms-sub { font-size: .8rem; color: var(--bs-secondary-color); }
+    .mit-ms-key { display: inline-block; width: .7rem; height: .7rem; border-radius: 2px; margin-right: .35rem; vertical-align: -1px; }
+    .mit-ms-chart { position: relative; height: 240px; }
+    .mit-ms-minibar { height: 6px; border-radius: 0 3px 3px 0; min-width: 2px; }
+    .mit-ms-minibar + .mit-ms-minibar { margin-top: 2px; }
+    .mit-ms-table td, .mit-ms-table th { font-variant-numeric: tabular-nums; }
     /* Side by side (lg and up) the queue and the board are one height, filling the window; each scrolls inside */
     @media (min-width: 992px) {
         .mit-dispatch-pane { height: max(28rem, calc(100vh - 13.5rem)); display: flex; flex-direction: column; }
@@ -145,6 +158,17 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
             <div class="card mb-0 mit-dispatch-pane">
                 <div class="card-body p-0" data-md-board></div>
             </div>
+        </div>
+    </div>
+
+    <!-- This week: in vs closed, SLA results, per agent (renderStats in the script) -->
+    <div class="card mt-3 mit-stats">
+        <div class="card-header py-2 d-flex flex-wrap align-items-center gap-2">
+            <h3 class="card-title mb-0 me-auto"><i class="fas fa-fw fa-chart-bar me-2"></i>This week <span class="fw-normal text-muted small ms-1" data-ms-week></span></h3>
+            <span class="small text-muted">Agents follow the Agents list above</span>
+        </div>
+        <div class="card-body" data-md-stats>
+            <div class="text-muted small">Loading…</div>
         </div>
     </div>
 </div>

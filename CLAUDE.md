@@ -304,6 +304,10 @@ model: see DEPLOYMENT.md.
   hours today / this week vs Admin > SLA working hours; flags Falling behind (breached / past due), Watch, Overloaded / Has room
   vs the team average (`mitDispatchWorkloadFlags`). Move to: unbooked = `mitDispatchAssign`, booked = the Schedule dialog.
   No tables or hooks of its own (who assigned a ticket is in ITFlow's ticket history).
+  "This week" card under the board (all views; `mitDispatchWeekStats`, `?week_stats=`, `renderStats` + Chart.js from ITFlow's footer):
+  inbound vs closed per day (closed = COALESCE(resolved, closed)), vs last week / 4-week average, SLA met / missed for targets due
+  this week (resolution also when closed this week), breached / close now, and per shown agent: assigned this week (created for
+  them, or ITFlow's ticket_history "assigned the ticket to <name>") vs closed, open now, SLA missed. Week from the agent's calendar first day.
 - Remembered list views (Oct 2026): `functions/mit_list_views.php` (ours) - the Tickets list keeps each agent's
   pill, filters, sort and List / Board in `mit_user_preferences` `listview.tickets` (like the calendar) and puts
   them back when Tickets is opened with none; saved only when picked on the page itself (Referer), never q / page /

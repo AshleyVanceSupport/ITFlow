@@ -7,6 +7,11 @@
  * and booked hours today / this week against the working hours in Admin > SLA. "Falling behind" = an SLA breached or a
  * due date passed; "Overloaded" = well above the team average (mitDispatchWorkloadFlags). No tables of its own - who
  * assigned a ticket is in ITFlow's own ticket history.
+ *
+ * Also the "This week" dashboard under the board (mitDispatchWeekStats, ?week_stats=, renderStats in the script):
+ * tickets in vs closed each day, closed against last week and the 4-week average, the week's SLA results, and per
+ * tech the tickets assigned to them this week (created for them, or ITFlow's "assigned the ticket to" history line)
+ * against those they closed.
  */
 
 /** Days without a reply after which an open ticket (not waiting on the client) counts as quiet. */
@@ -246,4 +251,104 @@ function mitDispatchAssign($ticket_id, $tech_id) {
     }
     [$ok, $message] = ticketChangeAssignee($row['ticket_id'], $tech_id);
     return [$ok, $ok ? ticketReference($row) . ' given to ' . mitDispatchTechs()[$tech_id]['name'] . '.' : strip_tags($message)];
+}
+
+/*
+ * ---------- This week ----------
+ */
+
+/** Tickets closed (resolved, or closed without resolving) - the moment it was done. */
+const MIT_DISPATCH_DONE_AT = "COALESCE(tickets.ticket_resolved_at, tickets.ticket_closed_at)";
+
+/**
+ * The week's numbers for the dashboard under the board: [week => [from, to], days => [{date, label, inbound, closed}],
+ * totals => [inbound, closed, net, open, last_inbound, last_closed, avg_closed], sla => [response_met, response_missed,
+ * resolution_met, resolution_missed, breached_now, at_risk_now], techs => [{id, name, color, assigned, closed, open,
+ * sla_missed}]]. $first_day 0 = weeks start on Sunday, 1 = Monday.
+ */
+function mitDispatchWeekStats(array $tech_ids, $first_day = 0) {
+    global $mysqli;
+    $offset = (intval(date('w')) - intval($first_day) + 7) % 7;
+    $from = date('Y-m-d', strtotime("-$offset days"));
+    $to = date('Y-m-d', strtotime("$from +6 days"));
+    $start = "'$from 00:00:00'";
+    $end = "'$to 23:59:59'";
+    $scope = "tickets.ticket_archived_at IS NULL" . clientScopeSql('tickets.ticket_client_id');
+    $one = function ($sql) use ($mysqli) {
+        return intval(mysqli_fetch_row(mysqli_query($mysqli, $sql))[0] ?? 0);
+    };
+    $done = MIT_DISPATCH_DONE_AT;
+
+    // Each day: in and closed
+    $days = [];
+    for ($i = 0; $i < 7; $i++) {
+        $date = date('Y-m-d', strtotime("$from +$i days"));
+        $days[$date] = ['date' => $date, 'label' => date('D j', strtotime($date)), 'inbound' => 0, 'closed' => 0, 'future' => $date > date('Y-m-d')];
+    }
+    $result = mysqli_query($mysqli, "SELECT DATE(ticket_created_at) AS d, COUNT(*) AS n FROM tickets WHERE $scope AND ticket_created_at BETWEEN $start AND $end GROUP BY d");
+    while ($row = mysqli_fetch_assoc($result)) {
+        if (isset($days[$row['d']])) {
+            $days[$row['d']]['inbound'] = intval($row['n']);
+        }
+    }
+    $result = mysqli_query($mysqli, "SELECT DATE($done) AS d, COUNT(*) AS n FROM tickets WHERE $scope AND $done BETWEEN $start AND $end GROUP BY d");
+    while ($row = mysqli_fetch_assoc($result)) {
+        if (isset($days[$row['d']])) {
+            $days[$row['d']]['closed'] = intval($row['n']);
+        }
+    }
+    $inbound = array_sum(array_column($days, 'inbound'));
+    $closed = array_sum(array_column($days, 'closed'));
+
+    // Last week, and the four weeks before this one
+    $last_from = date('Y-m-d', strtotime("$from -7 days"));
+    $four_from = date('Y-m-d', strtotime("$from -28 days"));
+    $totals = [
+        'inbound' => $inbound,
+        'closed' => $closed,
+        'net' => $inbound - $closed,
+        'open' => $one("SELECT COUNT(*) FROM tickets WHERE $scope AND " . TICKET_OPEN_SQL),
+        'last_inbound' => $one("SELECT COUNT(*) FROM tickets WHERE $scope AND ticket_created_at >= '$last_from' AND ticket_created_at < '$from'"),
+        'last_closed' => $one("SELECT COUNT(*) FROM tickets WHERE $scope AND $done >= '$last_from' AND $done < '$from'"),
+        'avg_closed' => round($one("SELECT COUNT(*) FROM tickets WHERE $scope AND $done >= '$four_from' AND $done < '$from'") / 4, 1),
+    ];
+
+    // SLA results this week: responses due this week, resolutions due or done this week - judged ones only
+    $response = "tickets.ticket_sla_id > 0 AND tickets.ticket_response_due_at BETWEEN $start AND $end";
+    $resolution = "tickets.ticket_sla_id > 0 AND (tickets.ticket_resolution_due_at BETWEEN $start AND $end OR $done BETWEEN $start AND $end)";
+    $sla = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT
+            SUM($response AND ticket_response_sla_met = 1) AS response_met,
+            SUM($response AND ticket_response_sla_met = 0) AS response_missed,
+            SUM($resolution AND ticket_resolution_sla_met = 1) AS resolution_met,
+            SUM($resolution AND ticket_resolution_sla_met = 0) AS resolution_missed,
+            SUM(" . TICKET_OPEN_SQL . " AND ticket_sla_id > 0 AND GREATEST(ticket_response_sla_alert_stage, ticket_resolution_sla_alert_stage) = 2) AS breached_now,
+            SUM(" . TICKET_OPEN_SQL . " AND ticket_sla_id > 0 AND GREATEST(ticket_response_sla_alert_stage, ticket_resolution_sla_alert_stage) = 1) AS at_risk_now
+        FROM tickets WHERE $scope"));
+    $sla = array_map('intval', $sla ?: []);
+
+    // Per tech: assigned to them this week (made for them, or ITFlow's history line) against closed by them this week
+    $techs = mitDispatchTechs();
+    $rows = [];
+    foreach (array_unique(array_map('intval', $tech_ids)) as $id) {
+        if (!isset($techs[$id])) {
+            continue;
+        }
+        // LIKE's own characters escaped first, then the string for SQL (O'Brien, 50%_Tech)
+        $name = escapeSql(addcslashes((string) $techs[$id]['name'], '\\%_'));
+        $assigned = $one("SELECT COUNT(*) FROM tickets WHERE $scope AND (
+                (ticket_created_at BETWEEN $start AND $end AND ticket_assigned_to = $id)
+                OR ticket_id IN (SELECT ticket_history_ticket_id FROM ticket_history WHERE ticket_history_created_at BETWEEN $start AND $end
+                    AND (ticket_history_description LIKE '%assigned the ticket to $name' OR ticket_history_description LIKE '%assigned the ticket to $name %')))");
+        $rows[] = [
+            'id' => $id,
+            'name' => $techs[$id]['name'],
+            'color' => $techs[$id]['color'],
+            'assigned' => $assigned,
+            'closed' => $one("SELECT COUNT(*) FROM tickets WHERE $scope AND ticket_assigned_to = $id AND $done BETWEEN $start AND $end"),
+            'open' => $one("SELECT COUNT(*) FROM tickets WHERE $scope AND ticket_assigned_to = $id AND " . TICKET_OPEN_SQL),
+            'sla_missed' => $one("SELECT COUNT(*) FROM tickets WHERE $scope AND ticket_assigned_to = $id
+                AND (($response AND ticket_response_sla_met = 0) OR ($resolution AND ticket_resolution_sla_met = 0))"),
+        ];
+    }
+    return ['week' => [$from, $to], 'days' => array_values($days), 'totals' => $totals, 'sla' => $sla, 'techs' => $rows];
 }

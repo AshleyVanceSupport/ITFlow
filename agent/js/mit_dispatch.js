@@ -506,6 +506,7 @@
 
     function render() {
         teardown();
+        renderStats();
         const r = range();
         titleEl.textContent = state.view === 'workload' ? 'Open tickets right now'
             : state.view === 'day'
@@ -536,6 +537,7 @@
 
     function refresh() {
         loadQueue();
+        renderStats();
         if (state.view === 'day') {
             loadItems(function (items) {
                 calendars.forEach(function (cal) {
@@ -1028,6 +1030,151 @@
     }
 
     board.addEventListener('click', onWorkloadClick);
+
+    // ---------- This week: under the board ----------
+
+    const statsEl = root.querySelector('[data-md-stats]');
+    let statsChart = null;
+
+    function cssVar(el, name) {
+        return getComputedStyle(el).getPropertyValue(name).trim();
+    }
+
+    function signed(n) {
+        return (n > 0 ? '+' : '') + n;
+    }
+
+    function tile(label, value, sub, valueClass) {
+        return '<div class="mit-ms-tile"><div class="mit-ms-label">' + label + '</div>'
+            + '<div class="mit-ms-value' + (valueClass ? ' ' + valueClass : '') + '">' + value + '</div>'
+            + '<div class="mit-ms-sub">' + sub + '</div></div>';
+    }
+
+    // Met / missed as one stacked bar, with the share and counts in words
+    function slaRow(label, met, missed) {
+        const judged = met + missed;
+        if (!judged) {
+            return '<div class="mb-3"><div class="d-flex"><span class="fw-semibold">' + label + '</span><span class="ms-auto text-muted small">None due yet this week</span></div></div>';
+        }
+        const pct = Math.round(met / judged * 100);
+        return '<div class="mb-3"><div class="d-flex align-items-baseline mb-1"><span class="fw-semibold">' + label + '</span>'
+            + '<span class="ms-auto fw-semibold">' + pct + '% met</span></div>'
+            + '<div class="progress-stacked" style="height: .6rem">'
+            + (met ? '<div class="progress" role="progressbar" style="width: ' + (met / judged * 100) + '%" title="' + met + ' met"><div class="progress-bar bg-success"></div></div>' : '')
+            + (missed ? '<div class="progress" role="progressbar" style="width: ' + (missed / judged * 100) + '%" title="' + missed + ' missed"><div class="progress-bar bg-danger"></div></div>' : '')
+            + '</div><div class="small mt-1"><i class="fas fa-check text-success me-1"></i>' + met + ' met'
+            + (missed ? ' <span class="ms-2 text-danger"><i class="fas fa-times me-1"></i>' + missed + ' missed</span>' : '') + '</div></div>';
+    }
+
+    // Asked for by render() and by refresh() (often both at once) - one request for the lot
+    let statsTimer = null;
+    function renderStats() {
+        clearTimeout(statsTimer);
+        statsTimer = setTimeout(loadStats, 50);
+    }
+
+    function loadStats() {
+        if (!statsEl) {
+            return;
+        }
+        request('GET', {week_stats: 1, first_day: firstDay, techs: shownTechs().map(function (t) {
+            return t.id;
+        }).join(',')}).then(function (json) {
+            if (json.error) {
+                statsEl.innerHTML = '<div class="text-danger small">' + escapeText(json.error) + '</div>';
+                return;
+            }
+            const t = json.totals;
+            const s = json.sla;
+            const from = parseYmd(json.week[0]);
+            const to = parseYmd(json.week[1]);
+            root.querySelector('[data-ms-week]').textContent = from.toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) + ' - ' + to.toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
+
+            const vsLast = function (now, last) {
+                return now === last ? 'same as last week' : signed(now - last) + ' on last week (' + last + ')';
+            };
+            let html = '<div class="mit-ms-tiles mb-4">'
+                + tile('<span class="mit-ms-key" style="background: var(--ms-in)"></span>Inbound', t.inbound, vsLast(t.inbound, t.last_inbound))
+                + tile('<span class="mit-ms-key" style="background: var(--ms-out)"></span>Closed (velocity)', t.closed, vsLast(t.closed, t.last_closed) + ' · 4-week average ' + t.avg_closed)
+                + tile('Backlog', signed(t.net), t.net > 0 ? 'more came in than closed' : (t.net < 0 ? 'closed more than came in' : 'in and closed even'), t.net > 0 ? 'text-warning-emphasis' : (t.net < 0 ? 'text-success' : ''))
+                + tile('Open now', t.open, (s.breached_now ? '<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i>' + s.breached_now + ' SLA breached</span>' : 'none breached')
+                    + (s.at_risk_now ? ' · <span class="text-warning-emphasis"><i class="fas fa-stopwatch me-1"></i>' + s.at_risk_now + ' close</span>' : ''))
+                + '</div>';
+
+            html += '<div class="row g-4 mb-4"><div class="col-lg-7"><div class="fw-semibold mb-2">Inbound vs closed, by day</div>'
+                + '<div class="mit-ms-chart"><canvas data-ms-chart aria-label="Tickets in and closed each day this week" role="img"></canvas></div>'
+                + '<details class="small mt-2"><summary class="text-muted">As a table</summary><table class="table table-sm mt-2 mb-0"><thead><tr><th>Day</th><th class="text-end">Inbound</th><th class="text-end">Closed</th></tr></thead><tbody>'
+                + json.days.map(function (d) {
+                    return '<tr><td>' + escapeText(d.label) + '</td><td class="text-end">' + d.inbound + '</td><td class="text-end">' + d.closed + '</td></tr>';
+                }).join('') + '</tbody></table></details></div>'
+                + '<div class="col-lg-5"><div class="fw-semibold mb-2">SLA this week</div>'
+                + slaRow('First response', s.response_met, s.response_missed)
+                + slaRow('Resolution', s.resolution_met, s.resolution_missed)
+                + '<div class="small text-muted">Targets due this week (resolutions also when closed this week). Ones still running are not counted until they are met or missed.</div></div></div>';
+
+            // Per agent: assigned this week against closed this week
+            const max = Math.max(1, ...json.techs.map(function (a) {
+                return Math.max(a.assigned, a.closed);
+            }));
+            html += '<div class="fw-semibold mb-2">By agent</div><div class="table-responsive"><table class="table table-sm align-middle mb-0 mit-ms-table"><thead class="small text-muted"><tr>'
+                + '<th>Agent</th><th class="text-end"><span class="mit-ms-key" style="background: var(--ms-in)"></span>Assigned</th><th class="text-end"><span class="mit-ms-key" style="background: var(--ms-out)"></span>Closed</th>'
+                + '<th style="width: 30%"></th><th class="text-end">Open now</th><th class="text-end" title="First response or resolution targets missed this week">SLA missed</th></tr></thead><tbody>'
+                + (json.techs.length ? json.techs.map(function (a) {
+                    return '<tr data-ms-tech="' + a.id + '"><td><span class="d-inline-block rounded-circle me-2" style="width: 10px; height: 10px; background: ' + escapeText(a.color) + '"></span>' + escapeText(a.name) + '</td>'
+                        + '<td class="text-end">' + a.assigned + '</td><td class="text-end">' + a.closed + '</td>'
+                        + '<td title="' + a.assigned + ' assigned · ' + a.closed + ' closed"><div class="mit-ms-minibar" style="width: ' + (a.assigned / max * 100) + '%; background: var(--ms-in)"></div>'
+                        + '<div class="mit-ms-minibar" style="width: ' + (a.closed / max * 100) + '%; background: var(--ms-out)"></div></td>'
+                        + '<td class="text-end">' + a.open + '</td>'
+                        + '<td class="text-end">' + (a.sla_missed ? '<span class="text-danger fw-semibold"><i class="fas fa-times me-1"></i>' + a.sla_missed + '</span>' : '<span class="text-muted">0</span>') + '</td></tr>';
+                }).join('') : '<tr><td colspan="6" class="text-muted">Pick some agents to show.</td></tr>')
+                + '</tbody></table></div>';
+            statsEl.innerHTML = html;
+            drawStatsChart(json.days);
+        });
+    }
+
+    function drawStatsChart(days) {
+        if (statsChart) {
+            statsChart.destroy();
+            statsChart = null;
+        }
+        const canvas = statsEl.querySelector('[data-ms-chart]');
+        if (!canvas || typeof Chart === 'undefined') {
+            return;
+        }
+        const card = root.querySelector('.mit-stats');
+        const text = cssVar(document.body, '--bs-secondary-color') || '#6c757d';
+        const grid = cssVar(document.body, '--bs-border-color-translucent') || 'rgba(0,0,0,.1)';
+        const bar = {borderRadius: 4, borderSkipped: 'start', categoryPercentage: 0.7, barPercentage: 0.9, maxBarThickness: 28};
+        statsChart = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: days.map(function (d) {
+                    return d.label;
+                }),
+                datasets: [
+                    Object.assign({label: 'Inbound', data: days.map(function (d) { return d.inbound; }), backgroundColor: cssVar(card, '--ms-in')}, bar),
+                    Object.assign({label: 'Closed', data: days.map(function (d) { return d.closed; }), backgroundColor: cssVar(card, '--ms-out')}, bar)
+                ]
+            },
+            options: {
+                maintainAspectRatio: false,
+                animation: false,
+                interaction: {mode: 'index', intersect: false},
+                plugins: {
+                    legend: {position: 'top', align: 'start', labels: {color: text, boxWidth: 12, boxHeight: 12, useBorderRadius: true, borderRadius: 2}},
+                    tooltip: {callbacks: {footer: function (items) {
+                        const net = (items[0] ? items[0].parsed.y : 0) - (items[1] ? items[1].parsed.y : 0);
+                        return net ? 'Backlog ' + signed(net) : '';
+                    }}}
+                },
+                scales: {
+                    x: {grid: {display: false}, ticks: {color: text}, border: {color: grid}},
+                    y: {beginAtZero: true, ticks: {color: text, precision: 0}, grid: {color: grid}, border: {display: false}}
+                }
+            }
+        });
+    }
 
     // ---------- the toolbar ----------
 
