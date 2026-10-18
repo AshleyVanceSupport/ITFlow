@@ -223,7 +223,7 @@ $at = $order[$status] ?? 0;
                 <?php if ($is_draft && $level >= 2 && $lines) { ?>
                     <div class="card-footer d-flex align-items-center gap-2">
                         <button type="submit" name="mit_po_save_lines" class="btn btn-outline-primary btn-sm"><i class="fas fa-check me-2"></i>Save quantities &amp; costs</button>
-                        <span class="small text-muted ms-auto"><?= $needs_approval ? 'Over ' . mitMoney($approval_over) . ' - needs approval when sent.' : 'Under ' . mitMoney($approval_over) . ' - no approval needed.' ?></span>
+                        <span class="small text-muted ms-auto"><?= !mitProcSettings()['approval_on'] ? 'Approval is switched off - approved when submitted.' : ($needs_approval ? 'Over ' . mitMoney($approval_over) . ' - needs approval when sent.' : 'Under ' . mitMoney($approval_over) . ' - no approval needed.') ?></span>
                     </div>
                 <?php } ?>
             </form>

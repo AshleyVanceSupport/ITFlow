@@ -69,6 +69,9 @@ function mitProcSettings() {
             'prefix' => (string) mitSetting('procurement_po_prefix', 'PO-'),
             'next' => max(1, intval(mitSetting('procurement_po_next', '1'))),
             'approval_over' => max(0, (float) mitSetting('procurement_approval_over', '500')),
+            // Approval on at all (1/0), and who approves: user ids - none = everyone with Full Procurement access
+            'approval_on' => mitSetting('procurement_approval_on', '1') !== '0',
+            'approvers' => array_values(array_filter(array_map('intval', explode(',', (string) mitSetting('procurement_approvers', ''))))),
             'ship_to' => (string) mitSetting('procurement_ship_to', mitProcCompanyAddress()),
         ];
     }
@@ -370,22 +373,30 @@ function mitPoRecalc($po_id) {
     }
 }
 
-/** Does a PO of this total need approving? */
+/** Does a PO of this total need approving? (Never, with approval switched off.) */
 function mitPoNeedsApproval($total) {
-    $over = mitProcSettings()['approval_over'];
+    $settings = mitProcSettings();
+    if (!$settings['approval_on']) {
+        return false;
+    }
+    $over = $settings['approval_over'];
     return $over <= 0 || (float) $total > $over;
 }
 
 /**
- * May the signed-in agent approve this PO? Full Procurement access, and not their own PO - unless they are an admin
- * (the history says it was self-approved) or nobody else can approve it, so a PO is never stuck.
+ * May the signed-in agent approve this PO? Admins always may (their own too - the history says self-approved).
+ * Otherwise: one of the approvers chosen in Admin > Settings > Procurement, or - none chosen - Full Procurement access;
+ * and not their own PO unless nobody else can approve it, so a PO is never stuck.
  */
 function mitPoMayApprove(array $po) {
     global $session_user_id, $session_is_admin;
-    if (mitProcLevel() < 3) {
+    if (!empty($session_is_admin) && mitProcLevel() >= 1) {
+        return true;
+    }
+    if (!isset(mitPoApprovers()[intval($session_user_id)])) {
         return false;
     }
-    if (intval($po['created_by']) !== intval($session_user_id) || !empty($session_is_admin)) {
+    if (intval($po['created_by']) !== intval($session_user_id)) {
         return true;
     }
     return !array_diff(array_keys(mitPoApprovers()), [intval($session_user_id)]);
@@ -402,9 +413,29 @@ function mitPoApproverNames(array $po) {
     return implode(', ', $names);
 }
 
-/** Agents who can approve POs: Full on Procurement, or admins. user_id => row */
+/**
+ * Agents who approve POs (and are told when one is waiting): the ones chosen in Admin > Settings > Procurement that are
+ * still active, else everyone with Full Procurement access and the admins. user_id => row
+ */
 function mitPoApprovers() {
     global $mysqli;
+    static $approvers = null;
+    if ($approvers !== null) {
+        return $approvers;
+    }
+    $chosen = mitProcSettings()['approvers'];
+    if ($chosen) {
+        $approvers = [];
+        $result = mysqli_query($mysqli, "SELECT user_id, user_name, user_email FROM users WHERE user_type = 1 AND user_status = 1 AND user_archived_at IS NULL
+            AND user_id IN (" . implode(',', $chosen) . ")");
+        while ($row = mysqli_fetch_assoc($result)) {
+            $approvers[intval($row['user_id'])] = $row;
+        }
+        if ($approvers) {
+            return $approvers;
+        }
+        // Everyone chosen has left: fall back so a PO is never stuck
+    }
     $result = mysqli_query($mysqli, "SELECT users.user_id, user_name, user_email FROM users
         JOIN user_roles ON role_id = users.user_role_id
         LEFT JOIN user_role_permissions urp ON urp.user_role_id = role_id
@@ -453,15 +484,16 @@ function mitPoSubmit(array $po) {
     mitPoRecalc($po_id);
     $po = mitPoRow($po_id);
     $uncosted = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COUNT(*) FROM mit_po_lines WHERE po_id = $po_id AND unit_cost <= 0"))[0]);
-    if (mitPoNeedsApproval($po['total']) || $uncosted) {
+    if (mitPoNeedsApproval($po['total']) || ($uncosted && mitProcSettings()['approval_on'])) {
         mysqli_query($mysqli, "UPDATE mit_purchase_orders SET status = 'pending', submitted_at = NOW(), approved_by = 0, approved_at = NULL, approval_note = NULL WHERE po_id = $po_id");
         mitPoLog($po_id, mitProcWho() . ' sent it for approval (' . mitMoney($po['total']) . ($uncosted ? ", $uncosted line(s) with no cost" : '') . ')');
         mitPoNotifyApprovers($po);
         return 'pending';
     }
+    $why = mitProcSettings()['approval_on'] ? 'Under the approval amount' : 'Approval is switched off';
     mysqli_query($mysqli, "UPDATE mit_purchase_orders SET status = 'approved', submitted_at = NOW(), approved_by = " . intval($session_user_id) . ", approved_at = NOW(),
-        approval_note = 'Under the approval amount' WHERE po_id = $po_id");
-    mitPoLog($po_id, mitProcWho() . ' submitted it - under the approval amount, so it is approved');
+        approval_note = '$why' WHERE po_id = $po_id");
+    mitPoLog($po_id, mitProcWho() . ' submitted it - ' . strtolower($why) . ', so it is approved');
     return 'approved';
 }
 

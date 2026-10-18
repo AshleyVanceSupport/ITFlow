@@ -25,14 +25,41 @@ if (function_exists('mitProcReady') && mitProcReady()) {
                         <input type="number" min="<?= intval(mitPoNextNumber()) ?>" class="form-control" name="mit_po_next" value="<?= intval(mitPoNextNumber()) ?>" required>
                         <div class="form-text">Only up - numbers already used are never given out again.</div>
                     </div>
+                    <div class="col-12"><h6 class="mb-0 mt-2"><i class="fas fa-fw fa-check-double me-2"></i>Approval</h6></div>
                     <div class="col-md-4">
+                        <div class="form-check form-switch mt-md-4">
+                            <input class="form-check-input" type="checkbox" role="switch" id="mitPoApprovalOn" name="mit_po_approval_on" value="1" <?= $mit_proc['approval_on'] ? 'checked' : '' ?>>
+                            <label class="form-check-label" for="mitPoApprovalOn">Purchase orders need approval</label>
+                        </div>
+                        <div class="form-text">Off: a PO is approved as soon as it is submitted.</div>
+                    </div>
+                    <div class="col-md-4" data-mit-approval>
                         <label class="form-label">Needs approval when over</label>
                         <div class="input-group">
                             <span class="input-group-text"><i class="fas fa-fw fa-dollar-sign"></i></span>
                             <input type="text" inputmode="decimal" class="form-control" name="mit_po_approval_over" value="<?= number_format($mit_proc['approval_over'], 2, '.', '') ?>" required>
                         </div>
-                        <div class="form-text">0 = every PO needs approving. Approvers have Full Procurement access in their role (admins always can).</div>
+                        <div class="form-text">0 = every PO needs approving. A PO with a line that has no cost always does.</div>
                     </div>
+                    <div class="col-md-4" data-mit-approval>
+                        <label class="form-label">Who can approve</label>
+                        <select class="form-select select2" name="mit_po_approvers[]" multiple data-placeholder="Everyone with Full Procurement access">
+                            <?php foreach (mysqli_fetch_all(mysqli_query($mysqli, "SELECT user_id, user_name FROM users WHERE user_type = 1 AND user_status = 1 AND user_archived_at IS NULL ORDER BY user_name"), MYSQLI_ASSOC) as $mit_user) { ?>
+                                <option value="<?= intval($mit_user['user_id']) ?>" <?= in_array(intval($mit_user['user_id']), $mit_proc['approvers'], true) ? 'selected' : '' ?>><?= escapeHtml($mit_user['user_name']) ?></option>
+                            <?php } ?>
+                        </select>
+                        <div class="form-text">They are told when a PO is waiting. Empty = everyone with Full Procurement access. Admins can always approve.</div>
+                    </div>
+                    <script>
+                        (function () {
+                            const on = document.getElementById('mitPoApprovalOn');
+                            const show = function () {
+                                document.querySelectorAll('[data-mit-approval]').forEach(function (el) { el.classList.toggle('opacity-50', !on.checked); });
+                            };
+                            on.addEventListener('change', show);
+                            show();
+                        })();
+                    </script>
                     <div class="col-12">
                         <label class="form-label">Ship to (our address on POs)</label>
                         <textarea class="form-control" name="mit_po_ship_to" rows="3"><?= escapeHtml($mit_proc['ship_to']) ?></textarea>

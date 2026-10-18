@@ -175,20 +175,22 @@ if (isset($_GET['mit_po_submit'])) {
         redirect();
     }
     $status = mitPoSubmit($po);
-    flashAlert($status === 'pending' ? 'Sent for approval - approvers have been told' : 'Submitted - under the approval amount, so it is approved and can be ordered');
+    flashAlert($status === 'pending' ? 'Sent for approval - approvers have been told'
+        : 'Submitted - ' . (mitProcSettings()['approval_on'] ? 'under the approval amount' : 'approval is switched off') . ', so it is approved and can be ordered');
     redirect();
 }
 
 if (isset($_POST['mit_po_decide'])) {
 
     validateCSRFToken();
-    $po = mitPoForRequest($_POST['po_id'] ?? 0, 3);
+    // Who approves is mitPoMayApprove()'s call (chosen approvers, or Full access), so only seeing Procurement is checked here
+    $po = mitPoForRequest($_POST['po_id'] ?? 0, 1);
     if ($po['status'] !== 'pending') {
         flashAlert('That PO is not waiting for approval.', 'error');
         redirect();
     }
     if (!mitPoMayApprove($po)) {
-        flashAlert('You cannot approve this PO - someone else approves a PO you made.', 'error');
+        flashAlert('You cannot approve this PO - you are not an approver, or someone else approves a PO you made.', 'error');
         redirect();
     }
     $approve = ($_POST['decision'] ?? '') === 'approve';
