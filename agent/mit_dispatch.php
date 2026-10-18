@@ -4,7 +4,8 @@
  * Mountaineer IT - Dispatch (functions/mit_dispatch.php): each tech's booked work beside the tickets still
  * to dispatch. Day: a column per tech; Week: a row per tech, a column per day. Drag a ticket from the
  * queue onto a tech and time (or a booking to another tech or time) and confirm; drag a booking back onto
- * the queue to take it off the schedule. The script is agent/js/mit_dispatch.js; its requests go to
+ * the queue to take it off the schedule. Workload: each tech's open tickets, SLA and booked hours, flagged when they
+ * are falling behind or well above the team (functions/mit_dispatch_workload.php). The script is agent/js/mit_dispatch.js; its requests go to
  * agent/mit_dispatch_ajax.php. ?date=Y-m-d opens on that day.
  */
 
@@ -45,6 +46,14 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
     .mit-dw-chip { font-size: .78rem; border-radius: .3rem; padding: .15rem .35rem; margin-bottom: .2rem; color: #fff; cursor: grab; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .mit-dw-chip[data-kind="outlook_busy"], .mit-dw-chip[data-kind="helper"] { cursor: default; }
     .mit-dw-cell .sortable-ghost, .mit-dispatch-queue .sortable-ghost { opacity: .4; }
+    /* Workload */
+    .mit-wl-row { cursor: pointer; }
+    .mit-wl-bar { height: .55rem; }
+    .mit-wl-tickets > td { max-width: 1px; } /* the ticket list follows the table's width instead of widening it */
+    .mit-wl .mit-wl-late { border-left: 3px solid var(--bs-danger); }
+    .mit-wl-drop { border-radius: .375rem; padding: .25rem; margin: -.25rem; }
+    .mit-wl-drop .mit-dq-item { display: none; }
+    .mit-wl-dragging .mit-wl-drop { outline: 2px dashed var(--bs-primary); outline-offset: 2px; background: var(--bs-primary-bg-subtle); }
     /* Side by side (lg and up) the queue and the board are one height, filling the window; each scrolls inside */
     @media (min-width: 992px) {
         .mit-dispatch-pane { height: max(28rem, calc(100vh - 13.5rem)); display: flex; flex-direction: column; }
@@ -75,6 +84,7 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
             <div class="btn-group btn-group-sm" role="group" aria-label="View">
                 <button type="button" class="btn btn-light" data-md-view="day">Day</button>
                 <button type="button" class="btn btn-light" data-md-view="week">Week</button>
+                <button type="button" class="btn btn-light" data-md-view="workload">Workload</button>
             </div>
             <div class="btn-group btn-group-sm">
                 <button type="button" class="btn btn-light" data-md-nav="-1" title="Back"><i class="fas fa-chevron-left"></i></button>

@@ -4,6 +4,8 @@
 // time grid per tech, side by side; Week is a table of techs by days, worked with SortableJS. Anything
 // dropped on the board opens a quick confirm (tech, date, start, length, onsite/remote, email the
 // contact) and is booked through mit_dispatch_ajax.php; a booking dropped on the queue is taken off.
+// Workload: a row per tech with their open tickets, SLA and booked hours, flagged when falling behind or
+// well above the team; open a row for the tickets, drop a queue ticket on a name to give it to them.
 // The view, hidden techs and weekends are saved to the agent's account.
 
 (function () {
@@ -27,7 +29,7 @@
     const dateInput = root.querySelector('[data-md-date]');
 
     const state = {
-        view: saved.view === 'week' ? 'week' : 'day',
+        view: ['week', 'workload'].indexOf(saved.view) !== -1 ? saved.view : 'day',
         hidden: Array.isArray(saved.hidden) ? saved.hidden.map(Number) : [],
         weekends: !!saved.weekends,
         date: parseYmd(root.dataset.initialDate) || new Date(),
@@ -39,6 +41,7 @@
     let queueDraggable = null;
     let queueSortable = null;
     let queueTickets = [];
+    const openTechs = new Set();
 
     // ---------- small helpers ----------
 
@@ -504,9 +507,14 @@
     function render() {
         teardown();
         const r = range();
-        titleEl.textContent = state.view === 'day'
+        titleEl.textContent = state.view === 'workload' ? 'Open tickets right now'
+            : state.view === 'day'
             ? state.date.toLocaleDateString(undefined, {weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'})
             : r[0].toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) + ' - ' + r[1].toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'});
+        // Workload is about now - no dates to page through
+        root.querySelectorAll('[data-md-nav], [data-md-date]').forEach(function (el) {
+            el.hidden = state.view === 'workload';
+        });
         dateInput.value = ymd(state.date);
         root.querySelectorAll('[data-md-view]').forEach(function (b) {
             b.classList.toggle('active', b.dataset.mdView === state.view);
@@ -519,6 +527,8 @@
         }
         if (state.view === 'day') {
             renderDay();
+        } else if (state.view === 'workload') {
+            renderWorkload();
         } else {
             renderWeek();
         }
@@ -536,6 +546,8 @@
                 });
                 dayTotals(items);
             });
+        } else if (state.view === 'workload') {
+            renderWorkload();
         } else {
             renderWeek();
         }
@@ -783,6 +795,240 @@
         });
     }
 
+    // ---------- Workload: each tech's open tickets ----------
+
+    const SLA_PARTS = [
+        {key: 'breached', label: 'Breached', short: 'breached', cls: 'bg-danger'},
+        {key: 'at_risk', label: 'Close to the SLA', short: 'close to SLA', cls: 'bg-warning'},
+        {key: 'running', label: 'On track', short: 'on track', cls: 'bg-success'},
+        {key: 'paused', label: 'Paused (waiting)', short: 'paused', cls: 'bg-secondary'},
+        {key: 'none', label: 'No SLA', short: 'no SLA', cls: 'bg-body-secondary'}
+    ];
+    const FLAG_CLASS = {behind: 'text-bg-danger', watch: 'text-bg-warning', overloaded: 'text-bg-warning', room: 'text-bg-success'};
+    const FLAG_ICON = {behind: 'fa-exclamation-triangle', watch: 'fa-stopwatch', overloaded: 'fa-weight-hanging', room: 'fa-feather'};
+
+    // This week's booked time against their working week, with today's under it
+    function loadBar(t) {
+        const today = t.capacity_today ? (t.booked_today ? lengthText(t.booked_today) : '0h') + ' of ' + lengthText(t.capacity_today) + ' today'
+            : (t.booked_today ? lengthText(t.booked_today) + ' today' : 'Not a working day');
+        if (!t.capacity_week) {
+            return '<div class="small">' + (t.booked_week ? lengthText(t.booked_week) : '0h') + ' this week</div><div class="small text-muted">' + today + '</div>';
+        }
+        const pct = Math.round(t.booked_week / t.capacity_week * 100);
+        const cls = pct > 100 ? 'bg-danger' : (pct >= 85 ? 'bg-warning' : 'bg-primary');
+        return '<div class="progress mit-wl-bar" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100" title="' + pct + '% of their working week">'
+            + '<div class="progress-bar ' + cls + '" style="width: ' + Math.min(100, pct) + '%"></div></div>'
+            + '<div class="small mt-1">' + (t.booked_week ? lengthText(t.booked_week) : '0h') + ' of ' + lengthText(t.capacity_week) + ' this week</div>'
+            + '<div class="small text-muted">' + today + '</div>';
+    }
+
+    function slaBar(sla, open) {
+        if (!open) {
+            return '<span class="text-muted small">No open tickets</span>';
+        }
+        return '<div class="progress-stacked mit-wl-bar">' + SLA_PARTS.filter(function (p) {
+            return sla[p.key];
+        }).map(function (p) {
+            return '<div class="progress" role="progressbar" style="width: ' + (sla[p.key] / open * 100) + '%" title="' + sla[p.key] + ' ' + p.label + '"><div class="progress-bar ' + p.cls + '"></div></div>';
+        }).join('') + '</div><div class="small mt-1 d-flex flex-wrap gap-2">' + SLA_PARTS.filter(function (p) {
+            return sla[p.key] && p.key !== 'none';
+        }).map(function (p) {
+            return '<span' + (p.key === 'breached' ? ' class="text-danger fw-semibold"' : (p.key === 'at_risk' ? ' class="text-warning-emphasis fw-semibold"' : ' class="text-muted"')) + '>'
+                + sla[p.key] + ' ' + p.short + '</span>';
+        }).join('') + '</div>';
+    }
+
+    function countCell(n, cls, title) {
+        return '<td class="text-center" title="' + escapeText(title) + '">' + (n ? '<span class="fw-semibold ' + cls + '">' + n + '</span>' : '<span class="text-muted">0</span>') + '</td>';
+    }
+
+    function workloadTickets(t) {
+        if (!t.tickets.length) {
+            return '<div class="text-muted small p-3">No open tickets.</div>';
+        }
+        const others = techs.filter(function (o) {
+            return o.id !== t.id;
+        });
+        return '<div class="list-group list-group-flush">' + t.tickets.map(function (k) {
+            const move = k.role === 'lead' ? '<div class="dropdown flex-shrink-0"><button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">Move to</button>'
+                + '<div class="dropdown-menu dropdown-menu-end" style="max-height: 50vh; overflow-y: auto">' + others.map(function (o) {
+                    return '<a class="dropdown-item" href="#" data-wl-move="' + o.id + '" data-ticket="' + k.id + '"><span class="d-inline-block rounded-circle me-2" style="width: 10px; height: 10px; background: ' + escapeText(o.color) + '"></span>' + escapeText(o.name) + '</a>';
+                }).join('') + '</div></div>' : '<span class="badge text-bg-light border flex-shrink-0">Helping</span>';
+            return '<div class="list-group-item d-flex align-items-center gap-2 py-2' + (k.sla === 'breached' || k.overdue ? ' mit-wl-late' : '') + '" data-wl-ticket="' + k.id + '">'
+                + '<div class="d-flex flex-column gap-1 align-items-start flex-shrink-0" style="width: 8rem">' + (k.sla_html || '<span class="badge rounded-pill bg-body-secondary text-body-secondary fw-normal">No SLA</span>') + (k.due_html || '') + '</div>'
+                + '<div style="flex: 1 1 0; min-width: 0">'
+                + '<div class="text-truncate"><a href="#" data-wl-open="' + k.id + '" class="fw-semibold">' + escapeText(k.reference) + '</a> '
+                + (k.priority ? '<span class="badge text-bg-light border">' + escapeText(k.priority) + '</span> ' : '') + escapeText(k.subject) + '</div>'
+                + '<div class="small text-muted text-truncate">' + escapeText(k.client) + ' · ' + escapeText(k.status)
+                + ' · ' + (k.scheduled ? '<i class="far fa-calendar-check"></i> ' + escapeText(k.scheduled) : '<span class="text-warning-emphasis">Not scheduled</span>')
+                + ' · ' + (k.quiet ? '<span class="text-warning-emphasis" title="No reply from us in a while">Last reply ' + escapeText(k.last) + '</span>' : 'Last reply ' + escapeText(k.last))
+                + '</div>'
+                + '</div>' + move + '</div>';
+        }).join('') + '</div>';
+    }
+
+    let workloadData = null;
+    function renderWorkload() {
+        teardown();
+        request('GET', {workload: 1, first_day: firstDay, techs: shownTechs().map(function (t) {
+            return t.id;
+        }).join(',')}).then(function (json) {
+            if (json.error) {
+                board.innerHTML = '<div class="text-danger p-3">' + escapeText(json.error) + '</div>';
+                return;
+            }
+            workloadData = json;
+            const team = json.team || {};
+            let html = '<div class="d-flex flex-wrap align-items-center gap-3 px-3 py-2 border-bottom small text-muted">'
+                + '<span>Team average: <strong class="text-body">' + team.open + '</strong> open · <strong class="text-body">' + lengthText(team.booked_week || 0) + '</strong> scheduled this week</span>'
+                + '<span class="ms-auto">Drop a ticket from the queue on an agent\'s name to give it to them. Click a row for their tickets.</span></div>'
+                + '<div class="table-responsive"><table class="table table-hover align-middle mb-0 mit-wl"><thead class="small text-muted"><tr>'
+                + '<th style="min-width: 170px">Agent</th><th class="text-center">Open</th><th style="min-width: 150px">SLA</th>'
+                + '<th class="text-center" title="Past their own due date">Overdue</th><th class="text-center" title="Leading, with no time booked">Not scheduled</th>'
+                + '<th class="text-center" title="No reply from us in 3+ days (not waiting on the client)">Quiet</th>'
+                + '<th style="min-width: 140px">Scheduled</th></tr></thead><tbody>';
+            json.techs.forEach(function (t) {
+                const flags = t.flags.map(function (f) {
+                    return '<span class="badge ' + (FLAG_CLASS[f.key] || 'text-bg-secondary') + '" title="' + escapeText(f.why) + '" data-wl-flag="' + f.key + '"><i class="fas ' + (FLAG_ICON[f.key] || 'fa-flag') + ' me-1"></i>' + escapeText(f.text) + '</span>';
+                }).join(' ');
+                const open = openTechs.has(t.id);
+                html += '<tr class="mit-wl-row" data-wl-tech="' + t.id + '" aria-expanded="' + open + '">'
+                    + '<td><div class="mit-wl-drop" data-tech="' + t.id + '"><div class="d-flex align-items-center gap-2"><i class="fas fa-chevron-' + (open ? 'down' : 'right') + ' text-muted small"></i>'
+                    + '<span class="d-inline-block rounded-circle flex-shrink-0" style="width: 12px; height: 12px; background: ' + escapeText(t.color) + '"></span>'
+                    + '<span class="fw-semibold">' + escapeText(t.name) + '</span></div>' + (flags ? '<div class="mt-1 d-flex flex-wrap gap-1">' + flags + '</div>' : '') + '</div></td>'
+                    + '<td class="text-center"><span class="fs-5 fw-semibold">' + t.open + '</span>' + (t.helping ? '<div class="small text-muted">' + t.helping + ' helping</div>' : '')
+                    + (t.oldest ? '<div class="small text-muted text-nowrap" title="Their oldest open ticket">oldest ' + escapeText(t.oldest) + '</div>' : '') + '</td>'
+                    + '<td>' + slaBar(t.sla, t.open) + '</td>'
+                    + countCell(t.overdue, 'text-danger', 'Past their own due date')
+                    + countCell(t.unbooked, 'text-warning-emphasis', 'Leading, with no time booked')
+                    + countCell(t.quiet, 'text-warning-emphasis', 'No reply from us in 3+ days')
+                    + '<td>' + loadBar(t) + '</td></tr>'
+                    + '<tr class="mit-wl-tickets" data-wl-tickets="' + t.id + '"' + (open ? '' : ' hidden') + '><td colspan="7" class="p-0 bg-body-tertiary">' + workloadTickets(t) + '</td></tr>';
+            });
+            html += '</tbody></table></div>';
+            board.innerHTML = html;
+            bindWorkload();
+        });
+    }
+
+    function workloadTicket(id) {
+        let found = null;
+        (workloadData ? workloadData.techs : []).forEach(function (t) {
+            t.tickets.forEach(function (k) {
+                if (k.id === Number(id) && k.role === 'lead') {
+                    found = k;
+                }
+            });
+        });
+        return found;
+    }
+
+    // Give a ticket to an agent: an unbooked one straight away, a booked one through the Schedule dialog (so the invite moves too)
+    function giveTo(ticket, techId, scheduledAt) {
+        const tech = techById(techId);
+        if (scheduledAt) {
+            return confirmBooking(ticket, scheduledAt, techId);
+        }
+        return Swal.fire({
+            theme: document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light',
+            icon: 'question',
+            titleText: 'Give ' + ticket.reference + ' to ' + (tech ? tech.name : 'them') + '?',
+            text: 'They are told it is theirs. Schedule it to book a time as well.',
+            showCancelButton: true,
+            showDenyButton: true,
+            confirmButtonText: 'Give it to them',
+            denyButtonText: 'Schedule…',
+            reverseButtons: true,
+            buttonsStyling: false,
+            customClass: {confirmButton: 'btn btn-primary mx-1', denyButton: 'btn btn-outline-primary mx-1', cancelButton: 'btn btn-secondary mx-1'}
+        }).then(function (result) {
+            if (result.isConfirmed) {
+                return request('POST', {assign: 1, csrf_token: csrf, ticket_id: ticket.id, tech_id: techId}).then(function (json) {
+                    toast(json.error || json.message, json.error ? 'error' : 'success');
+                    refresh();
+                });
+            }
+            if (result.isDenied) {
+                return confirmBooking(ticket, null, techId);
+            }
+            refresh();
+        });
+    }
+
+    function bindWorkload() {
+        board.querySelectorAll('.mit-wl-row').forEach(function (row) {
+            row.addEventListener('click', function (e) {
+                if (e.target.closest('a, button, .dropdown-menu')) {
+                    return;
+                }
+                const id = Number(row.dataset.wlTech);
+                const list = board.querySelector('[data-wl-tickets="' + id + '"]');
+                const open = list.hidden;
+                list.hidden = !open;
+                row.setAttribute('aria-expanded', open);
+                const icon = row.querySelector('.fa-chevron-right, .fa-chevron-down');
+                icon.classList.toggle('fa-chevron-right', !open);
+                icon.classList.toggle('fa-chevron-down', open);
+                if (open) {
+                    openTechs.add(id);
+                } else {
+                    openTechs.delete(id);
+                }
+            });
+        });
+        if (typeof Sortable === 'undefined') {
+            return;
+        }
+        board.querySelectorAll('.mit-wl-drop').forEach(function (zone) {
+            sortables.push(Sortable.create(zone, {
+                group: {name: 'mit-dispatch', pull: false, put: true},
+                sort: false,
+                draggable: '.mit-dq-item',
+                forceFallback: true,
+                onAdd: function (evt) {
+                    evt.item.remove();
+                    giveTo(ticketFromQueue(evt.item), Number(zone.dataset.tech), null);
+                }
+            }));
+        });
+        queueSortable = Sortable.create(queueEl, {
+            group: {name: 'mit-dispatch', pull: 'clone', put: false},
+            sort: false,
+            draggable: '.mit-dq-item',
+            forceFallback: true,
+            onStart: function () {
+                board.classList.add('mit-wl-dragging');
+            },
+            onEnd: function () {
+                board.classList.remove('mit-wl-dragging');
+            }
+        });
+    }
+
+    function onWorkloadClick(e) {
+        if (state.view !== 'workload') {
+            return;
+        }
+        const open = e.target.closest('[data-wl-open]');
+        if (open) {
+            e.preventDefault();
+            openModal('modals/ticket/ticket.php?id=' + open.dataset.wlOpen, 'lg');
+            return;
+        }
+        const move = e.target.closest('[data-wl-move]');
+        if (move) {
+            e.preventDefault();
+            const k = workloadTicket(move.dataset.ticket);
+            if (!k) {
+                return;
+            }
+            const ticket = {id: k.id, reference: k.reference, subject: k.subject, minutes: k.minutes || defaultMinutes, onsite: k.onsite};
+            giveTo(ticket, Number(move.dataset.wlMove), k.schedule_start ? new Date(k.schedule_start.replace(' ', 'T')) : null);
+        }
+    }
+
+    board.addEventListener('click', onWorkloadClick);
+
     // ---------- the toolbar ----------
 
     root.querySelectorAll('[data-md-view]').forEach(function (b) {
@@ -831,9 +1077,9 @@
         refresh();
     });
 
-    // render() loads the queue (through refresh) in the day view; the week view needs it here
+    // render() loads the queue (through refresh) in the day view; the week and workload views need it here
     render();
-    if (state.view === 'week') {
+    if (state.view !== 'day') {
         loadQueue();
     }
 })();

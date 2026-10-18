@@ -7,10 +7,12 @@
  *   GET  ?details=TICKET_ID                                      the ticket's client, contact, priority, category, SLA + choices
  *   GET  ?contacts=CLIENT_ID                                     a client's contacts
  *   GET  ?contact_tickets=CONTACT_ID&except=TICKET_ID            the contact's other open tickets
+ *   GET  ?workload=1&techs=1,2&first_day=0|1                       each tech's open tickets, SLA and booked hours
+ *   POST assign=1 ticket_id tech_id                               give an unbooked ticket to another agent
  *   POST merge=1 child_id parent_id comment move_replies         merge one ticket into another (ITFlow's merge)
  *   POST book=1 ticket_id tech_id start minutes onsite contact    assign and book (+ detail_* - saved first)
  *   POST unbook=1 ticket_id                                       take the booking off
- *   POST state=1 view hidden weekends                             the board settings for this agent
+ *   POST state=1 view (day | week | workload) hidden weekends                             the board settings for this agent
  */
 
 require_once "../config.php";
@@ -63,6 +65,11 @@ if (isset($_GET['contact_tickets'])) {
     exit;
 }
 
+if (isset($_GET['workload'])) {
+    echo json_encode(mitDispatchWorkload(explode(',', (string) ($_GET['techs'] ?? '')), intval($_GET['first_day'] ?? 0) === 1 ? 1 : 0));
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCSRFToken();
 
@@ -90,6 +97,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    if (isset($_POST['assign'])) {
+        [$ok, $message] = mitDispatchAssign($_POST['ticket_id'] ?? 0, $_POST['tech_id'] ?? 0);
+        if (!$ok) {
+            $mit_fail($message);
+        }
+        echo json_encode(['ok' => true, 'message' => $message]);
+        exit;
+    }
+
     if (isset($_POST['unbook'])) {
         [$ok, $message] = mitDispatchUnbook($_POST['ticket_id'] ?? 0);
         if (!$ok) {
@@ -102,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['state'])) {
         $hidden = array_values(array_filter(array_map('intval', explode(',', (string) ($_POST['hidden'] ?? '')))));
         mitSetUserPreference($session_user_id, 'dispatch.state', json_encode([
-            'view' => ($_POST['view'] ?? '') === 'week' ? 'week' : 'day',
+            'view' => in_array($_POST['view'] ?? '', ['week', 'workload'], true) ? $_POST['view'] : 'day',
             'hidden' => array_slice($hidden, 0, 500),
             'weekends' => !empty($_POST['weekends']),
         ]));

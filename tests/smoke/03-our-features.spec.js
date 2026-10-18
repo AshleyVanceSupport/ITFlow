@@ -2,7 +2,7 @@
 // alone. Uses the admin login's own preferences - run with a test login.
 
 const { test, expect } = require('@playwright/test');
-const { watch, visit, expectClean, fetchText } = require('./helpers');
+const { watch, visit, expectClean, fetchText, getJson } = require('./helpers');
 
 test('Tickets list remembers the view, and Reset forgets it', async ({ page }) => {
     const pill = () => page.locator('.card-header nav a.nav-link.active, nav.nav a.nav-link.active').first().innerText();
@@ -116,5 +116,38 @@ test('reply box starts open on Public note', async ({ page }) => {
     // Cancel still shuts it
     await page.click('#cancelReply');
     await expect(page.locator('#replyComposer')).not.toHaveClass(/\bshow\b/);
+    await expectClean(page, errors);
+});
+
+test('Dispatch workload', async ({ page }) => {
+    const errors = watch(page);
+    await visit(page, 'agent/mit_dispatch.php', errors);
+    test.skip(!/mit_dispatch\.php/.test(page.url()), 'Dispatch is switched off');
+    await page.click('[data-md-view=workload]');
+    await page.locator('.mit-wl-row').first().waitFor();
+    await expect(page.locator('[data-md-board]')).toContainText('Team average');
+
+    const techs = JSON.parse(await page.locator('#mitDispatch').getAttribute('data-techs')).map((t) => t.id);
+    const workload = await getJson(page, `mit_dispatch_ajax.php?workload=1&techs=${techs.join(',')}`);
+    expect(workload.techs.length, 'a row per agent').toBe(techs.length);
+    for (const t of workload.techs) {
+        expect(Object.keys(t.sla).sort()).toEqual(['at_risk', 'breached', 'none', 'paused', 'running']);
+        const counted = Object.values(t.sla).reduce((a, b) => a + b, 0);
+        expect(counted, `${t.name}: every open ticket has an SLA state`).toBe(t.open);
+    }
+
+    // Move to: give an unbooked ticket to another agent, and back
+    const owner = workload.techs.find((t) => t.tickets.some((k) => k.role === 'lead' && !k.schedule_start));
+    test.skip(!owner || techs.length < 2, 'no unbooked ticket to move');
+    const ticket = owner.tickets.find((k) => k.role === 'lead' && !k.schedule_start);
+    const other = techs.find((id) => id !== owner.id);
+    const token = await page.locator('#mitDispatch').getAttribute('data-csrf');
+    const assign = (tech) => page.evaluate(async ([id, tech, token]) => (await fetch('mit_dispatch_ajax.php', {
+        method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({assign: 1, csrf_token: token, ticket_id: id, tech_id: tech}).toString()})).json(), [ticket.id, tech, token]);
+    expect((await assign(other)).ok, 'moved').toBe(true);
+    const after = await getJson(page, `mit_dispatch_ajax.php?workload=1&techs=${other}`);
+    expect(after.techs[0].tickets.some((k) => k.id === ticket.id), 'on the other agent now').toBe(true);
+    expect((await assign(owner.id)).ok, 'moved back').toBe(true);
     await expectClean(page, errors);
 });

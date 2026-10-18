@@ -215,8 +215,8 @@ break stock ITFlow, and lists what stops working after a move.
   `mit_leave_rates`, settings in `mit_settings` (ts_*, including the paid-break rule; lunch is a charge code); export the Timesheets & Payroll
   report (both CSVs) before moving. Ticket time is ITFlow's own (ticket replies) and stays. Admin >
   Roles keeps an unused "Timesheets" permission (`module_timesheets` row) – harmless.
-- **Dispatch** – the page goes away; it keeps nothing of its own (schedules and assignments it made are
-  ordinary ITFlow ticket fields and stay). Use Calendar and each ticket's Schedule instead.
+- **Dispatch** – the page and its Workload view go away; it keeps nothing of its own (schedules and
+  assignments it made are ordinary ITFlow ticket fields and stay). Use Calendar and each ticket's Schedule instead.
 - **Module switches** for Procurement, Timesheets and Dispatch (Settings > Modules) – stored in
   `mit_settings` (`module_*`), unused by stock ITFlow.
 - **Reimbursements** (mileage and purchases logged on tickets) – the ticket's Reimbursements box, the

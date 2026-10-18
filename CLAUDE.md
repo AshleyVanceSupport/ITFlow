@@ -298,6 +298,12 @@ model: see DEPLOYMENT.md.
   (`empty($GLOBALS['mit_schedule_skip_contact'])` - the "Email the contact" tick; a global rather than a new
   parameter so ITFlow's function signature stays as it is). Working hours on the board come from Admin > SLA
   (`mitDispatchBusinessHours`). Needs ticketing on and the Dispatch switch on.
+  Workload view (Oct 2026): `functions/mit_dispatch_workload.php` (ours, required from mit_dispatch.php) - third view button;
+  `?workload=` / POST `assign=` in `agent/mit_dispatch_ajax.php`, `renderWorkload` in the script. Per tech their open tickets as
+  lead or helper, ITFlow's `ticketSlaState` counts, overdue, not scheduled, quiet (no reply of ours in 3 days, not paused), booked
+  hours today / this week vs Admin > SLA working hours; flags Falling behind (breached / past due), Watch, Overloaded / Has room
+  vs the team average (`mitDispatchWorkloadFlags`). Move to: unbooked = `mitDispatchAssign`, booked = the Schedule dialog.
+  No tables or hooks of its own (who assigned a ticket is in ITFlow's ticket history).
 - Remembered list views (Oct 2026): `functions/mit_list_views.php` (ours) - the Tickets list keeps each agent's
   pill, filters, sort and List / Board in `mit_user_preferences` `listview.tickets` (like the calendar) and puts
   them back when Tickets is opened with none; saved only when picked on the page itself (Referer), never q / page /

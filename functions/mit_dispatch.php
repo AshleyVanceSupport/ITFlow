@@ -11,8 +11,11 @@
  * assigns it (ticketChangeAssignee) and books it (ticketSetSchedule) exactly as the ticket page does.
  * A booking dragged back onto the queue is taken off the schedule (ticketCancelSchedule).
  * Needs Support edit (calendarCanScheduleTickets), ticketing on, and the Dispatch switch on (Admin > Settings > Modules). Which techs show, the view and weekends are saved
- * per person in mit_user_preferences (dispatch.state). No tables of its own.
+ * per person in mit_user_preferences (dispatch.state). The Workload view is in functions/mit_dispatch_workload.php.
+ * No tables of its own.
  */
+
+require_once __DIR__ . '/mit_dispatch_workload.php';
 
 /** The lengths offered when booking (minutes); a ticket's own length is added when it is not one of them. */
 const MIT_DISPATCH_LENGTHS = [15, 30, 45, 60, 90, 120, 180, 240, 360, 480];
@@ -46,13 +49,13 @@ function mitDispatchTechs() {
     return $techs;
 }
 
-/** The saved board settings for the signed-in agent: view (day | week), hidden (tech ids), weekends. */
+/** The saved board settings for the signed-in agent: view (day | week | workload), hidden (tech ids), weekends. */
 function mitDispatchState() {
     global $session_user_id;
     $state = json_decode((string) mitUserPreference($session_user_id, 'dispatch.state', ''), true);
     $state = is_array($state) ? $state : [];
     return [
-        'view' => ($state['view'] ?? '') === 'week' ? 'week' : 'day',
+        'view' => in_array($state['view'] ?? '', ['week', 'workload'], true) ? $state['view'] : 'day',
         'hidden' => array_values(array_filter(array_map('intval', (array) ($state['hidden'] ?? [])))),
         'weekends' => !empty($state['weekends']),
     ];
