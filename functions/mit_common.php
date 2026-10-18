@@ -94,3 +94,12 @@ function mitModulesSave(array $post) {
         }
     }
 }
+
+/**
+ * The address of one of our scripts with its file time on the end (/js/x.js?v=1729...), so a browser
+ * fetches it again after an update instead of running the copy it kept.
+ */
+function mitAsset($path) {
+    $file = dirname(__DIR__) . $path;
+    return escapeHtml($path . (is_file($file) ? '?v=' . filemtime($file) : ''));
+}

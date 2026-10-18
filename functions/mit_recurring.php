@@ -123,7 +123,7 @@ function mitRepeatOnField($date, $frequency, array $months, array $yearly, $curr
         . '<select class="form-select" name="repeat_on" data-mit-repeat-on data-date="' . escapeHtml($date) . '" data-frequency="' . escapeHtml($frequency) . '"'
         . ' data-months="' . escapeHtml(implode(',', $months)) . '" data-yearly="' . escapeHtml(implode(',', $yearly)) . '" data-current="' . escapeHtml(mitByDayRule($current)) . '" disabled></select></div>'
         . '<div class="form-text">Same date each time, or the same weekday - like the third Wednesday or the last Friday.</div>'
-        . '</div><script src="/js/mit_repeat_on.js"></script>';
+        . '</div><script src="' . mitAsset('/js/mit_repeat_on.js') . '"></script>';
 }
 
 /** The field for a recurring ticket form. */

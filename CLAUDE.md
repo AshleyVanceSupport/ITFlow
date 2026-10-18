@@ -315,7 +315,8 @@ model: see DEPLOYMENT.md.
 - Review fixes (Oct 2026): `functions/mit_common.php` (ours, required first in `functions.php`) - shared
   helpers: `mitMailBody` / `mitSqlHtml` (HTML for SQL without escapeSql's strip_tags), `mitProductIsTangible`,
   module switches (`mitModuleOn`, `mitModuleRequire` for pages/modals, `mitModuleGuard` for handler files,
-  `mitModulesSave`), `mitAdminSettingsPages`. Module switches on Admin > Settings > Modules: require of
+  `mitModulesSave`), `mitAdminSettingsPages`, `mitAsset` (our script tags get `?v=<file time>` so browsers
+  fetch them again after an update). Module switches on Admin > Settings > Modules: require of
   `admin/includes/mit_modules_fields.php` in `admin/settings_module.php` (inside ITFlow's form) and
   `mitModulesSave($_POST)` in `admin/post/settings_module.php`; saved as `mit_settings` module_procurement /
   module_timesheets / module_dispatch (default on). Procurement also needs invoicing on, Dispatch ticketing.

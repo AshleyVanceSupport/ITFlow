@@ -603,7 +603,7 @@ function mitPricingFields(array $names, $cost, $method, $percent, $price_name = 
         $html .= '<button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" data-mit-preset="' . escapeHtml($fmt($preset)) . '" aria-label="Use ' . escapeHtml($fmt($preset)) . '%">' . escapeHtml($fmt($preset)) . '%</button>';
     }
     return $html . '</div><div class="small text-body-secondary mt-2" data-mit-hint></div></div>'
-        . '<script src="/js/mit_quote_pricing.js"></script>';
+        . '<script src="' . mitAsset('/js/mit_quote_pricing.js') . '"></script>';
 }
 
 /** The image field: the current picture, upload, pull from a link, remove. $name = the file field's name. */
@@ -729,7 +729,7 @@ function mitQuoteAddCellPricing() {
         // them usable (the table scrolls sideways instead)
         . '<style>tr:has([data-mit-cost]) #name{min-width:100px}tr:has([data-mit-cost]) #desc{min-width:100px}'
         . 'tr:has([data-mit-cost]) #qty{min-width:60px}tr:has([data-mit-cost]) #price{min-width:80px}tr:has([data-mit-cost]) #tax{min-width:90px}</style>'
-        . '<script>window.mitProductPricing = ' . mitProductsPricingJson() . ';</script><script src="/js/mit_quote_pricing.js"></script></td>';
+        . '<script>window.mitProductPricing = ' . mitProductsPricingJson() . ';</script><script src="' . mitAsset('/js/mit_quote_pricing.js') . '"></script></td>';
 }
 
 /**

@@ -232,7 +232,7 @@ $status_text = [
     .mit-ts-issue { padding: .5rem .75rem; border-radius: .5rem; background: var(--bs-warning-bg-subtle); color: var(--bs-warning-text-emphasis); }
 </style>
 <script type="application/json" id="mitTsData"><?= json_encode($data, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
-<script src="/agent/js/mit_timesheet.js" defer></script><?php // after the footer's Bootstrap ?>
+<script src="<?= mitAsset('/agent/js/mit_timesheet.js') ?>" defer></script><?php // after the footer's Bootstrap ?>
 
 <?php
 require_once "../includes/footer.php";

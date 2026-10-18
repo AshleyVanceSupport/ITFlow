@@ -146,4 +146,4 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
 <script src="/libs/fullcalendar/fullcalendar.global.js"></script>
 <script src="/libs/fullcalendar/themes/classic/global.js"></script>
 <script src="/libs/SortableJS/Sortable.min.js"></script>
-<script src="/agent/js/mit_dispatch.js"></script>
+<script src="<?= mitAsset('/agent/js/mit_dispatch.js') ?>"></script>

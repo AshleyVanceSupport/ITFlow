@@ -18,5 +18,5 @@
         </div>
         <div data-timers-list></div>
     </div>
-    <script src="/js/mit_timers.js" defer></script><?php // inside the <li>: nothing else may sit in the navbar's <ul>; the script adds its own styles ?>
+    <script src="<?= mitAsset('/js/mit_timers.js') ?>" defer></script><?php // inside the <li>: nothing else may sit in the navbar's <ul>; the script adds its own styles ?>
 </li>
