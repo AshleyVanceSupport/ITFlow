@@ -126,8 +126,8 @@
             });
             if (d.ca.answers.rest_missed) flags.push(chip('', 'Rest premium', null, 'danger'));
         }
-        if (d.tickets.billable) parts.push(chip('#198754', 'Billable', d.tickets.billable));
-        if (d.tickets.other) parts.push(chip('#6c757d', 'Other tickets', d.tickets.other));
+        // All time logged on tickets as one - the billable part is in the summary at the top
+        if (d.tickets.billable + d.tickets.other) parts.push(chip('#198754', 'Ticket time', d.tickets.billable + d.tickets.other));
         Object.entries(d.codes).forEach(function ([id, e]) {
             const c = D.codes[id] || { name: 'Code ' + id, color: '#6c757d' };
             if (e.m) parts.push(chip(c.color, c.name, e.m));
@@ -218,8 +218,7 @@
         html += '<section><h6 class="mit-ts-section">' + (d.ca ? 'What the time was spent on' : 'Hours') + '</h6>';
         if (d.tickets.billable || d.tickets.other) {
             html += '<a href="#" class="mit-ts-auto ajax-modal" data-modal-url="modals/mit_timesheet/day.php?user_id=' + D.user_id + '&date=' + date + '">'
-                + (d.tickets.billable ? '<span>' + chip('#198754', 'Ticket time - billable', d.tickets.billable) + '</span>' : '')
-                + (d.tickets.other ? '<span>' + chip('#6c757d', 'Ticket time - other', d.tickets.other) + '</span>' : '')
+                + '<span>' + chip('#198754', 'Ticket time', d.tickets.billable + d.tickets.other) + '</span>'
                 + '<span class="small ms-auto">The tickets <i class="fas fa-external-link-alt"></i></span></a>';
         }
         html += '<div data-codes>' + Object.entries(d.codes).map(([id, e]) => codeRow(id, e)).join('') + '</div>';
