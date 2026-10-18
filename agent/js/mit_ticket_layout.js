@@ -14,6 +14,23 @@
 (function () {
     'use strict';
 
+    // The reply box starts open on "Public note" (ITFlow's starts shut with nothing picked). Done here,
+    // before Bootstrap and TinyMCE load in the footer, so the editor is sized open and ITFlow's own
+    // composer script finds it already shown - its Cancel still closes it.
+    const replyComposer = document.getElementById('replyComposer');
+    const publicNote = document.getElementById('public_reply_type_opt1');
+    if (replyComposer && publicNote && !document.querySelector('input[name="public_reply_type"]:checked')) {
+        publicNote.checked = true;
+        replyComposer.classList.add('show');
+        document.querySelectorAll('#replyAudience [data-audience]').forEach((line) => {
+            line.hidden = line.dataset.audience !== '1';
+        });
+        const submitLabel = document.getElementById('replySubmitLabel');
+        if (submitLabel) {
+            submitLabel.textContent = 'Post note';
+        }
+    }
+
     const cfg = window.mitTicketLayout || {};
     const root = document.querySelector('.ticket-layout');
     const main = root && root.querySelector(':scope > .ticket-layout-main');

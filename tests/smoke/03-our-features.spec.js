@@ -98,3 +98,23 @@ test('purchase order action buttons are buttons', async ({ page }) => {
         .map((a) => a.textContent.trim()));
     expect(plain).toEqual([]);
 });
+
+test('reply box starts open on Public note', async ({ page }) => {
+    await visit(page, 'agent/tickets.php?show=open');
+    const ticket = page.locator('a[href*="ticket.php?"][href*="ticket_id="]').first();
+    test.skip(await ticket.count() === 0, 'no open tickets');
+    const errors = watch(page);
+    await visit(page, await ticket.evaluate((a) => a.href), errors);
+    await expect(page.locator('#public_reply_type_opt1')).toBeChecked();
+    await expect(page.locator('#replyComposer')).toHaveClass(/\bshow\b/);
+    await expect(page.locator('#replyAudience [data-audience="1"]')).toBeVisible();
+    await expect(page.locator('#replySubmitLabel')).toHaveText('Post note');
+    // The editor is sized for an open box, not squashed to nothing
+    const editor = page.locator('#replyComposer .tox-tinymce');
+    await editor.waitFor();
+    expect((await editor.boundingBox()).height, 'reply editor height').toBeGreaterThan(100);
+    // Cancel still shuts it
+    await page.click('#cancelReply');
+    await expect(page.locator('#replyComposer')).not.toHaveClass(/\bshow\b/);
+    await expectClean(page, errors);
+});

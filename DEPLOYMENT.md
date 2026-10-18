@@ -234,7 +234,7 @@ break stock ITFlow, and lists what stops working after a move.
   `product_image` columns, the files in `uploads/mit_images/`). Our API leaves product cost and
   markup out of `api/v1/products/read.php`; stock ITFlow's API returns every column, so after a move
   an API key with Sales access can read them – clear them first if that matters.
-- **Ticket page layout** (column widths, three columns, box order, half-width and collapsed boxes) – stock ITFlow shows its own layout;
+- **Ticket page layout** (column widths, three columns, box order, half-width and collapsed boxes, reply box open on Public note) – stock ITFlow shows its own layout;
   the saved layouts sit unused in `mit_settings` / `mit_user_preferences`.
 - **Schedule lengths, agent colors, per-person calendar settings, Outlook busy times, the ticket
   timers dropdown** – not in stock ITFlow; their data sits unused in `mit_` tables and the

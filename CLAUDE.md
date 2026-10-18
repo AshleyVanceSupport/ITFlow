@@ -159,6 +159,8 @@ model: see DEPLOYMENT.md.
   wrapped as "conversation" - re-check those if upstream reworks `agent/ticket.php`. Hooks: one line
   after the layout in `agent/ticket.php` (`mitTicketLayoutHtml`), `agent/ajax.php?mit_ticket_layout`,
   `functions.php` (require). "Customize layout" is added to the ticket's ⋮ menu by the script.
+  The same script opens the reply box on "Public note" at page load (ITFlow starts it shut with nothing
+  picked) - it relies on ITFlow's ids `#replyComposer`, `public_reply_type_opt1`, `#replyAudience`, `#replySubmitLabel`.
 - Procurement (Oct 2026, part 1 of 3): `functions/mit_procurement.php` (ours) - items to order
   (`mit_procurement_items`), purchase orders (`mit_purchase_orders`, `mit_po_lines`, `mit_po_tracking`,
   `mit_po_receipts`, `mit_po_history`; M009), approval when over `procurement_approval_over`
