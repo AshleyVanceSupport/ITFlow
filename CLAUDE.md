@@ -366,6 +366,15 @@ model: see DEPLOYMENT.md.
    early. Until upstream releases 26.11, `develop` is ahead of any release - **do not promote
    `develop` to `MountaineerIT` before 26.11 is out** without the user explicitly accepting
    unreleased upstream code in production. When 26.11 is released, merge its tag as usual.
+   Checked Oct 18 (user chose to wait for the release): upstream develop then had 47 more commits, DB 2.9.0 -> 3.2.2.
+   **Upstream 2.9.4 adds `products.product_cost` and `product_vendor_id` - the same names as our M007 / M010 columns
+   (same meaning).** Its single ALTER would fail with "Duplicate column" on our databases, so the merge needs a step
+   that renames ours aside before 2.9.4 runs and copies the values into theirs after (then our code uses theirs).
+   Also expect to redo, not just merge: quote pricing / image and invoice procurement hooks (upstream rebuilt invoices,
+   quotes and recurring invoices as one shared page), and to decide ours-vs-theirs for product cost / stock / vendors
+   (procurement), mileage pay-back (reimbursements) and Unbilled Time (next to Unbilled Parts). A trial merge then
+   had 24 conflicting files. Upstream also rebuilt parts of its API (roles, API keys): re-apply `mitProductApiColumns()` in
+   `api/v1/products/read.php` and recheck the API against our features (our cost never in it).
 3. Summarise for the user: version, notable features/fixes, new files in
    `admin/database_updates/` (DB version change), anything touching our deviations above.
 4. On `develop`, `git merge <tag>`, resolve conflicts keeping our deviations, `php -l`
