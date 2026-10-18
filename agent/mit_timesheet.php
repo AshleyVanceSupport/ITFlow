@@ -54,9 +54,11 @@ foreach ($entries as $by_code) {
 }
 $allowed = mitTsCodesFor($user_id);
 $hidden = array_flip(mitTsHiddenCodes($user_id));
-$codes = array_filter($codes_all, function ($code) use ($used, $allowed, $hidden) {
+// California non-exempt (functions/mit_ts_california.php): start, meal and end times are typed in; meals are not a charge code
+$ca = mitTsCaOn($user_id);
+$codes = array_filter($codes_all, function ($code) use ($used, $allowed, $hidden, $ca) {
     $id = intval($code['code_id']);
-    return isset($used[$id]) || (isset($allowed[$id]) && !isset($hidden[$id]));
+    return isset($used[$id]) || (isset($allowed[$id]) && !isset($hidden[$id]) && !($ca && $code['code_kind'] === 'break'));
 });
 $closure_code = mitTsClosureCode($user_id);
 $weeks = mitTsWeeks($period);
@@ -69,8 +71,9 @@ $url = function (array $p, $uid = null) use ($user_id) {
 $approval = $settings['approval'];
 $can_submit = $approval && !$locked && in_array($sheet['status'], ['open', 'returned'], true) && ($own || mitTsMayCorrect($user_id));
 $csrf = $_SESSION['csrf_token'];
-$break_rule = mitTsBreakRule($user_id);
+$break_rule = $ca ? [0, 240] : mitTsBreakRule($user_id);
 $show_breaks = $break_rule[0] > 0 || $totals['break_paid'] > 0;
+$ca_sign = $ca && $own && !$locked && in_array($sheet['status'], ['open', 'returned'], true);
 $tiles = [
     ['Total hours', mitTsHours($totals['total'], false), 'Worked plus leave' . ($totals['break_paid'] ? ', incl. ' . mitTsHours($totals['break_paid']) . ' paid breaks' : '')],
     ['Billable', mitTsHours($totals['billable'], false), mitTsBillableShare($totals) . ' of hours worked'],
@@ -79,7 +82,12 @@ $tiles = [
     ['Lost time', mitTsHours($totals['lost'], false), $totals['auto_lost'] ? mitTsHours($totals['auto_lost']) . ' unaccounted' . ($settings['auto_lost_paid'] ? '' : ' (unpaid)') : ''],
     ['Leave', mitTsHours($totals['leave_paid'], false), $totals['leave'] > $totals['leave_paid'] ? mitTsHours($totals['leave'] - $totals['leave_paid']) . ' unpaid' : 'Paid'],
 ];
-if ($settings['ot_day'] || $settings['ot_week']) {
+if ($ca) {
+    $tiles[0] = ['Hours worked', mitTsHours($totals['worked'], false), 'From your start, meal and end times' . ($totals['leave'] ? ', plus ' . mitTsHours($totals['leave']) . ' leave' : '')];
+    $tiles[] = ['Overtime', mitTsHours($totals['overtime'], false), mitTsHours($totals['double'], false) . ' double time'];
+    $premiums = intdiv($totals['meal_premium'], 60) + intdiv($totals['rest_premium'], 60);
+    $tiles[] = ['Premium pay', $premiums . ' h', $premiums ? intdiv($totals['meal_premium'], 60) . ' meal, ' . intdiv($totals['rest_premium'], 60) . ' rest' : 'No missed breaks'];
+} elseif ($settings['ot_day'] || $settings['ot_week']) {
     $tiles[] = ['Overtime', mitTsHours($totals['overtime'], false), mitTsPerson($user_id)['pay_type'] === 'salary' ? 'Salaried - none' : 'Over ' . trim(($settings['ot_day'] ? mitTsHours($settings['ot_day']) . '/day ' : '') . ($settings['ot_week'] ? mitTsHours($settings['ot_week']) . '/week' : ''))];
 }
 
@@ -133,12 +141,16 @@ if ($settings['ot_day'] || $settings['ot_week']) {
 
         <?= mitLeaveTimesheetBox($user_id, $period) ?>
         <?= mitReimbTimesheetBox($user_id, $period) ?>
+        <?= mitTsCaChangesBox($user_id, $period, $own) ?>
 
-        <form action="post.php" method="post" autocomplete="off" id="mitTsForm" data-format="<?= $format ?>" data-today="<?= $today ?>" data-auto-lost="<?= $settings['auto_lost'] ?>" data-started="<?= escapeHtml(mitTsStartDate($user_id)) ?>"
+        <form action="post.php" method="post" autocomplete="off" id="mitTsForm" data-format="<?= $format ?>" data-today="<?= $today ?>" data-auto-lost="<?= $ca ? 0 : $settings['auto_lost'] ?>" data-started="<?= escapeHtml(mitTsStartDate($user_id)) ?>"
             data-break-minutes="<?= $break_rule[0] ?>" data-break-per="<?= $break_rule[1] ?>">
             <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
             <input type="hidden" name="user_id" value="<?= $user_id ?>">
             <input type="hidden" name="start" value="<?= $period['start'] ?>">
+
+            <?= mitTsCaCard($user_id, $period, $locked, $own) ?>
+            <?= $ca_sign ? mitTsCaSignModal($user_id, $period) : '' ?>
 
             <?php foreach ($weeks as $week) {
                 $open = !$fold || ($week[0] <= $today && end($week) >= $today); ?>
@@ -217,7 +229,7 @@ if ($settings['ot_day'] || $settings['ot_week']) {
                                         <td class="text-center fw-semibold" data-mit-ts-breaks-total></td>
                                     </tr>
                                 <?php } ?>
-                                <?php if ($settings['auto_lost'] || $totals['auto_lost']) { ?>
+                                <?php if (!$ca && ($settings['auto_lost'] || $totals['auto_lost'])) { ?>
                                     <tr class="text-danger">
                                         <td><i class="fas fa-fw fa-hourglass-half me-1"></i>Unaccounted <span class="small text-muted">(lost, auto<?= $settings['auto_lost_paid'] ? '' : ', unpaid' ?>)</span></td>
                                         <?php foreach ($week as $date) { ?>
@@ -232,7 +244,7 @@ if ($settings['ot_day'] || $settings['ot_week']) {
                                 <tr class="fw-semibold">
                                     <td>Day total</td>
                                     <?php foreach ($week as $date) { ?>
-                                        <td class="text-center" data-mit-ts-day="<?= $date ?>" data-expected="<?= mitTsExpected($user_id, $date) ?>"></td>
+                                        <td class="text-center" data-mit-ts-day="<?= $date ?>" data-expected="<?= $ca ? 0 : mitTsExpected($user_id, $date) ?>"></td>
                                     <?php } ?>
                                     <td class="text-center" data-mit-ts-week-total></td>
                                 </tr>
@@ -248,15 +260,20 @@ if ($settings['ot_day'] || $settings['ot_week']) {
 
             <p class="small text-muted">
                 Type hours as 7.5 or 7:30; click into a box to add a note. Ticket time comes from the time logged on ticket replies each day.
-                A day under its normal hours is shown in orange. Put lunch on its own line (it is not paid, and not lost time)<?= $break_rule[0] > 0 ? '; short paid breaks - ' . intval($break_rule[0]) . ' minutes for every ' . mitTsHours($break_rule[1], false, 'decimal') . ' hours worked - are added for you' : '' ?>.
+                A day under its normal hours is shown in orange. <?php if ($ca) { ?>Your hours worked are the start and end times above; these rows say what the time was spent on.<?php } else { ?>Put lunch on its own line (it is not paid, and not lost time)<?= $break_rule[0] > 0 ? '; short paid breaks - ' . intval($break_rule[0]) . ' minutes for every ' . mitTsHours($break_rule[1], false, 'decimal') . ' hours worked - are added for you' : '' ?>.<?php } ?>
             </p>
 
             <div class="d-flex flex-wrap align-items-center gap-2 p-3 rounded bg-body-tertiary border">
                 <?php if (!$locked) { ?>
                     <button type="submit" name="mit_ts_save" value="save" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save</button>
                 <?php } ?>
-                <?php if ($can_submit) { ?>
-                    <button type="submit" name="mit_ts_save" value="submit" class="btn btn-success"><i class="fas fa-paper-plane me-2"></i>Save and submit for approval</button>
+                <?php if ($can_submit && (!$ca || $ca_sign)) { ?>
+                    <button type="submit" name="mit_ts_save" value="submit" class="btn btn-success"><i class="fas <?= $ca ? 'fa-file-signature' : 'fa-paper-plane' ?> me-2"></i><?= $ca ? 'Sign and submit for approval' : 'Save and submit for approval' ?></button>
+                <?php } elseif ($ca_sign && !$approval && !mitTsCaAttestation($sheet['sheet_id'])) { ?>
+                    <button type="submit" name="mit_ts_save" value="submit" class="btn btn-success"><i class="fas fa-file-signature me-2"></i>Sign my hours</button>
+                <?php } ?>
+                <?php if ($ca && ($attest = mitTsCaAttestation($sheet['sheet_id']))) { ?>
+                    <span class="small text-success"><i class="fas fa-file-signature me-1"></i>Signed by <?= escapeHtml($attest['signature_name']) ?> <?= escapeHtml(date('M j, g:i A', strtotime($attest['attested_at']))) ?></span>
                 <?php } ?>
                 <?php if ($approval && $own && $sheet['status'] === 'submitted') { ?>
                     <a class="btn btn-light border" href="post.php?mit_ts_withdraw=<?= intval($sheet['sheet_id']) ?>&csrf_token=<?= $csrf ?>"><i class="fas fa-undo me-2"></i>Take it back</a>
@@ -277,6 +294,7 @@ if ($settings['ot_day'] || $settings['ot_week']) {
 </div>
 
 <script src="/agent/js/mit_timesheet.js"></script>
+<?php if ($ca) { ?><script src="/agent/js/mit_ts_california.js"></script><?php } ?>
 
 <?php
 require_once "../includes/footer.php";

@@ -192,6 +192,9 @@ break stock ITFlow, and lists what stops working after a move.
   OAuth, and switch SMTP AUTH / IMAP back on for the mailbox.
 - **Outlook calendars** stop syncing; events ITFlow already put in people's Outlook stay until
   deleted (they carry the *ITFlow* category).
+- **California time records** – start / meal / end times, meal answers, change history and signed attestations stay in
+  the `mit_ts_*` tables but are not shown; stock ITFlow has no California overtime or premiums. Export the payroll detail
+  report first, and keep the tables (California asks for at least 3 years of time records).
 - **Cron alerts** – the top-bar warning, the alert emails and `/mit_health.php` go; Maintenance > Cron still shows
   ITFlow's own status. Point your uptime monitor elsewhere (it will report the address as gone).
 - **Remembered Tickets filters** – stock ITFlow opens Tickets with its defaults every time (the saved
@@ -318,6 +321,13 @@ It will fetch the latest **official release** from itflow-org, summarise what ch
 (including any database updates), merge it into `develop` and, once you confirm, push it.
 The beta server picks it up; test there (including the smoke tests below), then ask Claude to open the
 `develop` → `MountaineerIT` PR.
+
+## California timesheets
+
+Hourly people are on California non-exempt rules unless switched off in Admin > Timesheets > People. They type start,
+meal and end times each day, answer for a missed, late or short meal period, and sign a statement when they submit.
+The payroll report adds double time and meal / rest premium hours. Have an employment lawyer check the statement
+wording (`mitTsCaStatement` in `functions/mit_ts_california.php`) and the rules before relying on them.
 
 ## Cron alerts
 

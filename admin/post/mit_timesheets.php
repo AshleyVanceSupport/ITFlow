@@ -186,6 +186,10 @@ if (isset($_POST['mit_ts_person_save'])) {
         $set .= ", break_minutes = " . ($own_break ? max(0, min(120, intval($_POST['break_minutes']))) : 'NULL')
             . ", break_per = " . ($own_break ? max(30, min(1440, $own_per)) : 'NULL');
     }
+    if (mitTsCaReady()) {
+        $ca_rules = (string) ($_POST['ca_rules'] ?? '');
+        $set .= ", ca_rules = " . ($ca_rules === '1' ? 1 : ($ca_rules === '0' ? 0 : 'NULL'));
+    }
     mysqli_query($mysqli, "INSERT INTO mit_timesheet_people SET user_id = $user_id, $set ON DUPLICATE KEY UPDATE $set");
     logAudit('Settings', 'Edit', "$session_name edited the timesheet details of user $user_id");
     flashAlert('Saved');

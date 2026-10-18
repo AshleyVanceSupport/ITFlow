@@ -68,7 +68,12 @@ foreach ($totals as $t) {
 $code_columns = array_intersect_key($codes, $used);
 
 $rows = [];
-$sum = ['billable' => 0, 'other' => 0, 'work' => 0, 'lost' => 0, 'auto_lost' => 0, 'break_paid' => 0, 'leave' => 0, 'leave_paid' => 0, 'unpaid' => 0, 'worked' => 0, 'paid' => 0, 'total' => 0, 'overtime' => 0, 'regular' => 0];
+$sum = ['billable' => 0, 'other' => 0, 'work' => 0, 'lost' => 0, 'auto_lost' => 0, 'break_paid' => 0, 'leave' => 0, 'leave_paid' => 0, 'unpaid' => 0, 'worked' => 0, 'paid' => 0, 'total' => 0, 'overtime' => 0, 'regular' => 0,
+    'double' => 0, 'meal_premium' => 0, 'rest_premium' => 0];
+// California non-exempt people (functions/mit_ts_california.php): double time, premium hours, and whether each period was signed
+$any_ca = count(array_filter($totals, function ($t) {
+    return !empty($t['ca']);
+})) > 0;
 foreach ($people as $user_id => $person) {
     $t = $totals[$user_id];
     $r = $reimb[$user_id] ?? ['miles' => 0, 'mileage' => 0, 'purchases' => 0, 'total' => 0, 'count' => 0];
@@ -83,7 +88,8 @@ foreach ($people as $user_id => $person) {
         'billable' => $t['billable'] * 60, 'other' => $t['other'] * 60, 'work' => $t['work'] * 60, 'worked' => $t['worked'] * 60, 'leave' => $t['leave'] * 60,
         'unpaid' => $t['unpaid'] * 60, 'paid' => $t['paid'] * 60, 'total' => $t['total'] * 60, 'lost' => $t['lost'] * 60,
         'share' => $t['worked'] ? round($t['billable'] / $t['worked'] * 100, 1) : null,
-        'approved' => ($approved[$user_id] ?? 0) . ' of ' . count($periods)];
+        'approved' => ($approved[$user_id] ?? 0) . ' of ' . count($periods),
+        'double' => $t['double'] * 60, 'meal_premium' => $t['meal_premium'] / 60, 'rest_premium' => $t['rest_premium'] / 60, 'ca' => $t['ca'] ? 'Yes' : 'No'];
     foreach ($code_columns as $code_id => $code) {
         $row["code_$code_id"] = ($t['codes'][$code_id] ?? 0) * 60;
     }
@@ -118,7 +124,10 @@ $columns += [
     'unpaid' => ['label' => 'Unpaid', 'type' => 'hours', 'decimals' => 2],
     'paid' => ['label' => 'Paid hours', 'type' => 'hours', 'decimals' => 2, 'class' => 'fw-semibold', 'title' => 'What payroll pays: worked, paid breaks and paid leave, less unpaid codes' . ($settings['auto_lost_paid'] ? '' : ' and unaccounted time')],
     'regular' => ['label' => 'Regular', 'type' => 'hours', 'decimals' => 2, 'screen' => $overtime, 'title' => 'Paid hours less overtime'],
-    'overtime' => ['label' => 'Overtime', 'type' => 'hours', 'decimals' => 2, 'screen' => $overtime, 'title' => 'Over the daily / weekly limit set in Admin > Timesheets (hourly people)'],
+    'overtime' => ['label' => 'Overtime', 'type' => 'hours', 'decimals' => 2, 'screen' => $overtime || $any_ca, 'title' => 'Over the daily / weekly limit set in Admin > Timesheets (hourly people); California non-exempt: over 8 a day, 40 a week, and the first 8 of a 7th day in a row'],
+    'double' => ['label' => 'Double time', 'type' => 'hours', 'decimals' => 2, 'screen' => $any_ca, 'csv' => $any_ca ? null : false, 'title' => 'California non-exempt: over 12 hours a day, and over 8 on a 7th day in a row'],
+    'meal_premium' => ['label' => 'Meal premium', 'type' => 'decimal', 'decimals' => 0, 'screen' => $any_ca, 'csv' => $any_ca ? null : false, 'title' => 'Hours of premium pay owed for days a meal period could not be taken (at the regular rate)'],
+    'rest_premium' => ['label' => 'Rest premium', 'type' => 'decimal', 'decimals' => 0, 'screen' => $any_ca, 'csv' => $any_ca ? null : false, 'title' => 'Hours of premium pay owed for days a rest break could not be taken (at the regular rate)'],
     'share' => ['label' => 'Billable %', 'type' => 'percent'],
 ];
 // Reimbursements logged on tickets (functions/mit_reimbursements.php) - shown when there are any
@@ -154,7 +163,27 @@ if (reportExporting('detail')) {
     $reimb_rows = mitReimbOn() ? mitReimbForUsers(array_keys($people), $from, $to) : [];
     foreach ($people as $user_id => $person) {
         $days = [];
+        // California non-exempt: the day's start, meal and end times, and the answers about its breaks
+        $ca_days = mitTsCaDays([$user_id], $from, $to)[$user_id] ?? [];
+        foreach ($ca_days as $date => $c) {
+            if (!$c['periods'] && !$c['issues'] && !$c['answers']['rest_missed']) {
+                continue;
+            }
+            $notes = [mitTsCaPeriodsText($c['periods'])];
+            foreach ($c['issues'] as $n => $status) {
+                $notes[] = mitTsCaIssueText($n, $status) . ': ' . (MIT_TS_CA_ANSWERS[$c['answers']["meal$n"]] ?? 'not answered (premium owed)');
+            }
+            if ($c['answers']['rest_missed']) {
+                $notes[] = 'Could not take a rest break (premium owed)';
+            }
+            // Hours left empty: the record of the day, not more hours - the code rows below add up to the time worked
+            $days[] = ['date' => $date, 'code' => 'Work times', 'kind' => 'Time record', 'paid' => '', 'hours' => null,
+                'note' => mitTsHours($c['clocked'], false, 'decimal') . ' h worked: ' . implode('; ', $notes)];
+        }
         foreach ($all_days[$user_id] ?? [] as $date => $d) {
+            if (!empty($d['unallocated'])) {
+                $days[] = ['date' => $date, 'code' => 'Work - not on a code', 'kind' => 'Work', 'paid' => 'Yes', 'hours' => $d['unallocated'] * 60];
+            }
             if ($d['auto_lost']) {
                 $days[] = ['date' => $date, 'code' => 'Unaccounted (lost)', 'kind' => 'Lost time', 'paid' => $settings['auto_lost_paid'] ? 'Yes' : 'No', 'hours' => $d['auto_lost'] * 60];
             }

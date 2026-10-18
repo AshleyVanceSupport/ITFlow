@@ -7,7 +7,7 @@
 
 defined('FROM_POST_HANDLER') || die("Direct file access is not allowed");
 
-mitModuleGuard('timesheets', ['mit_ts_']);
+mitModuleGuard('timesheets', ['mit_ts_', 'mit_ca_']);
 
 if (isset($_POST['mit_ts_save'])) {
 
@@ -25,15 +25,47 @@ if (isset($_POST['mit_ts_save'])) {
         flashAlert(escapeHtml($locked), 'error');
         redirect();
     }
+    // California non-exempt (functions/mit_ts_california.php): the start, meal and end times and the meal answers first
+    $ca = mitTsCaOn($user_id);
+    if ($ca) {
+        [$ok, $message, $ca_changed] = mitTsCaSave($sheet, $period, (array) ($_POST['ca_times'] ?? []), (array) ($_POST['ca_answers'] ?? []), $_POST['ca_reason'] ?? '');
+        if (!$ok) {
+            flashAlert(escapeHtml($message), 'error');
+            redirect();
+        }
+    }
     [$ok, $message] = mitTsSaveCells($sheet, $period, (array) ($_POST['cells'] ?? []), (array) ($_POST['notes'] ?? []));
+    if ($ok && $ca && $ca_changed) {
+        $message = 'Timesheet saved';
+    }
     if ($ok && $_POST['mit_ts_save'] === 'submit') {
         if ($user_id !== intval($session_user_id) && !mitTsMayCorrect($user_id)) {
             [$ok, $message] = [false, 'Only they can submit their timesheet.'];
         } else {
-            [$ok, $message] = mitTsSubmit(mitTsSheet($user_id, $period), $period);
+            if ($ca) {
+                // They sign first - what they certify, their answer about breaks, their typed name
+                [$ok, $message] = mitTsCaAttest(mitTsSheet($user_id, $period), $period, $_POST);
+            }
+            if ($ok && (!$ca || mitTsSettings()['approval'])) {
+                [$ok, $message] = mitTsSubmit(mitTsSheet($user_id, $period), $period);
+            }
         }
     }
     flashAlert(escapeHtml($message), $ok ? 'success' : 'error');
+    redirect();
+}
+
+if (isset($_GET['mit_ca_acknowledge'])) {
+
+    validateCSRFToken();
+
+    // The signed-in person acknowledges the changes others made to their times in a period
+    $period = mitTsPeriodFromRequest($_GET['mit_ca_acknowledge']);
+    $done = mitTsCaReady() ? mitTsCaAcknowledge($period) : 0;
+    if ($done) {
+        logAudit('Timesheet', 'Edit', escapeSql(mitTsWho() . " acknowledged $done change(s) to their times for " . $period['label']), 0, intval($session_user_id));
+    }
+    flashAlert($done ? 'Thanks - acknowledged' : 'Nothing to acknowledge');
     redirect();
 }
 

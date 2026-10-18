@@ -43,6 +43,7 @@ ob_start();
             <?= mitTsHours($t['total'], false) ?> hours: <?= mitTsHours($t['billable'], false) ?> billable, <?= mitTsHours($t['other'], false) ?> other ticket time,
             <?= mitTsHours($t['work'], false) ?> admin &amp; other work, <?= mitTsHours($t['lost'], false) ?> lost, <?= mitTsHours($t['leave_paid'], false) ?> paid leave<?= $t['unpaid'] ? ', ' . mitTsHours($t['unpaid']) . ' unpaid (leave and codes' . ($t['auto_lost'] && !mitTsSettings()['auto_lost_paid'] ? ', unaccounted time' : '') . ')' : '' ?><?= $t['break_paid'] ? ', ' . mitTsHours($t['break_paid']) . ' paid breaks' : '' ?><?= $t['overtime'] ? ', ' . mitTsHours($t['overtime']) . ' overtime' : '' ?>.
         </p>
+        <?= mitTsCaApproverNote($user_id, $period, $sheet) // Mountaineer IT: California non-exempt - signature, premiums ?>
         <?php if ($decision === 'approve' && $sheet['status'] !== 'submitted') { ?>
             <div class="alert alert-warning py-2 small">It has not been submitted - approving locks it as it is now.</div>
         <?php } ?>

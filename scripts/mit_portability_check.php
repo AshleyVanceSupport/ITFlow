@@ -210,6 +210,9 @@ if ($n || $count("SELECT COUNT(*) FROM modules WHERE module_name = 'module_times
 if ($n = $count("SELECT COUNT(*) FROM mit_reimbursements")) {
     $after[] = "Reimbursements: $n mileage / purchase entries on tickets are not shown by stock ITFlow (they stay in mit_reimbursements, receipts in uploads/mit_receipts) - export the payroll report first. The trips and expenses they made are ordinary ITFlow records and stay.";
 }
+if ($n = $count("SELECT COUNT(*) FROM mit_ts_work_periods") + $count("SELECT COUNT(*) FROM mit_ts_attestations")) {
+    $after[] = "California time records: start / meal / end times, meal-period answers, change history and signed attestations ($n rows) are not shown by stock ITFlow - they stay in mit_ts_* (keep them at least 3 years); export the payroll detail report first.";
+}
 if ($n = $count("SELECT COUNT(*) FROM mit_ticket_parts")) {
     $after[] = "Ticket parts: $n part" . ($n === 1 ? '' : 's') . " on tickets are not shown by stock ITFlow (billed ones are ordinary invoice lines and stay). Products' \"Order from\" vendor is not shown either.";
 }

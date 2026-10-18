@@ -232,6 +232,20 @@ model: see DEPLOYMENT.md.
   expenses (`mitReimbRecordExpenses`, `ts_reimb_category` / `ts_reimb_account`). Box `mitReimbTicketCard` - one line in
   `agent/ticket.php` under Parts (layout box `reimburse`, fa-receipt) - modal `agent/modals/mit_reimburse/reimburse.php`,
   handlers `agent/post/mit_reimbursements.php`; payroll report columns Miles / Mileage / Purchases / Reimburse.
+  California non-exempt (M018): `functions/mit_ts_california.php` (ours, required from mit_timesheets.php) - per person
+  `mit_timesheet_people.ca_rules` (NULL = on for hourly; People modal). Typed start / meal / end times per day
+  (`mit_ts_work_periods`, gaps = meal periods, never rounded) are the hours worked - codes and ticket time only allocate them
+  (`unallocated` = paid work on no code); no auto lost time, no unpaid work codes, no auto paid breaks, break-kind codes hidden.
+  Meal rules (`mitTsCaAnalyze`: 30 min by end of hour 5 / 10), the person's answer per missed/late/short meal and
+  "could not take a rest break" (`mit_ts_days`) -> meal / rest premium hours (unanswered = owed); CA overtime
+  (`mitTsCaOvertime`: >8/day, >12 double, >40 regular/week, 7th consecutive day). Changes to times (`mit_ts_changes`) need a
+  reason from anyone but the person, who acknowledges them (`?mit_ca_acknowledge=`). Submit = signed attestation
+  (`mit_ts_attestations`: statement text + version, typed name, IP, UA, breaks answer / exceptions, JSON snapshot) via the
+  window `mitTsCaSignModal`; `mitTsSubmit` / approve refuse without one; withdraw / send back / reopen set it aside
+  (`mitTsCaSupersede`). Hooks in mit_timesheets.php: mitTsDays, mitTsDayWorked, mitTsTotals (double, premiums), mitTsSubmit,
+  mitTsWithdraw, mitTsDecide, mitTsReopen. UI: `agent/mit_timesheet.php` (card, sign window, changes box, tiles),
+  `agent/js/mit_ts_california.js`, decide modal (`mitTsCaApproverNote`), payroll report (Double time, Meal / Rest premium
+  columns; detail "Work times" rows). No FKs on the M018 tables: records outlive deleted logins (keep 3 years).
   Cron job `mit_timesheets` (`cron/mit_timesheets.php`, entry in `includes/cron_jobs.php`, hourly: closure days
   of the period just ended, reminders - `mit_timesheets.reminded_due_at` / `reminded_late_at` -, leave earned
   when approval is off (once the period has settled: auto-lock days, else 7), leave year ends - carry-over

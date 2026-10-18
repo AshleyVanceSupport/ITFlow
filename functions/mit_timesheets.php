@@ -8,7 +8,8 @@
  * mit_settings (ts_*, mitTsSettings), charge codes, and each person's schedule, approver, employee ID
  * and pay type (mit_timesheet_people); personal choices in mit_user_preferences (timesheet.*).
  * PTO / sick balances are in functions/mit_leave.php, mileage and purchases to pay back in
- * functions/mit_reimbursements.php (both required at the end).
+ * functions/mit_reimbursements.php, California time records (start / meal / end times, meal premiums, California
+ * overtime, signed attestations) in functions/mit_ts_california.php (all required at the end).
  * A day's hours are:
  *   - ticket time, filled in on its own from the time logged on ticket replies that day - billable
  *     when the ticket is billable, the rest "other ticket time";
@@ -199,6 +200,8 @@ function mitTsPerson($user_id) {
         // Their own paid-break rule (M016) - null = the company's
         'break_minutes' => isset($row['break_minutes']) ? intval($row['break_minutes']) : null,
         'break_per' => isset($row['break_per']) ? intval($row['break_per']) : null,
+        // California non-exempt rules (M018): 1 / 0, null = by pay type - see mitTsCaOn()
+        'ca_rules' => isset($row['ca_rules']) && $row['ca_rules'] !== '' ? intval($row['ca_rules']) : null,
     ];
 }
 
@@ -722,7 +725,10 @@ function mitTsDays(array $user_ids, $from, $to) {
     $auto_paid = mitTsSettings()['auto_lost_paid'];
     $today = date('Y-m-d');
     $blank = ['billable' => 0, 'other' => 0, 'work' => 0, 'lost' => 0, 'auto_lost' => 0, 'leave_paid' => 0, 'leave_unpaid' => 0, 'unpaid_work' => 0,
-        'break' => 0, 'break_code_paid' => 0, 'break_paid' => 0, 'codes' => []];
+        'break' => 0, 'break_code_paid' => 0, 'break_paid' => 0, 'codes' => [],
+        // California non-exempt (functions/mit_ts_california.php): the typed start / end times are the hours worked
+        'ca' => false, 'clocked' => 0, 'unallocated' => 0, 'meal_premium' => 0, 'rest_premium' => 0];
+    $ca_days = mitTsCaDays($user_ids, $from, $to);
     $days = [];
     foreach ($user_ids as $user_id) {
         $user_id = intval($user_id);
@@ -768,6 +774,20 @@ function mitTsDays(array $user_ids, $from, $to) {
             if (!$auto_paid) {
                 $d['unpaid_work'] += $d['auto_lost'];
             }
+            if (isset($ca_days[$user_id][$date])) {
+                // Every minute between start and end is worked and paid: no unaccounted (lost) time, no unpaid work codes,
+                // and rest breaks are inside those times rather than added on
+                $c = $ca_days[$user_id][$date];
+                $d['lost'] -= $d['auto_lost'];
+                $d['auto_lost'] = 0;
+                $d['unpaid_work'] = 0;
+                $d['break_paid'] = 0;
+                $d['ca'] = true;
+                $d['clocked'] = $c['clocked'];
+                $d['unallocated'] = max(0, $c['clocked'] - ($d['billable'] + $d['other'] + $d['work'] + $d['lost']));
+                $d['meal_premium'] = $c['meal_premium'];
+                $d['rest_premium'] = $c['rest_premium'];
+            }
             $days[$user_id][$date] = $d;
         }
     }
@@ -776,6 +796,9 @@ function mitTsDays(array $user_ids, $from, $to) {
 
 /** Hours worked that are paid, for a day from mitTsDays() - paid breaks count (short breaks are work time for overtime). */
 function mitTsDayWorked(array $d) {
+    if (!empty($d['ca'])) {
+        return $d['clocked'];
+    }
     return $d['billable'] + $d['other'] + $d['work'] + $d['lost'] - $d['unpaid_work'] + $d['break_paid'] + $d['break_code_paid'];
 }
 
@@ -795,14 +818,14 @@ function mitTsTotals(array $user_ids, $from, $to) {
     foreach ($user_ids as $user_id) {
         $user_id = intval($user_id);
         $t = ['billable' => 0, 'other' => 0, 'codes' => [], 'work' => 0, 'lost' => 0, 'auto_lost' => 0, 'leave_paid' => 0, 'unpaid' => 0, 'overtime' => 0,
-            'break' => 0, 'break_paid' => 0];
+            'break' => 0, 'break_paid' => 0, 'double' => 0, 'clocked' => 0, 'unallocated' => 0, 'meal_premium' => 0, 'rest_premium' => 0, 'ca' => mitTsCaOn($user_id)];
         $leave_unpaid = 0;
         $unpaid_work = 0;
         foreach ($all_days[$user_id] as $date => $d) {
             if ($date < $from) {
                 continue;
             }
-            foreach (['billable', 'other', 'work', 'lost', 'auto_lost', 'leave_paid'] as $key) {
+            foreach (['billable', 'other', 'work', 'lost', 'auto_lost', 'leave_paid', 'clocked', 'unallocated', 'meal_premium', 'rest_premium'] as $key) {
                 $t[$key] += $d[$key];
             }
             foreach ($d['codes'] as $code_id => $m) {
@@ -819,7 +842,22 @@ function mitTsTotals(array $user_ids, $from, $to) {
         $t['paid'] = $t['worked'] - $unpaid_work + $t['leave_paid'] + $t['break_paid'];
         $t['total'] = $t['worked'] + $t['leave'] + $t['break_paid'];
 
-        if (($settings['ot_day'] || $settings['ot_week']) && mitTsPerson($user_id)['pay_type'] === 'hourly') {
+        if ($t['ca']) {
+            // California non-exempt: hours worked are the typed times; overtime, double time and the 7th day by California's rules
+            $t['worked'] = $t['clocked'];
+            $t['unpaid'] = $leave_unpaid;
+            $t['paid'] = $t['worked'] + $t['leave_paid'];
+            $t['total'] = $t['worked'] + $t['leave'];
+            $clocked = array_map(function ($d) {
+                return $d['clocked'];
+            }, $all_days[$user_id]);
+            foreach (mitTsCaOvertime($clocked) as $date => $split) {
+                if ($date >= $from) {
+                    $t['overtime'] += $split['overtime'];
+                    $t['double'] += $split['double'];
+                }
+            }
+        } elseif (($settings['ot_day'] || $settings['ot_week']) && mitTsPerson($user_id)['pay_type'] === 'hourly') {
             $week_regular = [];  // week start => regular minutes so far that week
             foreach ($all_days[$user_id] as $date => $d) {
                 $worked = mitTsDayWorked($d);
@@ -837,7 +875,7 @@ function mitTsTotals(array $user_ids, $from, $to) {
                 }
             }
         }
-        $t['regular'] = $t['paid'] - $t['overtime'];
+        $t['regular'] = $t['paid'] - $t['overtime'] - $t['double'];
         $totals[$user_id] = $t;
     }
     return $totals;
@@ -1098,6 +1136,10 @@ function mitTsSubmit(array $sheet, array $period) {
     }
     mitTsFillClosures($sheet['user_id'], $period);
     $sheet = mitTsSheetSaved($sheet['user_id'], $period);
+    // California non-exempt: only once they have signed (mitTsCaAttest, from the submit form)
+    if (mitTsCaOn($sheet['user_id']) && !mitTsCaAttestation($sheet['sheet_id'])) {
+        return [false, 'It needs their signed attestation - they submit it themselves.'];
+    }
     mysqli_query($mysqli, "UPDATE mit_timesheets SET status = 'submitted', submitted_at = NOW(), decision_note = NULL WHERE sheet_id = " . intval($sheet['sheet_id']));
     $user = mitTsUsers([$sheet['user_id']])[intval($sheet['user_id'])] ?? ['user_name' => 'Someone'];
     foreach (mitTsApproversFor($sheet['user_id']) as $approver_id => $approver) {
@@ -1116,6 +1158,7 @@ function mitTsWithdraw(array $sheet) {
         return [false, 'Only a submitted timesheet can be taken back.'];
     }
     mysqli_query($mysqli, "UPDATE mit_timesheets SET status = 'open', submitted_at = NULL WHERE sheet_id = " . intval($sheet['sheet_id']));
+    mitTsCaSupersede($sheet['sheet_id']);
     $period = mitTsPeriodFor($sheet['period_start']);
     logAudit('Timesheet', 'Edit', escapeSql(mitTsWho() . ' took back the timesheet for ' . $period['label']), 0, intval($sheet['user_id']));
     return [true, 'Taken back - you can change it and submit it again'];
@@ -1160,6 +1203,9 @@ function mitTsDecide(array $sheet, array $period, $decision, $note = '') {
         if (!in_array($sheet['status'], ['submitted', 'open', 'returned'], true)) {
             return [false, 'This timesheet is already approved.'];
         }
+        if (mitTsCaOn($sheet['user_id']) && mitTsSettings()['approval'] && !mitTsCaAttestation($sheet['sheet_id'])) {
+            return [false, 'It needs their signed attestation first - they sign it when they submit it.'];
+        }
         mitTsFillClosures($sheet['user_id'], $period);
         $sheet = mitTsSheetSaved($sheet['user_id'], $period);
         mitTsSnapshotTickets($sheet['user_id'], $period);
@@ -1174,6 +1220,7 @@ function mitTsDecide(array $sheet, array $period, $decision, $note = '') {
         }
         mysqli_query($mysqli, "UPDATE mit_timesheets SET status = 'returned', decided_by = " . intval($session_user_id) . ", decided_at = NOW(),
             decision_note = '" . escapeSql(mb_substr($note, 0, 255)) . "' WHERE sheet_id = " . intval($sheet['sheet_id']));
+        mitTsCaSupersede($sheet['sheet_id']);
         $text = 'sent back';
     }
     if (intval($sheet['user_id']) !== intval($session_user_id)) {
@@ -1193,6 +1240,7 @@ function mitTsReopen(array $sheet, array $period) {
     mysqli_query($mysqli, "DELETE FROM mit_time_entries WHERE user_id = " . intval($sheet['user_id']) . " AND source IN ('ticket_billable', 'ticket_other', 'auto_lost', 'break_paid')
         AND entry_date BETWEEN '" . escapeSql($period['start']) . "' AND '" . escapeSql($period['end']) . "'");
     mysqli_query($mysqli, "UPDATE mit_timesheets SET status = 'open', submitted_at = NULL, decided_by = 0, decided_at = NULL, decision_note = NULL WHERE sheet_id = " . intval($sheet['sheet_id']));
+    mitTsCaSupersede($sheet['sheet_id']);
     mitLeaveUnaccruePeriod($sheet['user_id'], $period);
     $user = mitTsUsers([$sheet['user_id']])[intval($sheet['user_id'])] ?? ['user_name' => 'user ' . intval($sheet['user_id'])];
     logAudit('Timesheet', 'Edit', escapeSql(mitTsWho() . ' reopened the approved timesheet of ' . $user['user_name'] . ' for ' . $period['label']), 0, intval($sheet['user_id']));
@@ -1332,3 +1380,4 @@ function mitTsSendReminders() {
 
 require_once __DIR__ . '/mit_leave.php';
 require_once __DIR__ . '/mit_reimbursements.php';
+require_once __DIR__ . '/mit_ts_california.php';
