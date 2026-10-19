@@ -200,6 +200,7 @@ break stock ITFlow, and lists what stops working after a move.
   their notes - so the n8n workflow picks them up again if you go back to it.
 - **Email reply recipients** – an email reply goes to the contact and every watcher again, as stock ITFlow does; the
   per-ticket choices stay unused in `mit_ticket_mail_choices`.
+- **Version number** – the footer and Admin > Update show ITFlow's own release (26.10) again; `MIT_CHANGELOG.md` is ours.
 - **Project tickets** – they show on the Tickets board, the client's Tickets tab and the Dispatch queue again, and
   calendar bookings go back to the tech's color. They keep no SLA (ours took it off) - set one by hand on a ticket that
   needs it.
@@ -366,6 +367,14 @@ the project color (set on the same card) with a dot in the tech's color. On the 
 tick box (with the project start / due dates), not Scheduled tickets. A ticket taken out of its project gets its
 SLA back counted from that moment. The cron job "Project Ticket SLAs" (every minute) catches tickets that join or
 leave a project through the API or a deleted project.
+
+## Version numbers
+
+Our build is numbered ITFlow's release + an iteration: **26.10.1**, 26.10.2 ... (`includes/mit_version.php`). It goes up by
+one with every push to `develop`, so beta always shows exactly which build it runs, and production shows the build it was
+promoted from. When an ITFlow release is merged it starts again at .1 (26.11.1). Each version has release notes in
+`MIT_CHANGELOG.md`, shown under Admin > Update; the admin footer shows the version too. ITFlow's own `CHANGELOG.md` and
+`includes/app_version.php` are left as ITFlow ships them.
 
 ## Smoke tests
 

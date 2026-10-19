@@ -14,6 +14,11 @@ model: see DEPLOYMENT.md.
 - Commit directly to `develop` (no feature branches or PRs into `develop`) – after the user
   confirms the push. PRs are only for `develop` → `MountaineerIT`.
 - **Ask the user to confirm before every `git push`** (any branch) and before merging any PR.
+- **Version (Oct 2026):** our build is ITFlow's release + an iteration - `MIT_VERSION` in `includes/mit_version.php`
+  (26.10.1, 26.10.2 ...). Every push to `develop` goes up by one: bump it in the last commit before the push and add a
+  "## <version> - <date>" entry with "- " lines at the top of `MIT_CHANGELOG.md` (ours - ITFlow's own is `CHANGELOG.md`,
+  never edit that). After merging an ITFlow release (APP_VERSION changes), start again at <new>.1. Tell the user the new
+  version when asking to push. Shown in the admin footer and on Admin > Update with the release notes.
 - Explain the plan before big changes or anything touching the schema.
 - **Our database changes go in `admin/database_updates/mountaineerit/` as M001.php, M002.php …**
   (agreed scheme). Never add files to ITFlow's numbered `admin/database_updates/*.php` and
@@ -46,7 +51,11 @@ model: see DEPLOYMENT.md.
   `scripts/setup_cli.php` (default `$repo_branch`).
 - `DEPLOYMENT.md`, `CLAUDE.md`, `scripts/install.sh` (Debian one-line installer), `tests/smoke/` (Playwright smoke
   tests, see its README) – ours.
-- `.htaccess`: one extra line (404 for `CLAUDE.md` / `DEPLOYMENT.md`, which map our code). Keep it if upstream changes the file.
+- `.htaccess`: one extra line (404 for `CLAUDE.md` / `DEPLOYMENT.md` / `MIT_CHANGELOG.md`, which map our code). Keep it if upstream changes the file.
+- Version and release notes: `includes/mit_version.php` + `MIT_CHANGELOG.md` (ours; `mitVersion()` / `mitChangelog()` in
+  `functions/mit_common.php`). Hooks: `includes/footer.php` (admin footer shows `mitVersion()`), `admin/update.php` (Release
+  shows it with "ITFlow <APP_VERSION>" under it, and requires `admin/includes/mit_changelog_card.php` under the version row).
+  `includes/app_version.php` stays ITFlow's.
 - Removed `.github/workflows/first-interaction.yml` (upstream's welcome bot – it points people
   to ITFlow's forum). If an upstream merge brings it back, delete it again.
 - Bug and security fixes made here ahead of upstream (Oct 2026, "Phase 1" – see `git log`):

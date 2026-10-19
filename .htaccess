@@ -1,4 +1,4 @@
 # Prevent access to .git, .github, and config.php
 RedirectMatch 401 ^/(\.git|\.github|config\.php)
-# Mountaineer IT: our notes (CLAUDE.md, DEPLOYMENT.md) map the code - not served
-RedirectMatch 404 ^/(CLAUDE|DEPLOYMENT)\.md$
+# Mountaineer IT: our notes (CLAUDE.md, DEPLOYMENT.md, MIT_CHANGELOG.md) map the code - not served
+RedirectMatch 404 ^/(CLAUDE|DEPLOYMENT|MIT_CHANGELOG)\.md$

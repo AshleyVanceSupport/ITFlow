@@ -103,3 +103,27 @@ function mitAsset($path) {
     $file = dirname(__DIR__) . $path;
     return escapeHtml($path . (is_file($file) ? '?v=' . filemtime($file) : ''));
 }
+
+require_once dirname(__DIR__) . '/includes/mit_version.php';
+
+/** Our build's version (26.10.1 ...) - includes/mit_version.php. */
+function mitVersion() {
+    return MIT_VERSION;
+}
+
+/**
+ * Our release notes from MIT_CHANGELOG.md, newest first: [['version', 'date', 'items' => [lines]]].
+ * A release is a "## <version> - <date>" heading followed by "- " lines.
+ */
+function mitChangelog() {
+    $file = dirname(__DIR__) . '/MIT_CHANGELOG.md';
+    $releases = [];
+    foreach (is_readable($file) ? file($file, FILE_IGNORE_NEW_LINES) : [] as $line) {
+        if (preg_match('/^##\s+([0-9][0-9.]*)\s*(?:-\s*(.+))?$/', $line, $m)) {
+            $releases[] = ['version' => $m[1], 'date' => trim($m[2] ?? ''), 'items' => []];
+        } elseif ($releases && preg_match('/^\s*-\s+(.+)$/', $line, $m)) {
+            $releases[count($releases) - 1]['items'][] = trim(str_replace('`', '', $m[1]));
+        }
+    }
+    return $releases;
+}
