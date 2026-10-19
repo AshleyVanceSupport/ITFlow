@@ -1,7 +1,7 @@
 <?php
 
 /*
- * Mountaineer IT - Admin > Settings > NinjaOne (functions/mit_ninjaone.php; handlers admin/post/mit_ninjaone.php).
+ * Mountaineer IT - Admin > Integrations > NinjaOne (functions/mit_ninjaone.php; handlers admin/post/mit_ninjaone.php).
  * Tabs: Settings (region, API keys, your NinjaOne address for the buttons, sync on / off, safety brake), Mapping (which
  * ITFlow client each NinjaOne organization goes to, and importing the n8n workflow's list), Sync runs (each run and its
  * report, Run now). ?tab=settings|mapping|runs, ?run= one run's report.

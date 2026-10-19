@@ -101,6 +101,7 @@
                         <p>AI Providers</p>
                     </a>
                 </li>
+                <?php require __DIR__ . '/mit_integrations_nav.php'; // Mountaineer IT: NinjaOne ?>
                 <li class="nav-item">
                     <a href="/admin/custom_links.php" class="nav-link <?= (basename($_SERVER['PHP_SELF']) == 'custom_links.php' ? 'active' : '') ?>">
                         <i class="nav-icon fas fa-external-link-alt"></i>

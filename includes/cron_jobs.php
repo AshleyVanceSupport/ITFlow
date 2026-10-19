@@ -142,7 +142,7 @@ function cronJobRegistry(): array
             'name' => 'mit_ninjaone_sync',
             'label' => 'NinjaOne Sync',
             'script' => 'mit_ninjaone_sync.php',
-            'description' => 'Brings NinjaOne devices in as assets of the ITFlow clients they are mapped to (Admin > Settings > NinjaOne). Does nothing until it is set up and switched on there.',
+            'description' => 'Brings NinjaOne devices in as assets of the ITFlow clients they are mapped to (Admin > Integrations > NinjaOne). Does nothing until it is set up and switched on there.',
             'schedule' => 'Interval',
             'interval_minutes' => 60,
         ],

@@ -137,7 +137,7 @@ function mitNinjaToken($fresh = false) {
     }
     $secret = mitDecryptSecret((string) mitSetting('ninja_client_secret', ''));
     if ($s['client_id'] === '' || $secret === '') {
-        throw new RuntimeException('NinjaOne is not set up - add the API client ID and secret in Admin > Settings > NinjaOne.');
+        throw new RuntimeException('NinjaOne is not set up - add the API client ID and secret in Admin > Integrations > NinjaOne.');
     }
     [$status, $json, $raw] = mitNinjaHttp('POST', $s['api_base'] . '/ws/oauth/token', [
         'grant_type' => 'client_credentials', 'client_id' => $s['client_id'], 'client_secret' => $secret, 'scope' => 'monitoring',

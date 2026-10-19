@@ -1,7 +1,7 @@
 <?php
 /*
  * Mountaineer IT - NinjaOne devices to ITFlow assets, hourly (mitNinjaSync in functions/mit_ninjaone.php).
- * Does nothing until NinjaOne is set up and its sync switched on (Admin > Settings > NinjaOne).
+ * Does nothing until NinjaOne is set up and its sync switched on (Admin > Integrations > NinjaOne).
  */
 
 // Set working directory to the directory this cron script lives at.

@@ -1,7 +1,7 @@
 <?php
 
 /*
- * Mountaineer IT - Admin > Settings > NinjaOne (admin/mit_ninjaone.php; functions/mit_ninjaone.php). Admins only (admin/post.php).
+ * Mountaineer IT - Admin > Integrations > NinjaOne (admin/mit_ninjaone.php; functions/mit_ninjaone.php). Admins only (admin/post.php).
  */
 
 defined('FROM_POST_HANDLER') || die("Direct file access is not allowed");

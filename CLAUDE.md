@@ -328,8 +328,9 @@ model: see DEPLOYMENT.md.
   `/v2/devices-detailed`, `/v2/device/{id}?expand=warranty` (warranty at most 150 a run, weekly per device). Tables M019:
   `mit_ninja_orgs` (mapping), `mit_ninja_devices` (link, status, warranty; FK assets SET NULL), `mit_ninja_runs` (report JSON).
   Settings `mit_settings` ninja_* (secret + token via `mitEncryptSecret`; `ninja_web_url` = the user's own NinjaOne address for
-  buttons, `mitNinjaCleanWebUrl`). Admin > Settings > NinjaOne `admin/mit_ninjaone.php` (tabs Settings / Mapping with n8n import
-  `mitNinjaImportN8n` / Sync runs), handlers `admin/post/mit_ninjaone.php`, menu in `admin/includes/mit_admin_nav.php`. Cron job
+  buttons, `mitNinjaCleanWebUrl`). Admin > Integrations > NinjaOne `admin/mit_ninjaone.php` (tabs Settings / Mapping with n8n import
+  `mitNinjaImportN8n` / Sync runs), handlers `admin/post/mit_ninjaone.php`, menu `admin/includes/mit_integrations_nav.php` (one require in
+  `admin/includes/side_nav.php` INTEGRATIONS after AI Providers). Cron job
   `mit_ninjaone_sync` hourly (`cron/mit_ninjaone_sync.php`, entry in `includes/cron_jobs.php`). Buttons + live status:
   `agent/js/mit_ninjaone.js` finds asset links (`modals/asset/asset.php?...id=`) and `[data-mit-ninja-asset]`, asks
   `agent/mit_ninjaone_ajax.php?status=` (`mitNinjaAssetDevices`: Support view + client scope, status re-asked after 5 min). Hooks:

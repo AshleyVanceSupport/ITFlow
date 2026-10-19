@@ -344,7 +344,7 @@ key does not end up in the web server's access log.
 
 ## NinjaOne
 
-Admin > Settings > NinjaOne. In NinjaOne make an API client app (Administration > Apps > API > Client app IDs: API
+Admin > Integrations > NinjaOne. In NinjaOne make an API client app (Administration > Apps > API > Client app IDs: API
 Services (machine-to-machine), scope Monitoring, client credentials) and put its ID and secret, your region and your own
 NinjaOne address (for the buttons) on the Settings tab. Then on Mapping either **Import from the n8n workflow** (its JSON
 file - takes over its organization -> client list) or pick a client per organization, and **Run sync now**. Read the run's
