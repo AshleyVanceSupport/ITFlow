@@ -177,6 +177,12 @@ model: see DEPLOYMENT.md.
   description shows as unread again). Saved through `ajax.php?mit_ticket_layout` scope read / unread (`mitTicketReadSet`,
   client-scoped); `mitTicketLayoutHtml` passes `read` from ITFlow's `$ticket_id` / `$ticket`. A box folded by Read is not
   saved as "Start collapsed" in a layout.
+  The same script stops the ticket timer when the reply form is really sent (a `submit` listener, not cancelled): it clears
+  ITFlow's `<id>-startTime` / `-pausedTime` / `ticket-timer-running-<id>` keys at once - ITFlow's own reset runs 100 ms after the
+  Add button's click (`agent/js/ticket_time_tracking.js`) and was lost when the page moved on sooner. A sessionStorage marker
+  keeps the reloaded ticket at 0 with auto-start on (removed after ITFlow's timer script has run). The email-reply checks in
+  `agent/js/mit_reply_recipients.js` run on the Add button's click in the capture phase, before ITFlow's reset, so a reply
+  that is not sent keeps its time. Re-check if upstream changes the timer script or its keys.
 - Procurement (Oct 2026, part 1 of 3): `functions/mit_procurement.php` (ours) - items to order
   (`mit_procurement_items`), purchase orders (`mit_purchase_orders`, `mit_po_lines`, `mit_po_tracking`,
   `mit_po_receipts`, `mit_po_history`; M009), approval when over `procurement_approval_over`

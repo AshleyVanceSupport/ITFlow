@@ -42,30 +42,42 @@
     });
     update();
 
+    // Checked when Send is clicked, before ITFlow's own click handler (agent/js/ticket_time_tracking.js), which resets the
+    // ticket timer - a reply that is not sent must keep its time
+    function problem() {
+        if (!emailPicked()) {
+            return '';
+        }
+        const picked = Array.prototype.filter.call(select.options, function (o) {
+            return o.selected;
+        }).map(function (o) {
+            return o.value.trim();
+        });
+        const wrong = picked.filter(function (v) {
+            return !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+        });
+        if (!picked.length) {
+            return 'Add at least one person to To, or pick "Public note" to post it without an email.';
+        }
+        if (wrong.length) {
+            return 'Not an email address: ' + wrong.join(', ') + ' - take it out of To or type the full address.';
+        }
+        return '';
+    }
+    function stop(e) {
+        const message = problem();
+        if (message) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            alert(message);
+        }
+    }
+    document.addEventListener('click', function (e) {
+        if (e.target.closest && e.target.closest('#ticket_add_reply')) {
+            stop(e);
+        }
+    }, true);
     if (form) {
-        form.addEventListener('submit', function (e) {
-            if (!emailPicked()) {
-                return;
-            }
-            const picked = Array.prototype.filter.call(select.options, function (o) {
-                return o.selected;
-            }).map(function (o) {
-                return o.value.trim();
-            });
-            const wrong = picked.filter(function (v) {
-                return !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-            });
-            let problem = '';
-            if (!picked.length) {
-                problem = 'Add at least one person to To, or pick "Public note" to post it without an email.';
-            } else if (wrong.length) {
-                problem = 'Not an email address: ' + wrong.join(', ') + ' - take it out of To or type the full address.';
-            }
-            if (problem) {
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                alert(problem);
-            }
-        }, true);
+        form.addEventListener('submit', stop, true);
     }
 })();

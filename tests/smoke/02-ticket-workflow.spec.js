@@ -57,6 +57,35 @@ test('add an internal note with time', async ({ page }) => {
     await expectClean(page, errors);
 });
 
+test('a running ticket timer stops when the note is sent', async ({ page }) => {
+    test.skip(!made.ticketId, 'no ticket');
+    const errors = watch(page);
+    const ticketPage = `agent/ticket.php?client_id=${made.clientId}&ticket_id=${made.ticketId}`;
+    const id = String(made.ticketId);
+    await visit(page, ticketPage, errors);
+    // A timer that has been running five minutes
+    await page.evaluate((id) => {
+        localStorage.setItem(`${id}-startTime`, String(Date.now() - 5 * 60 * 1000));
+        localStorage.removeItem(`${id}-pausedTime`);
+    }, id);
+    await visit(page, ticketPage, errors);
+    await expect(page.locator('#minutes')).toHaveValue('05');
+    await page.click('label[for=public_reply_type_opt0]');
+    await page.locator('#replyComposer.show').waitFor();
+    // Sent without ITFlow's click-then-100ms reset getting its turn (a quick server, Enter, a script)
+    const form = page.locator('form:has(#replyComposer)');
+    await fillForm(form, { ticket_reply: 'Smoke test timed note' });
+    await Promise.all([page.waitForNavigation(), form.evaluate((f) => {
+        window.tinymce && window.tinymce.triggerSave();
+        f.requestSubmit(f.querySelector('#ticket_add_reply'));
+    })]);
+    await expectClean(page);
+    await expect(page.locator('body')).toContainText('Smoke test timed note');
+    expect(await page.evaluate((id) => localStorage.getItem(`${id}-startTime`), id), 'the timer is not running any more').toBeNull();
+    await expect(page.locator('#minutes'), 'and is back at nothing').not.toHaveValue('05');
+    await expectClean(page, errors);
+});
+
 test('internal note notifies the tech picked', async ({ page }) => {
     test.skip(!made.ticketId, 'no ticket');
     const errors = watch(page);

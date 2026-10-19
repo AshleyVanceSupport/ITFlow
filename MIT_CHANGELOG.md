@@ -4,6 +4,11 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.66 - 2026-10-19
+- Fix: a running ticket timer now stops when the note is saved. ITFlow reset it a moment after the button was clicked, which was missed when the page moved on quickly, so the timer kept running.
+- After a note the timer stays at 0, even with timer auto-start on; it starts again the next time the ticket is opened.
+- An email reply that is not sent (nobody in To) keeps its timer.
+
 ## 26.10.65 - 2026-10-19
 - Internal notes: a "Notify" line to ping techs about the note - they get a bell notification and an email with the note and a link to the ticket. A reply to that email from their own address is added to the ticket as an internal note.
 
