@@ -33,8 +33,8 @@ $badge = function ($outcome) use ($outcomes) {
 
 ?>
 
-<div class="card card-dark">
-    <div class="card-header py-2 d-flex flex-wrap align-items-center gap-2">
+<div class="card">
+    <div class="card-header bg-dark py-2 d-flex flex-wrap align-items-center gap-2">
         <h3 class="card-title mt-2 me-auto"><i class="fas fa-fw fa-satellite-dish me-2"></i>NinjaOne</h3>
         <?php if ($configured) { ?>
             <form action="post.php" method="post" class="d-inline">
@@ -43,8 +43,8 @@ $badge = function ($outcome) use ($outcomes) {
             </form>
         <?php } ?>
     </div>
-    <div class="card-header pt-0 pb-0 border-0">
-        <ul class="nav nav-tabs card-header-tabs">
+    <div class="card-body pb-0">
+        <ul class="nav nav-tabs">
             <?php foreach (['settings' => 'Settings', 'mapping' => 'Mapping', 'runs' => 'Sync runs'] as $key => $label) { ?>
                 <li class="nav-item"><a class="nav-link <?= $tab === $key ? 'active' : '' ?>" href="?tab=<?= $key ?>"><?= $label ?></a></li>
             <?php } ?>
