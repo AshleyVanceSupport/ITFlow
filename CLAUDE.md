@@ -298,6 +298,15 @@ model: see DEPLOYMENT.md.
   of the period just ended, reminders - `mit_timesheets.reminded_due_at` / `reminded_late_at` -, leave earned
   when approval is off (once the period has settled: auto-lock days, else 7), leave year ends - carry-over
   worked out again for the first 60 days). A charge code belongs to one leave bank at most.
+  Holidays (Oct 2026): `functions/mit_ts_holidays.php` (ours, required from mit_timesheets.php) - Admin > Timesheets > Holidays tab
+  (year at a time; modal `admin/modals/mit_timesheets/holiday.php`, handlers `mit_ts_holiday_save` / `_delete` / `mit_ts_holidays_us`
+  in `admin/post/mit_timesheets.php`) edits ITFlow's own `business_holidays` (Admin > SLA closure days - ITFlow there has add /
+  delete / US year only). After a change: `getBusinessHolidays(true)` + ITFlow's `restampOpenSlaTickets()`, and `mitTsHolidayChanged`
+  puts open timesheets right - entries on the old date with a closure-fill code and the holiday's name as the note are deleted
+  (moved / removed) or renamed, and `mitTsFillClosures` fills the new date for days already gone; submitted / approved sheets
+  (`mitTsHolidayLocked`) are left and counted in the message. No tables of its own.
+  On the calendar as the `holidays` source (all-day, red): `mitHolidayCalendarSources` / `mitHolidayCalendarItems` in
+  `functions/mit_calendar.php`, hooks in `functions/calendar.php` calendarSources (`+=`) and calendarSourceItems (early return).
   Leave balances (M014): `functions/mit_leave.php` (ours, required from mit_timesheets.php) - banks
   (`mit_leave_banks`: codes that use it up, earned per period / per hour worked / yearly / not, max, carry-over
   keep all / cap / lose, year from 1 Jan or hire anniversary, waiting days, below 0 allowed), ledger

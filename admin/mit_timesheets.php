@@ -2,8 +2,8 @@
 
 /*
  * Mountaineer IT - Admin > Timesheets (functions/mit_timesheets.php): ?tab= settings (the company's rules),
- * codes (charge codes), leave (PTO / sick banks - functions/mit_leave.php) and people (each person's schedule,
- * approver, employee ID, pay type, hire date and leave balances).
+ * codes (charge codes), leave (PTO / sick banks - functions/mit_leave.php), people (each person's schedule,
+ * approver, employee ID, pay type, hire date and leave balances) and holidays (ITFlow's closure days - functions/mit_ts_holidays.php).
  * Handlers in admin/post/mit_timesheets.php.
  */
 
@@ -18,7 +18,7 @@ if (!mitModuleOn('timesheets')) {
     echo '<div class="alert alert-info">Timesheets are switched off (Settings > Modules) - these settings are kept for when they are on.</div>';
 }
 
-$tab = in_array($_GET['tab'] ?? '', ['settings', 'codes', 'leave', 'people'], true) ? $_GET['tab'] : 'settings';
+$tab = in_array($_GET['tab'] ?? '', ['settings', 'codes', 'leave', 'people', 'holidays'], true) ? $_GET['tab'] : 'settings';
 $settings = mitTsSettings();
 [$period_type, $period_anchor] = mitTsPeriodSettings();
 $csrf = $_SESSION['csrf_token'];
@@ -45,6 +45,10 @@ $company_week = mitTsCompanySchedule();
             <div class="card-tools">
                 <button type="button" class="btn btn-primary ajax-modal" data-modal-url="modals/mit_timesheets/leave_bank.php"><i class="fas fa-plus me-2"></i>New leave bank</button>
             </div>
+        <?php } elseif ($tab === 'holidays') { ?>
+            <div class="card-tools">
+                <button type="button" class="btn btn-primary ajax-modal" data-modal-url="modals/mit_timesheets/holiday.php?year=<?= intval($_GET['year'] ?? date('Y')) ?>"><i class="fas fa-plus me-2"></i>New holiday</button>
+            </div>
         <?php } ?>
     </div>
     <div class="card-body pb-0">
@@ -53,6 +57,7 @@ $company_week = mitTsCompanySchedule();
             <li class="nav-item"><a class="nav-link <?= $tab === 'codes' ? 'active' : '' ?>" href="?tab=codes"><i class="fas fa-tags me-2"></i>Charge codes</a></li>
             <li class="nav-item"><a class="nav-link <?= $tab === 'leave' ? 'active' : '' ?>" href="?tab=leave"><i class="fas fa-umbrella-beach me-2"></i>Leave</a></li>
             <li class="nav-item"><a class="nav-link <?= $tab === 'people' ? 'active' : '' ?>" href="?tab=people"><i class="fas fa-users me-2"></i>People</a></li>
+            <li class="nav-item"><a class="nav-link <?= $tab === 'holidays' ? 'active' : '' ?>" href="?tab=holidays"><i class="fas fa-calendar-day me-2"></i>Holidays</a></li>
         </ul>
     </div>
 
@@ -389,7 +394,7 @@ $company_week = mitTsCompanySchedule();
             </div>
         <?php } ?>
 
-    <?php } else {
+    <?php } elseif ($tab === 'people') {
         $people = mitTsUsers([], true);
         $result = mysqli_query($mysqli, "SELECT user_id, role_name FROM users LEFT JOIN user_roles ON role_id = user_role_id WHERE user_type = 1");
         $user_roles = [];
@@ -434,6 +439,50 @@ $company_week = mitTsCompanySchedule();
                     <?php } ?>
                 </tbody>
             </table>
+        </div>
+    <?php } elseif ($tab === 'holidays') {
+        $year = max(2000, min(2100, intval($_GET['year'] ?? date('Y'))));
+        $holidays = mitTsHolidays($year);
+        $fill_codes = mitTsHolidayCodes(); ?>
+        <div class="card-body">
+            <p class="text-body-secondary mb-2">Days the office is closed. Timesheets fill them in with each person's normal hours<?= $fill_codes ? ' on <strong>' . escapeHtml(implode(', ', array_column($fill_codes, 'code_name'))) . '</strong>' : '' ?>, and SLA clocks
+                do not run on them. They are the same list as Admin &gt; SLA &gt; Closure days. Changing one puts open timesheets right; submitted and approved ones are left as they are.</p>
+            <?php if (!$fill_codes) { ?>
+                <div class="alert alert-warning py-2">No charge code fills holidays in yet - edit one (e.g. Holiday) on the <a href="?tab=codes" class="alert-link">Charge codes</a> tab and tick "Fill in closure days".</div>
+            <?php } ?>
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <div class="btn-group">
+                    <a class="btn btn-light border" href="?tab=holidays&year=<?= $year - 1 ?>" title="Previous year"><i class="fas fa-chevron-left"></i></a>
+                    <span class="btn btn-light border disabled fw-bold"><?= $year ?></span>
+                    <a class="btn btn-light border" href="?tab=holidays&year=<?= $year + 1 ?>" title="Next year"><i class="fas fa-chevron-right"></i></a>
+                </div>
+                <form action="post.php" method="post" class="ms-auto">
+                    <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
+                    <input type="hidden" name="year" value="<?= $year ?>">
+                    <button type="submit" name="mit_ts_holidays_us" class="btn btn-outline-secondary"><i class="fas fa-flag-usa me-2"></i>Add US holidays for <?= $year ?></button>
+                </form>
+            </div>
+            <?php if (!$holidays) { ?>
+                <p class="text-muted">No holidays in <?= $year ?> yet.</p>
+            <?php } else { ?>
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead><tr><th>Date</th><th>Day</th><th>Holiday</th><th></th></tr></thead>
+                    <tbody>
+                        <?php foreach ($holidays as $holiday) {
+                            $past = $holiday['holiday_date'] < date('Y-m-d'); ?>
+                            <tr class="<?= $past ? 'text-secondary' : '' ?>" data-mit-holiday="<?= escapeHtml($holiday['holiday_date']) ?>">
+                                <td class="text-nowrap"><?= escapeHtml(date('M j, Y', strtotime($holiday['holiday_date']))) ?></td>
+                                <td><?= escapeHtml(date('l', strtotime($holiday['holiday_date']))) ?></td>
+                                <td><?= escapeHtml($holiday['holiday_name']) ?></td>
+                                <td class="text-end text-nowrap">
+                                    <button type="button" class="btn btn-sm btn-light border ajax-modal" data-modal-url="modals/mit_timesheets/holiday.php?id=<?= intval($holiday['holiday_id']) ?>" title="Edit"><i class="fas fa-fw fa-pen"></i></button>
+                                    <a class="btn btn-sm btn-light border confirm-link" href="post.php?mit_ts_holiday_delete=<?= intval($holiday['holiday_id']) ?>&csrf_token=<?= $csrf ?>" title="Remove"><i class="fas fa-fw fa-trash text-danger"></i></a>
+                                </td>
+                            </tr>
+                        <?php } ?>
+                    </tbody>
+                </table>
+            <?php } ?>
         </div>
     <?php } ?>
 </div>

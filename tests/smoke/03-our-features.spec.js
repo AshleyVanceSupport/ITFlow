@@ -2,7 +2,7 @@
 // alone. Uses the admin login's own preferences - run with a test login.
 
 const { test, expect } = require('@playwright/test');
-const { watch, visit, expectClean, fetchText, getJson, csrf } = require('./helpers');
+const { watch, visit, expectClean, fetchText, getJson, csrf, openModal, fillForm, submit } = require('./helpers');
 
 test('Tickets list remembers the view, and Reset forgets it', async ({ page }) => {
     const pill = () => page.locator('.card-header nav a.nav-link.active, nav.nav a.nav-link.active').first().innerText();
@@ -256,5 +256,35 @@ test('our version (ITFlow release + iteration) and its release notes on Admin > 
     await expect(page.locator('footer')).toContainText(`ITFlow ${version}`);
     const notes = await fetchText(page, '/MIT_CHANGELOG.md');
     expect(notes.status, 'our notes are not served').toBe(404);
+    await expectClean(page, errors);
+});
+
+test('Admin > Timesheets > Holidays: add, edit and remove a holiday', async ({ page }) => {
+    const errors = watch(page);
+    await visit(page, 'admin/mit_timesheets.php?tab=holidays&year=2099', errors);
+    test.skip(await page.locator('text=Timesheets need the database update').count() > 0, 'Timesheets not set up');
+    await expect(page.locator('a.nav-link', { hasText: 'Holidays' }), 'the Holidays tab').toHaveCount(1);
+    const row = () => page.locator('tr[data-mit-holiday="2099-12-30"]');
+    if (await row().count()) { // left from a run that failed
+        await page.goto(new URL(await row().locator('a[href*="mit_ts_holiday_delete="]').getAttribute('href'), page.url()).href);
+        await visit(page, 'admin/mit_timesheets.php?tab=holidays&year=2099', errors);
+    }
+    let modal = await openModal(page, 'modals/mit_timesheets/holiday.php?year=2099');
+    await fillForm(modal, { holiday_date: '2099-12-30', holiday_name: 'Smoke test holiday' });
+    await submit(modal, 'mit_ts_holiday_save');
+    await expect(row(), 'the new holiday in its year').toContainText('Smoke test holiday');
+
+    const id = new URL(await row().locator('[data-modal-url*="holiday.php?id="]').getAttribute('data-modal-url'), page.url()).searchParams.get('id');
+    // It shows on the calendar, under Holidays
+    const cal = await fetchText(page, '/agent/ajax.php?calendar_items=1&from=2099-12-30&to=2099-12-30&sources=holidays');
+    expect(JSON.parse(cal.text).map((i) => i.id), 'on the calendar').toContain(`holiday-${id}`);
+    modal = await openModal(page, `modals/mit_timesheets/holiday.php?id=${id}`);
+    await fillForm(modal, { holiday_name: 'Smoke test holiday renamed' });
+    await submit(modal, 'mit_ts_holiday_save');
+    await expect(row()).toContainText('Smoke test holiday renamed');
+
+    await page.goto(new URL(await row().locator('a[href*="mit_ts_holiday_delete="]').getAttribute('href'), page.url()).href);
+    await visit(page, 'admin/mit_timesheets.php?tab=holidays&year=2099', errors);
+    await expect(row(), 'removed').toHaveCount(0);
     await expectClean(page, errors);
 });

@@ -266,3 +266,29 @@ function mitCleanCalendarState(array $state) {
 // Repeats by weekday (the third Wednesday, the last Friday) for recurring tickets and events
 require_once __DIR__ . '/mit_recurring.php';
 require_once __DIR__ . '/mit_ticket_techs.php';
+
+/*
+ * ---------- Holidays on the calendar ----------
+ * ITFlow's closure days (business_holidays - Admin > SLA, and Admin > Timesheets > Holidays) as an all-day calendar
+ * source: hooks in functions/calendar.php calendarSources (+=) and calendarSourceItems (early return).
+ */
+
+function mitHolidayCalendarSources() {
+    return ['holidays' => ['label' => 'Holidays', 'icon' => 'fa-calendar-day', 'color' => '#dc3545', 'module' => 'module_support', 'default' => true,
+        'title' => 'Days the office is closed (Admin > Timesheets > Holidays, the same as the SLA closure days)']];
+}
+
+/** The holidays between two dates, as all-day items. */
+function mitHolidayCalendarItems($from, $to) {
+    global $mysqli;
+    $from = escapeSql(substr((string) $from, 0, 10));
+    $to = escapeSql(substr((string) $to, 0, 10));
+    $items = [];
+    $result = mysqli_query($mysqli, "SELECT holiday_id, holiday_date, holiday_name FROM business_holidays WHERE holiday_date BETWEEN '$from' AND '$to' ORDER BY holiday_date");
+    while ($row = mysqli_fetch_assoc($result)) {
+        $items[] = ['id' => 'holiday-' . intval($row['holiday_id']), 'title' => $row['holiday_name'], 'start' => $row['holiday_date'], 'allDay' => true,
+            'color' => '#dc3545', 'editable' => false,
+            'extendedProps' => ['kind' => 'holiday', 'icon' => 'fa-calendar-day', 'detail' => 'Holiday - the office is closed']];
+    }
+    return $items;
+}

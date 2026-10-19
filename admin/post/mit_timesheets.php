@@ -302,3 +302,42 @@ if (isset($_GET['mit_leave_adjust_delete'])) {
     flashAlert('Removed', 'error');
     redirect();
 }
+
+if (isset($_POST['mit_ts_holiday_save'])) {
+
+    validateCSRFToken();
+
+    $date = (string) ($_POST['holiday_date'] ?? '');
+    [$ok, $message] = mitTsHolidaySave($_POST['holiday_id'] ?? 0, $date, $_POST['holiday_name'] ?? '');
+    if ($ok) {
+        logAudit('Settings', intval($_POST['holiday_id'] ?? 0) ? 'Edit' : 'Create', escapeSql("$session_name saved holiday $date - " . trim((string) ($_POST['holiday_name'] ?? ''))));
+    }
+    flashAlert(escapeHtml($message), $ok ? 'success' : 'error');
+    redirect('mit_timesheets.php?tab=holidays&year=' . ($ok ? intval(substr($date, 0, 4)) : intval(date('Y'))));
+}
+
+if (isset($_GET['mit_ts_holiday_delete'])) {
+
+    validateCSRFToken();
+
+    $old = mitTsHoliday($_GET['mit_ts_holiday_delete']);
+    [$ok, $message] = mitTsHolidayDelete($_GET['mit_ts_holiday_delete']);
+    if ($ok) {
+        logAudit('Settings', 'Delete', escapeSql("$session_name removed holiday {$old['holiday_date']} - {$old['holiday_name']}"));
+    }
+    flashAlert(escapeHtml($message), $ok ? 'success' : 'error');
+    redirect('mit_timesheets.php?tab=holidays&year=' . ($old ? intval(substr($old['holiday_date'], 0, 4)) : intval(date('Y'))));
+}
+
+if (isset($_POST['mit_ts_holidays_us'])) {
+
+    validateCSRFToken();
+
+    $year = intval($_POST['year'] ?? 0);
+    [$ok, $message] = mitTsHolidaysAddUs($year);
+    if ($ok) {
+        logAudit('Settings', 'Create', escapeSql("$session_name added the US holidays for $year"));
+    }
+    flashAlert(escapeHtml($message), $ok ? 'success' : 'error');
+    redirect("mit_timesheets.php?tab=holidays&year=$year");
+}

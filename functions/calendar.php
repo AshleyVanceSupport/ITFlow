@@ -540,6 +540,7 @@ function calendarSources() {
             'title' => 'Unpaid invoices on the day they fall due'],
     ];
     $sources += function_exists('mitOutlookCalendarSources') ? mitOutlookCalendarSources() : []; // Mountaineer IT: Outlook busy times
+    $sources += function_exists('mitHolidayCalendarSources') ? mitHolidayCalendarSources() : []; // Mountaineer IT: holidays (closure days)
     return array_filter($sources, function ($source) {
         return lookupUserPermission($source['module']) >= 1;
     });
@@ -565,6 +566,9 @@ function calendarSourceItems($key, $from, $to, array $opts = []) {
     $source = $sources[$key];
     if ($key === 'outlook_busy') {
         return mitOutlookBusyItems($from, $to, $opts); // Mountaineer IT
+    }
+    if ($key === 'holidays' && function_exists('mitHolidayCalendarItems')) {
+        return mitHolidayCalendarItems($from, $to); // Mountaineer IT
     }
     $client_id = intval($opts['client_id'] ?? 0);
     $user_id = intval($opts['user_id'] ?? 0);

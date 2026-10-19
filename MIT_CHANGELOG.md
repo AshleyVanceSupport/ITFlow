@@ -4,6 +4,11 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.68 - 2026-10-19
+- Timesheets: a Holidays tab under Admin > Timesheets - add, edit (date and name) and remove holidays a year at a time, or add the US holidays for a year. They are the same closure days as Admin > SLA.
+- Changing a holiday puts open timesheets right straight away (hours move with it, renamed, or come off); submitted and approved timesheets are left as they are.
+- Holidays show on the calendar too, all day in red, under a new Holidays tick box.
+
 ## 26.10.67 - 2026-10-19
 - Fix: the Notify and To lists on the reply box close when you click into the note editor (it is its own frame, so the click was not seen and the list stayed open).
 
