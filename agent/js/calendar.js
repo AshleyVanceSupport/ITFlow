@@ -264,6 +264,12 @@
                 time.textContent = arg.event.allDay ? 'All day' : arg.timeText;
                 wrap.appendChild(time);
             }
+            if (props.tech_color) { // Mountaineer IT: a project booking - the tech's color as a dot (functions/mit_projects.php)
+                const dot = document.createElement('span');
+                dot.className = 'mit-tech-dot';
+                dot.style.background = props.tech_color;
+                wrap.appendChild(dot);
+            }
             if (props.icon) {
                 const icon = document.createElement('i');
                 icon.className = 'fas fa-fw ' + props.icon + ' itflow-cal-icon';

@@ -216,6 +216,9 @@ if ($n = $count("SELECT COUNT(*) FROM mit_ts_work_periods") + $count("SELECT COU
 if ($n = $count("SELECT COUNT(*) FROM mit_ninja_devices WHERE asset_id IS NOT NULL")) {
     $after[] = "NinjaOne: $n assets linked to NinjaOne devices - the sync, mapping and NinjaOne buttons stop; the assets stay (with the [NinjaOne Sync] lines in their notes, which the n8n workflow reads).";
 }
+if ($n = $count("SELECT COUNT(*) FROM tickets WHERE ticket_project_id > 0 AND ticket_resolved_at IS NULL AND ticket_closed_at IS NULL")) {
+    $after[] = "Project tickets: $n open ticket" . ($n === 1 ? '' : 's') . " in projects show on the Tickets board again in stock ITFlow, and keep no SLA (we took it off) - give one an SLA by hand on the ticket if it needs it. Calendar bookings go back to the tech's color.";
+}
 if ($n = $count("SELECT COUNT(*) FROM mit_ticket_parts")) {
     $after[] = "Ticket parts: $n part" . ($n === 1 ? '' : 's') . " on tickets are not shown by stock ITFlow (billed ones are ordinary invoice lines and stay). Products' \"Order from\" vendor is not shown either.";
 }

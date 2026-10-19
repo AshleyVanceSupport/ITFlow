@@ -337,6 +337,18 @@ model: see DEPLOYMENT.md.
   the ticket page gets the script through `mitTicketLayoutHtml` (no extra line in agent/ticket.php); one line each in
   `agent/asset.php` and `agent/modals/asset/asset.php` (`mitNinjaAssetButton`). A test install may set `MIT_NINJA_API_BASE` in
   config.php to point at a stand-in API (never on a real one).
+- Project tickets kept apart (Oct 2026): `functions/mit_projects.php` (ours) - a ticket in a project (ITFlow's
+  `ticket_project_id`) is off the Tickets board / client tab (`mitProjectTicketsShows` adds `ticket_project_id = 0` to each
+  view of `agent/tickets.php` plus a "Projects" view, unless the Project filter is set), the Dispatch queue + its menu count
+  and the dashboard's attention counts (`mitServiceTicketsAnd`); still in My tickets, Workload and the calendar. No SLA:
+  `mitProjectSlaOff` forces SLA 0 in `functions/sla.php` applyTicketSla, and `mitProjectSlaStart` starts a ticket's SLA from
+  when it left a project (`mit_project_ticket_sla`, M020). Moves call `mitProjectTicketMoved` (one line each in
+  `agent/post/ticket.php` edit_ticket_project + bulk project, `functions/project.php` projectAddTicket / projectRemoveTicket);
+  cron job `mit_project_tickets` (`cron/mit_project_tickets.php`, every minute, `mitProjectTicketsSweep`) catches the API and
+  project delete. Calendar: `mitProjectCalendarItems` (one line in `functions/calendar.php` tickets source) - project color,
+  `extendedProps.tech_color` drawn as a dot by `agent/js/calendar.js` (eventContent, 4 lines) and `agent/js/mit_dispatch.js`.
+  Settings card `admin/includes/mit_project_card.php` (one require at the end of `admin/settings_project.php`), handler
+  `admin/post/mit_project_settings.php`; `mit_settings` project_tickets_apart / project_ticket_color.
 - Remembered list views (Oct 2026): `functions/mit_list_views.php` (ours) - the Tickets list keeps each agent's
   pill, filters, sort and List / Board in `mit_user_preferences` `listview.tickets` (like the calendar) and puts
   them back when Tickets is opened with none; saved only when picked on the page itself (Referer), never q / page /

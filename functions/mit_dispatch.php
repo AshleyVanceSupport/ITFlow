@@ -67,7 +67,7 @@ function mitDispatchState() {
  */
 function mitDispatchQueue($tab, array $filters = []) {
     global $mysqli;
-    $where = "ticket_resolved_at IS NULL AND ticket_closed_at IS NULL AND ticket_archived_at IS NULL" . clientScopeSql('ticket_client_id');
+    $where = "ticket_resolved_at IS NULL AND ticket_closed_at IS NULL AND ticket_archived_at IS NULL" . clientScopeSql('ticket_client_id') . mitServiceTicketsAnd(); // project tickets are booked from their project
     $client_id = intval($filters['client_id'] ?? 0);
     if ($client_id && hasClientAccess($client_id)) {
         $where .= " AND ticket_client_id = $client_id";

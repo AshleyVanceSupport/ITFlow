@@ -61,3 +61,4 @@ require_once __DIR__ . '/functions/mit_dispatch.php';
 require_once __DIR__ . '/functions/mit_list_views.php';
 require_once __DIR__ . '/functions/mit_cron_health.php';
 require_once __DIR__ . '/functions/mit_ninjaone.php';
+require_once __DIR__ . '/functions/mit_projects.php';

@@ -198,6 +198,9 @@ break stock ITFlow, and lists what stops working after a move.
 - **NinjaOne** – the sync, the mapping page and the NinjaOne buttons go (the mapping and device links stay in the
   `mit_ninja_*` tables). The assets it made are ordinary ITFlow assets and stay, with the `[NinjaOne Sync]` lines in
   their notes - so the n8n workflow picks them up again if you go back to it.
+- **Project tickets** – they show on the Tickets board, the client's Tickets tab and the Dispatch queue again, and
+  calendar bookings go back to the tech's color. They keep no SLA (ours took it off) - set one by hand on a ticket that
+  needs it.
 - **Cron alerts** – the top-bar warning, the alert emails and `/mit_health.php` go; Maintenance > Cron still shows
   ITFlow's own status. Point your uptime monitor elsewhere (it will report the address as gone).
 - **Remembered Tickets filters** – stock ITFlow opens Tickets with its defaults every time (the saved
@@ -350,6 +353,16 @@ NinjaOne address (for the buttons) on the Settings tab. Then on Mapping either *
 file - takes over its organization -> client list) or pick a client per organization, and **Run sync now**. Read the run's
 report; when it looks right, switch the hourly sync on and **turn the n8n workflow off** (both would edit the same
 assets). It finds assets n8n made by the NinjaOne device ID in their notes, so the switch makes no duplicates.
+
+## Project tickets
+
+Admin > Settings > Project > Project tickets (on by default). A ticket in a project is kept apart from service
+tickets: off the Tickets board (its own **Projects** view there; the Project filter still finds them), the client's
+Tickets tab and the Dispatch queue, and with no SLA - the project's due dates count. Techs still see their own in
+My tickets on the dashboard, the Dispatch workload, and on the calendar and Dispatch, where project bookings are in
+the project color (set on the same card) with a dot in the tech's color. A ticket taken out of its project gets its
+SLA back counted from that moment. The cron job "Project Ticket SLAs" (every minute) catches tickets that join or
+leave a project through the API or a deleted project.
 
 ## Smoke tests
 

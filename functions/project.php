@@ -574,6 +574,7 @@ function projectAddTicket($project, $ticket) {
     }
     mysqli_query($mysqli, "UPDATE tickets SET ticket_project_id = " . intval($project['project_id']) . ", ticket_updated_at = ticket_updated_at WHERE ticket_id = $ticket_id");
     logTicketHistory($ticket_id, "$session_name added the ticket to project " . escapeSql(projectReference($project) . ' - ' . $project['project_name']));
+    function_exists('mitProjectTicketMoved') && mitProjectTicketMoved($ticket_id); // Mountaineer IT: no SLA in a project
     return '';
 }
 
@@ -583,6 +584,7 @@ function projectRemoveTicket($ticket) {
     $ticket_id = intval($ticket['ticket_id']);
     mysqli_query($mysqli, "UPDATE tickets SET ticket_project_id = 0, ticket_updated_at = ticket_updated_at WHERE ticket_id = $ticket_id");
     logTicketHistory($ticket_id, "$session_name took the ticket out of its project");
+    function_exists('mitProjectTicketMoved') && mitProjectTicketMoved($ticket_id); // Mountaineer IT: its SLA comes back
 }
 
 /** Mark it complete - only once none of its tickets is open. '' when done, else why not. */

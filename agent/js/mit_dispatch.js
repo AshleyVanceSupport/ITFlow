@@ -72,6 +72,13 @@
         div.textContent = text == null ? '' : String(text);
         return div.innerHTML;
     }
+    // A project booking's tech, as a dot in their color (the booking itself is in the project color)
+    function mitTechDot(color) {
+        const dot = document.createElement('span');
+        dot.className = 'mit-tech-dot';
+        dot.style.background = color;
+        return dot;
+    }
     function shownTechs() {
         return techs.filter(function (t) {
             return state.hidden.indexOf(t.id) === -1;
@@ -603,6 +610,13 @@
                 eventDidMount: function (info) {
                     const props = info.event.extendedProps || {};
                     info.el.dataset.kind = props.kind || '';
+                    if (props.tech_color) {
+                        let main = info.el; // the innermost first line - the time - so the dot sits in front of it
+                        while (main.firstElementChild) {
+                            main = main.firstElementChild;
+                        }
+                        main.prepend(mitTechDot(props.tech_color));
+                    }
                     info.el.setAttribute('title', info.event.title + (props.detail ? '\n' + props.detail : ''));
                 },
                 eventClick: function (info) {
@@ -731,7 +745,7 @@
                         return '<div class="mit-dw-chip" style="background: ' + escapeText(item.color || '#6c757d') + '" data-kind="' + escapeText(props.kind || '') + '"'
                             + (props.kind === 'ticket' && item.editable ? ' data-ticket="' + props.ticket_id + '" data-start="' + escapeText(String(item.start).substring(0, 16)) + '" data-minutes="' + minutes + '" data-onsite="' + (props.icon === 'fa-car' ? 1 : 0) + '"' : '')
                             + ' data-modal="' + escapeText(props.modal || '') + '" title="' + escapeText(item.title + (props.detail ? '\n' + props.detail : '')) + '">'
-                            + escapeText(startText + ' ' + item.title) + '</div>';
+                            + (props.tech_color ? mitTechDot(props.tech_color).outerHTML : '') + escapeText(startText + ' ' + item.title) + '</div>';
                     }).join('') + '</td>';
                 }).join('');
                 html += '<tr><th class="small"><span class="d-inline-block rounded-circle me-1" style="width: 10px; height: 10px; background: ' + escapeText(t.color) + '"></span>'

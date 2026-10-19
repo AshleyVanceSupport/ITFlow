@@ -43,6 +43,8 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
     .mit-dispatch-week th, .mit-dispatch-week td { vertical-align: top; }
     .mit-dispatch-week td.mit-dw-cell { min-width: 130px; height: 70px; padding: .25rem; }
     .mit-dispatch-week td.mit-dw-cell.is-off { background: var(--bs-tertiary-bg); }
+    /* A project booking (functions/mit_projects.php) - project color, the tech's color as a dot */
+    .mit-tech-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: .3rem; vertical-align: middle; flex-shrink: 0; box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .9); }
     .mit-dw-chip { font-size: .78rem; border-radius: .3rem; padding: .15rem .35rem; margin-bottom: .2rem; color: #fff; cursor: grab; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .mit-dw-chip[data-kind="outlook_busy"], .mit-dw-chip[data-kind="helper"] { cursor: default; }
     .mit-dw-cell .sortable-ghost, .mit-dispatch-queue .sortable-ghost { opacity: .4; }

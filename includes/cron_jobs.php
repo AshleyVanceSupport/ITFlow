@@ -147,6 +147,15 @@ function cronJobRegistry(): array
             'interval_minutes' => 60,
         ],
         [
+            // Mountaineer IT (functions/mit_projects.php)
+            'name' => 'mit_project_tickets',
+            'label' => 'Project Ticket SLAs',
+            'script' => 'mit_project_tickets.php',
+            'description' => 'Takes the SLA off tickets that joined a project and gives it back to ones that left, for the ways in and out that do not do it at once (the API, deleting a project).',
+            'schedule' => 'Interval',
+            'interval_minutes' => 1,
+        ],
+        [
             // Mountaineer IT (functions/mit_cron_health.php)
             'name' => 'mit_cron_watch',
             'label' => 'Cron Watch',

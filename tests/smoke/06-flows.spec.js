@@ -1,7 +1,7 @@
 // Our features end to end through their real forms: procurement (item to order ->
 // PO -> approve -> order -> receive), a ticket's parts, mileage and helper agents,
 // quote pricing from our cost (and that the customer never sees the cost), and a
-// recurring ticket on "the third Wednesday". Works on the first client in the list,
+// recurring ticket on "the third Wednesday", and a ticket put in a project and taken out. Works on the first client in the list,
 // on a "Smoke test" ticket / quote / recurring ticket it makes and deletes again.
 // The received PO cannot be deleted - its line is named "Smoke test ...".
 // Nothing is emailed to a customer: no contact on anything we make.
@@ -14,7 +14,7 @@ const { smokeName, watch, visit, openModal, fillForm, submit, flash, action, exp
 test.describe.configure({ mode: 'serial' });
 
 const techState = path.join(__dirname, '.auth', 'tech.json');
-const made = { clientId: 0, ticketId: 0, ticketName: smokeName('flows ticket'), quoteId: 0, recurringName: smokeName('recurring'), raisedTicketId: 0, recurringId: 0, poId: 0 };
+const made = { clientId: 0, ticketId: 0, ticketName: smokeName('flows ticket'), quoteId: 0, recurringName: smokeName('recurring'), raisedTicketId: 0, recurringId: 0, poId: 0, projectId: 0 };
 const ticketUrl = () => `agent/ticket.php?client_id=${made.clientId}&ticket_id=${made.ticketId}`;
 
 // A box on the ticket page, by its title icon (the layout script may move it)
@@ -191,6 +191,43 @@ test('an additional agent on the ticket, then taken off', async ({ page, browser
     await expect(prop).not.toContainText(techName);
 });
 
+test('a ticket in a project leaves the Tickets board and comes back when taken out', async ({ page }) => {
+    test.skip(!made.ticketId, 'no ticket');
+    const errors = watch(page);
+    const list = (show) => `agent/tickets.php?client_id=${made.clientId}&show=${show}&view=list`;
+    const onList = async (show) => {
+        await visit(page, list(show), errors);
+        return page.locator('a', { hasText: made.ticketName }).count();
+    };
+    expect(await onList('open'), 'a service ticket is on Open').toBeGreaterThan(0);
+
+    // A project for the client, and the ticket put in it
+    let modal = await openModal(page, `modals/project/project_add.php?client_id=${made.clientId}`, 'lg');
+    await fillForm(modal, { name: smokeName('project') });
+    await submit(modal, 'add_project');
+    made.projectId = Number(new URL(page.url()).searchParams.get('project_id'));
+    expect(made.projectId, `project page after saving (${await flash(page)})`).toBeGreaterThan(0);
+    await visit(page, ticketUrl(), errors);
+    modal = await openModal(page, `modals/ticket/ticket_edit_project.php?id=${made.ticketId}`);
+    await fillForm(modal, { project: String(made.projectId) });
+    await submit(modal, 'edit_ticket_project');
+
+    expect(await onList('open'), 'a project ticket is off Open').toBe(0);
+    expect(await onList('all'), 'and off All').toBe(0);
+    expect(await onList('projects'), 'but on the Projects view').toBeGreaterThan(0);
+
+    // Taken out of the project, it is a service ticket again
+    await visit(page, ticketUrl(), errors);
+    modal = await openModal(page, `modals/ticket/ticket_edit_project.php?id=${made.ticketId}`);
+    await fillForm(modal, { project: '0' });
+    await submit(modal, 'edit_ticket_project');
+    expect(await onList('open'), 'back on Open').toBeGreaterThan(0);
+    expect(await onList('projects')).toBe(0);
+    await action(page, `delete_project=${made.projectId}`, `agent/project.php?client_id=${made.clientId}&project_id=${made.projectId}`);
+    made.projectId = 0;
+    await expectClean(page, errors);
+});
+
 test('recurring ticket on the third Wednesday', async ({ page }) => {
     test.skip(!made.clientId, 'no client');
     const start = thirdWednesday(1);
@@ -296,6 +333,9 @@ test.afterAll(async ({ browser }) => {
     }
     if (made.raisedTicketId) {
         await action(page, `delete_ticket=${made.raisedTicketId}`, `agent/ticket.php?client_id=${made.clientId}&ticket_id=${made.raisedTicketId}`);
+    }
+    if (made.projectId) {
+        await action(page, `delete_project=${made.projectId}`, `agent/project.php?client_id=${made.clientId}&project_id=${made.projectId}`);
     }
     if (made.recurringId) {
         await action(page, `delete_recurring_ticket=${made.recurringId}`, 'agent/recurring_tickets.php');

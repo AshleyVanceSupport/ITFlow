@@ -223,7 +223,7 @@ function dashboardDuration($seconds) {
  */
 function dashboardAttention($access) {
     $items = [];
-    $ticket_scope = clientScopeSql('ticket_client_id');
+    $ticket_scope = clientScopeSql('ticket_client_id') . (function_exists('mitServiceTicketsAnd') ? mitServiceTicketsAnd() : ''); // Mountaineer IT: service tickets, like the Tickets page
 
     if ($access['tickets']) {
         // Same rule as tickets.php?sla=breached, on open tickets

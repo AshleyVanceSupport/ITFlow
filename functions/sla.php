@@ -487,6 +487,11 @@ function applyTicketSla($ticket_id, $forced_sla_id = null)
     }
     $row = mysqli_fetch_assoc($sql);
 
+    // Mountaineer IT: a project ticket has no SLA - the project's due dates count (functions/mit_projects.php)
+    if (function_exists('mitProjectSlaOff') && mitProjectSlaOff($ticket_id)) {
+        $forced_sla_id = 0;
+    }
+
     if (is_null($forced_sla_id)) {
         $sla_id = getTicketSlaId($row['ticket_client_id'], $row['ticket_priority']);
     } else {
@@ -506,7 +511,7 @@ function applyTicketSla($ticket_id, $forced_sla_id = null)
     }
     $sla = mysqli_fetch_assoc($sla_sql);
 
-    $created_at = $row['ticket_created_at'];
+    $created_at = function_exists('mitProjectSlaStart') ? mitProjectSlaStart($ticket_id, $row['ticket_created_at']) : $row['ticket_created_at']; // Mountaineer IT: from when it left a project
 
     $response_due_at = addBusinessMinutes($created_at, $sla['sla_response_minutes']);
 

@@ -59,6 +59,8 @@ foreach ($sources as $key => $source) {
         outline: 2px dashed rgba(255, 255, 255, .75);
         outline-offset: -3px;
     }
+    /* Mountaineer IT: a project booking (functions/mit_projects.php) - project color, the tech's color as a dot */
+    .mit-tech-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: .3rem; vertical-align: middle; flex-shrink: 0; box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .9); }
 </style>
 
 <div class="row g-3 itflow-calendar-page" id="itflowCalendar"

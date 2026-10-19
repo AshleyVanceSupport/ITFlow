@@ -385,6 +385,7 @@ if (isset($_POST['edit_ticket_project'])) {
     $reference = escapeSql(ticketReference($row));
 
     mysqli_query($mysqli, "UPDATE tickets SET ticket_project_id = $project_id WHERE ticket_id = $ticket_id");
+    function_exists('mitProjectTicketMoved') && mitProjectTicketMoved($ticket_id); // Mountaineer IT: no SLA in a project
 
     if ($project_id) {
         logTicketHistory($ticket_id, "$session_name added the ticket to project " . escapeSql($project_name));
@@ -906,6 +907,7 @@ if (isset($_POST['bulk_add_ticket_project'])) {
             continue;
         }
         mysqli_query($mysqli, "UPDATE tickets SET ticket_project_id = $project_id WHERE ticket_id = $ticket_id");
+        function_exists('mitProjectTicketMoved') && mitProjectTicketMoved($ticket_id); // Mountaineer IT: no SLA in a project
         logTicketHistory($ticket_id, $project_id ? "$session_name added the ticket to project " . escapeSql($project_name) : "$session_name took the ticket out of its project");
         logAudit("Ticket", "Edit", "$session_name " . ($project_id ? "added ticket " . escapeSql(ticketReference($row)) . " to project " . escapeSql($project_name) : "took ticket " . escapeSql(ticketReference($row)) . " out of its project"), intval($row['ticket_client_id']), $ticket_id);
         $count++;
