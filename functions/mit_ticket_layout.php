@@ -50,7 +50,7 @@ function mitTicketLayoutMine($user_id) {
 
 /** The ticket page's hook (agent/ticket.php, after the layout): what the script needs, and the script. */
 function mitTicketLayoutHtml() {
-    global $session_user_id, $session_is_admin;
+    global $session_user_id, $session_is_admin, $ticket_id, $ticket;
     $mine = mitTicketLayoutMine($session_user_id);
     $default = mitTicketLayoutDefault();
     $config = [
@@ -59,6 +59,9 @@ function mitTicketLayoutHtml() {
         'hasMine' => $mine !== null,
         'isAdmin' => !empty($session_is_admin),
         'csrf' => $_SESSION['csrf_token'] ?? '',
+        // The tech ticked "Read" on this description (and it has not changed since) - it starts folded away
+        'ticketId' => intval($ticket_id ?? 0),
+        'read' => mitTicketIsRead($session_user_id, intval($ticket_id ?? 0), (string) ($ticket['ticket_details'] ?? '')),
     ];
     return '<script>window.mitTicketLayout = ' . json_encode($config, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ';</script>'
         . '<script src="' . mitAsset('/agent/js/mit_ticket_layout.js') . '"></script>'
@@ -81,6 +84,13 @@ function mitTicketLayoutAjax(array $post) {
     };
     $scope = (string) ($post['scope'] ?? '');
     $user_id = intval($session_user_id);
+    if (in_array($scope, ['read', 'unread'], true)) {
+        if (!mitTicketReadSet($user_id, intval($post['ticket_id'] ?? 0), $scope === 'read')) {
+            $fail('That ticket could not be marked.', 403);
+        }
+        echo json_encode(['ok' => true]);
+        exit;
+    }
     if (in_array($scope, ['default', 'reset_default'], true) && empty($session_is_admin)) {
         $fail('Only an admin can change the company layout.', 403);
     }
@@ -110,4 +120,50 @@ function mitTicketLayoutAjax(array $post) {
     }
     echo json_encode(['ok' => true, 'message' => $message]);
     exit;
+}
+
+/*
+ * ---------- "Read" on the description ----------
+ * A tech ticks Read once they have read a ticket's description, and it then starts folded away for them on that
+ * ticket. Kept per tech in mit_user_preferences ticket.read: {"t<ticket id>": a short hash of the description},
+ * the newest MIT_TICKET_READ_KEEP - an edited description shows again, as unread.
+ */
+
+const MIT_TICKET_READ_KEEP = 500;
+
+function mitTicketReadHash($details) {
+    return substr(md5((string) $details), 0, 12);
+}
+
+function mitTicketReadMap($user_id) {
+    $map = json_decode((string) mitUserPreference($user_id, 'ticket.read', ''), true);
+    return is_array($map) ? $map : [];
+}
+
+function mitTicketIsRead($user_id, $ticket_id, $details) {
+    if (!$ticket_id) {
+        return false;
+    }
+    return (mitTicketReadMap($user_id)['t' . intval($ticket_id)] ?? '') === mitTicketReadHash($details);
+}
+
+/** Tick or untick Read for this agent - false when the ticket is not one they can see. */
+function mitTicketReadSet($user_id, $ticket_id, $read) {
+    global $mysqli;
+    $ticket_id = intval($ticket_id);
+    if (!$ticket_id || lookupUserPermission('module_support') < 1) {
+        return false;
+    }
+    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT ticket_details, ticket_client_id FROM tickets WHERE ticket_id = $ticket_id LIMIT 1"));
+    if (!$row || (intval($row['ticket_client_id']) && !hasClientAccess(intval($row['ticket_client_id'])))) {
+        return false;
+    }
+    $map = mitTicketReadMap($user_id);
+    unset($map["t$ticket_id"]);
+    if ($read) {
+        $map["t$ticket_id"] = mitTicketReadHash($row['ticket_details']);
+        $map = array_slice($map, -MIT_TICKET_READ_KEEP, null, true);
+    }
+    mitSetUserPreference($user_id, 'ticket.read', json_encode($map));
+    return true;
 }

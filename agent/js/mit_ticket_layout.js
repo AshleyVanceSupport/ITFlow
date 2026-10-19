@@ -227,6 +227,44 @@
 
     apply(cfg.layout);
 
+    // ---------- "Read" on the description ----------
+    // Ticked once the tech has read it: folded away for them on this ticket from then on (until the description is edited)
+    (function () {
+        const box = boxes().description;
+        const tools = box && box.querySelector(':scope > .card-header .card-tools');
+        if (!tools || !cfg.ticketId) {
+            return;
+        }
+        const wrap = document.createElement('div');
+        wrap.className = 'form-check form-check-inline m-0 me-2 small align-middle';
+        wrap.title = 'Read it? Tick to keep the description folded away for you on this ticket - it opens again if the description is changed';
+        wrap.innerHTML = '<input class="form-check-input" type="checkbox" id="mitTicketRead"><label class="form-check-label" for="mitTicketRead">Read</label>';
+        tools.insertBefore(wrap, tools.firstChild);
+        const tick = wrap.querySelector('input');
+        tick.checked = !!cfg.read;
+        if (cfg.read) {
+            box.dataset.mitRead = '1';
+            setCollapsed(box, true);
+        }
+        tick.addEventListener('change', function () {
+            const read = tick.checked;
+            box.dataset.mitRead = read ? '1' : '';
+            setCollapsed(box, read || (cfg.layout && (cfg.layout.collapsed || []).includes('description')));
+            const body = new URLSearchParams({mit_ticket_layout: 1, csrf_token: cfg.csrf || '', scope: read ? 'read' : 'unread', ticket_id: cfg.ticketId});
+            fetch('ajax.php', {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, credentials: 'same-origin', body: body.toString()})
+                .then(function (response) {
+                    if (!response.ok) {
+                        throw new Error();
+                    }
+                })
+                .catch(function () {
+                    tick.checked = !read;
+                    box.dataset.mitRead = tick.checked ? '1' : '';
+                    alert('Read could not be saved - please try again.');
+                });
+        });
+    })();
+
     // ---------- customizing ----------
 
     /*
@@ -277,7 +315,8 @@
         const collapsed = kept('collapsed');
         const half = kept('half');
         root.querySelectorAll('[data-mit-box]').forEach(function (box) {
-            if (box.classList.contains('collapsed-card') || (box.querySelector(':scope > .mit-box-bar [data-mit-opt="collapsed"]') || {}).checked) {
+            // Folded because it was ticked Read is not "Start collapsed"
+            if ((box.classList.contains('collapsed-card') && box.dataset.mitRead !== '1') || (box.querySelector(':scope > .mit-box-bar [data-mit-opt="collapsed"]') || {}).checked) {
                 collapsed.push(box.dataset.mitBox);
             }
             if (box.classList.contains('mit-half')) {
@@ -394,7 +433,7 @@
                 setHalf(box, on);
             });
             if (box.classList.contains('card') && !NO_COLLAPSE.includes(id)) {
-                option('collapsed', 'Start collapsed', box.classList.contains('collapsed-card'), function (on) {
+                option('collapsed', 'Start collapsed', box.classList.contains('collapsed-card') && box.dataset.mitRead !== '1', function (on) {
                     setCollapsed(box, on);
                 });
             }

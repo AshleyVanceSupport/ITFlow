@@ -243,7 +243,7 @@ break stock ITFlow, and lists what stops working after a move.
 - **Ticket page layout** (column widths, three columns, box order, half-width and collapsed boxes, reply box open on Public note) – stock ITFlow shows its own layout;
   the saved layouts sit unused in `mit_settings` / `mit_user_preferences`.
 - **Schedule lengths, agent colors, per-person calendar settings, Outlook busy times, the ticket
-  timers dropdown** – not in stock ITFlow; their data sits unused in `mit_` tables and the
+  timers dropdown, the description's Read tick** – not in stock ITFlow; their data sits unused in `mit_` tables and the
   `tickets.ticket_schedule_end` column.
 
 ## Updating

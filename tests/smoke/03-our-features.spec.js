@@ -216,3 +216,30 @@ test('NinjaOne: settings pages, and the status asked for beside assets', async (
     }
     await expectClean(page, errors);
 });
+
+test('description ticked Read stays folded away, untick shows it again', async ({ page }) => {
+    await visit(page, 'agent/tickets.php?show=open');
+    const ticket = page.locator('a[href*="ticket.php?"][href*="ticket_id="]').first();
+    test.skip(await ticket.count() === 0, 'no open tickets');
+    const url = await ticket.evaluate((a) => a.href);
+    const errors = watch(page);
+    await visit(page, url, errors);
+    const tick = page.locator('#mitTicketRead');
+    const details = page.locator('#ticketDetails');
+    if (await tick.isChecked()) { // left ticked by hand - start from unread
+        await Promise.all([page.waitForResponse((r) => r.url().includes('ajax.php')), tick.uncheck()]);
+        await visit(page, url, errors);
+    }
+    await expect(details).toBeVisible();
+    await Promise.all([page.waitForResponse((r) => r.url().includes('ajax.php') && r.ok()), tick.check()]);
+    await expect(details).toBeHidden();
+    await visit(page, url, errors);
+    await expect(tick, 'still ticked after a reload').toBeChecked();
+    await expect(details, 'and still folded away').toBeHidden();
+    await Promise.all([page.waitForResponse((r) => r.url().includes('ajax.php') && r.ok()), tick.uncheck()]);
+    await expect(details).toBeVisible();
+    await visit(page, url, errors);
+    await expect(tick).not.toBeChecked();
+    await expect(details).toBeVisible();
+    await expectClean(page, errors);
+});
