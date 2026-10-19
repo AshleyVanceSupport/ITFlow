@@ -1,10 +1,23 @@
 /*
- * Mountaineer IT - the reply box's "To" line (functions/mit_reply_recipients.php): shown for "Email reply"; the picker is
+ * Mountaineer IT - the reply box's "Notify" line (internal notes) and "To" line (functions/mit_reply_recipients.php): "To" is shown for "Email reply"; the picker is
  * ITFlow's own (js/itflow_select.js). An email reply with nobody in it, or with something typed that is not an email
  * address, is not sent.
  */
 (function () {
     'use strict';
+
+    // Internal note: the Notify line
+    const notify = document.getElementById('mitNotify');
+    if (notify) {
+        const showNotify = function () {
+            const picked = document.querySelector('input[name="public_reply_type"]:checked');
+            notify.hidden = !(picked && picked.value === '0');
+        };
+        document.querySelectorAll('input[name="public_reply_type"]').forEach(function (radio) {
+            radio.addEventListener('change', showNotify);
+        });
+        showNotify();
+    }
 
     const box = document.getElementById('mitSendTo');
     const select = document.getElementById('mitSendToSelect');

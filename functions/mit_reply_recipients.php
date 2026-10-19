@@ -90,9 +90,10 @@ function mitReplyRecipients($ticket_id) {
  * multi-select with chips - the people it goes to by name, everyone else found by typing (name, email or group), and a
  * typed address added as it is (data-tags).
  */
-function mitReplyRecipientsField($ticket_id) {
-    if (!mitReplyRecipientsReady()) {
-        return '';
+function mitReplyRecipientsField($ticket_id, $can_email = true) {
+    $notify = mitInternalNotifyField($ticket_id);
+    if (!$can_email || !mitReplyRecipientsReady()) {
+        return $notify === '' ? '' : $notify . '<script src="' . mitAsset('/agent/js/mit_reply_recipients.js') . '"></script>';
     }
     $groups = ['contact' => 'Contact', 'watcher' => 'Watcher', 'agent' => 'Our team', 'added' => 'Added before', 'client' => 'Contact at the client'];
     $options = '';
@@ -107,7 +108,7 @@ function mitReplyRecipientsField($ticket_id) {
             . ' data-description="' . escapeHtml($groups[$r['group']] . $role) . '"'
             . ' data-keywords="' . escapeHtml($email) . '">' . escapeHtml($label) . '</option>';
     }
-    return '<div class="input-group mb-3" id="mitSendTo" hidden><input type="hidden" name="mit_send_to_present" value="1">'
+    return $notify . '<div class="input-group mb-3" id="mitSendTo" hidden><input type="hidden" name="mit_send_to_present" value="1">'
         . '<span class="input-group-text" title="Your choice is remembered for this ticket">To</span>'
         . '<select class="form-select select2" name="mit_send_to[]" id="mitSendToSelect" multiple data-tags="true" data-avatar="initials"'
         . ' data-placeholder="Type a name or an email address" aria-label="Send to">' . $options . '</select></div>'
@@ -166,4 +167,101 @@ function mitReplyRecipientsMail($ticket_id, array $post, $subject, $body, array 
     $names = implode(', ', array_keys($ticked));
     logTicketHistory($ticket_id, escapeSql("Reply emailed to " . mb_substr($names, 0, 400)));
     return count($data);
+}
+
+/*
+ * ---------- Internal notes: notify a tech ----------
+ * The Internal note box has a "Notify" line (empty to start): the agents picked get a bell notification and an email
+ * with the note and a link to the ticket. A tech who answers the email from their own address lands on the ticket as
+ * an internal reply (ITFlow's parser files mail from anyone but the client's contacts as internal).
+ */
+
+/** Agents who may be notified about this ticket: active, and able to see its client. user_id => row. */
+function mitInternalNotifyAgents($ticket_id) {
+    global $mysqli, $session_user_id;
+    $ticket = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT ticket_client_id, ticket_assigned_to FROM tickets WHERE ticket_id = " . intval($ticket_id)));
+    if (!$ticket) {
+        return [];
+    }
+    $roles = [intval($ticket['ticket_assigned_to']) => 'assigned'];
+    foreach (function_exists('mitTicketTechs') ? mitTicketTechs($ticket_id) : [] as $helper) {
+        $roles[intval($helper['user_id'])] = 'helping';
+    }
+    $agents = [];
+    $result = mysqli_query($mysqli, "SELECT user_id, user_name, user_email FROM users
+        WHERE user_type = 1 AND user_status = 1 AND user_archived_at IS NULL AND user_id <> " . intval($session_user_id) . " ORDER BY user_name");
+    while ($row = mysqli_fetch_assoc($result)) {
+        $user_id = intval($row['user_id']);
+        if (function_exists('mitAgentCanSeeClient') && !mitAgentCanSeeClient($user_id, $ticket['ticket_client_id'])) {
+            continue;
+        }
+        $row['role'] = $roles[$user_id] ?? '';
+        $agents[$user_id] = $row;
+    }
+    // The ticket's own people first
+    uasort($agents, function ($a, $b) {
+        return [$a['role'] === '', $a['user_name']] <=> [$b['role'] === '', $b['user_name']];
+    });
+    return $agents;
+}
+
+/** The "Notify" line, shown for "Internal note". */
+function mitInternalNotifyField($ticket_id) {
+    $options = '';
+    foreach (mitInternalNotifyAgents($ticket_id) as $user_id => $agent) {
+        $options .= '<option value="' . $user_id . '" data-description="' . escapeHtml($agent['role'] !== '' ? ucfirst($agent['role']) : 'Our team') . '"'
+            . ' data-keywords="' . escapeHtml($agent['user_email']) . '">' . escapeHtml($agent['user_name']) . '</option>';
+    }
+    if ($options === '') {
+        return '';
+    }
+    return '<div class="input-group mb-3" id="mitNotify" hidden>'
+        . '<span class="input-group-text" title="They get a notification and an email with this note">Notify</span>'
+        . '<select class="form-select select2" name="mit_notify[]" id="mitNotifySelect" multiple data-avatar="initials"'
+        . ' data-placeholder="Nobody - type a name to ping a tech about this note" aria-label="Notify">' . $options . '</select></div>';
+}
+
+/**
+ * From add_ticket_reply, after an internal note is saved: tell each agent picked - a bell notification and an email
+ * with the note. Returns the names told.
+ */
+function mitInternalNoteNotify(array $ticket, $reply_id, array $post) {
+    global $mysqli, $session_name, $config_smtp_provider, $config_ticket_from_email, $config_ticket_from_name, $config_base_url;
+    $ticket_id = intval($ticket['ticket_id']);
+    $wanted = array_unique(array_map('intval', (array) ($post['mit_notify'] ?? [])));
+    if (!$wanted || !intval($reply_id)) {
+        return [];
+    }
+    $agents = mitInternalNotifyAgents($ticket_id);
+    $note = (string) (mysqli_fetch_row(mysqli_query($mysqli, "SELECT ticket_reply FROM ticket_replies WHERE ticket_reply_id = " . intval($reply_id)))[0] ?? '');
+    $reference = ticketReference($ticket);
+    $client_id = intval($ticket['ticket_client_id']);
+    $url = '/agent/' . ticketUrl($ticket_id, $client_id);
+    $link = 'https://' . $config_base_url . $url;
+    $subject = "Internal note for you - [$reference] - " . $ticket['ticket_subject'];
+    $body = escapeHtml($session_name) . ' added an internal note on ticket <b>' . escapeHtml($reference) . '</b> - ' . escapeHtml($ticket['ticket_subject'])
+        . ' and asked for you.<br><br>--------------------------------<br>' . $note . '<br>--------------------------------<br><br>'
+        . '<a href="' . escapeHtml($link) . '">Open the ticket</a><br><br><i style="color: #808080">Only our team can see this note. A reply to this email from your own address is added to the ticket as an internal note.</i>';
+    $told = [];
+    $mail = [];
+    foreach (array_slice($wanted, 0, 25) as $user_id) {
+        if (!isset($agents[$user_id])) {
+            continue;
+        }
+        $agent = $agents[$user_id];
+        mysqli_query($mysqli, "INSERT INTO notifications SET notification_type = 'Ticket', notification = '" . escapeSql("$session_name asked for you in an internal note on ticket $reference - " . $ticket['ticket_subject']) . "',
+            notification_action = '" . escapeSql($url) . "', notification_client_id = $client_id, notification_user_id = $user_id");
+        if (!empty($config_smtp_provider) && filter_var($agent['user_email'], FILTER_VALIDATE_EMAIL)) {
+            $mail[] = ['from' => escapeSql($config_ticket_from_email), 'from_name' => escapeSql($config_ticket_from_name), 'recipient' => escapeSql($agent['user_email']),
+                'recipient_name' => escapeSql($agent['user_name']), 'subject' => escapeSql($subject), 'body' => mitMailBody($body)];
+        }
+        $told[] = $agent['user_name'];
+    }
+    if ($mail) {
+        addToMailQueue($mail);
+    }
+    if ($told) {
+        logTicketHistory($ticket_id, escapeSql("$session_name notified " . implode(', ', $told) . " about an internal note"));
+    }
+    return $told;
 }

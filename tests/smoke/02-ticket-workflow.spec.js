@@ -57,6 +57,26 @@ test('add an internal note with time', async ({ page }) => {
     await expectClean(page, errors);
 });
 
+test('internal note notifies the tech picked', async ({ page }) => {
+    test.skip(!made.ticketId, 'no ticket');
+    const errors = watch(page);
+    const ticketPage = `agent/ticket.php?client_id=${made.clientId}&ticket_id=${made.ticketId}`;
+    await visit(page, ticketPage, errors);
+    await page.click('label[for=public_reply_type_opt0]');
+    const line = page.locator('#mitNotify');
+    await expect(line, 'the Notify line on internal notes').toBeVisible();
+    await expect(page.locator('#mitSendTo'), 'not the email To line').toBeHidden();
+    const agent = await line.locator('select option').first().evaluate((o) => ({ id: o.value, name: o.textContent.trim() })).catch(() => null);
+    test.skip(!agent, 'no other agent who can see this client');
+    const form = page.locator('form:has(#replyComposer)');
+    await fillForm(form, { ticket_reply: 'Smoke test note for a tech', 'mit_notify[]': [agent.id] });
+    await submit(form, 'add_ticket_reply');
+    await visit(page, ticketPage, errors);
+    const history = page.locator('.card', { has: page.locator('.card-title i.fa-history') });
+    await expect(history).toContainText(`notified ${agent.name} about an internal note`);
+    await expectClean(page, errors);
+});
+
 test('book it and see it on the calendar and Dispatch', async ({ page }) => {
     test.skip(!made.ticketId, 'no ticket');
     await visit(page, `agent/ticket.php?client_id=${made.clientId}&ticket_id=${made.ticketId}`);
