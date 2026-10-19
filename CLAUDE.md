@@ -320,6 +320,22 @@ model: see DEPLOYMENT.md.
   inbound vs closed per day (closed = COALESCE(resolved, closed)), vs last week / 4-week average, SLA met / missed for targets due
   this week (resolution also when closed this week), breached / close now, and per shown agent: assigned this week (created for
   them, or ITFlow's ticket_history "assigned the ticket to <name>") vs closed, open now, SLA missed. Week from the agent's calendar first day.
+- NinjaOne RMM (Oct 2026): `functions/mit_ninjaone.php` (ours, required from `functions.php`) - replaces the user's n8n
+  "NinjaOne -> ITFlow asset sync" with its rules: device -> asset by link (`mit_ninja_devices.asset_id`) or the n8n notes block
+  (`[NinjaOne Sync]` / `NinjaOne Device ID:` / `UID:`), then serial in the mapped client - never by name (a same-name asset is
+  kept and reported); misplaced (report | create), archived left, placeholder serials -> UID, safety brake, only sync-owned fields
+  changed (`mitNinjaChanges`), orphans reported. API: client credentials, scope monitoring, `/v2/organizations`,
+  `/v2/devices-detailed`, `/v2/device/{id}?expand=warranty` (warranty at most 150 a run, weekly per device). Tables M019:
+  `mit_ninja_orgs` (mapping), `mit_ninja_devices` (link, status, warranty; FK assets SET NULL), `mit_ninja_runs` (report JSON).
+  Settings `mit_settings` ninja_* (secret + token via `mitEncryptSecret`; `ninja_web_url` = the user's own NinjaOne address for
+  buttons, `mitNinjaCleanWebUrl`). Admin > Settings > NinjaOne `admin/mit_ninjaone.php` (tabs Settings / Mapping with n8n import
+  `mitNinjaImportN8n` / Sync runs), handlers `admin/post/mit_ninjaone.php`, menu in `admin/includes/mit_admin_nav.php`. Cron job
+  `mit_ninjaone_sync` hourly (`cron/mit_ninjaone_sync.php`, entry in `includes/cron_jobs.php`). Buttons + live status:
+  `agent/js/mit_ninjaone.js` finds asset links (`modals/asset/asset.php?...id=`) and `[data-mit-ninja-asset]`, asks
+  `agent/mit_ninjaone_ajax.php?status=` (`mitNinjaAssetDevices`: Support view + client scope, status re-asked after 5 min). Hooks:
+  the ticket page gets the script through `mitTicketLayoutHtml` (no extra line in agent/ticket.php); one line each in
+  `agent/asset.php` and `agent/modals/asset/asset.php` (`mitNinjaAssetButton`). A test install may set `MIT_NINJA_API_BASE` in
+  config.php to point at a stand-in API (never on a real one).
 - Remembered list views (Oct 2026): `functions/mit_list_views.php` (ours) - the Tickets list keeps each agent's
   pill, filters, sort and List / Board in `mit_user_preferences` `listview.tickets` (like the calendar) and puts
   them back when Tickets is opened with none; saved only when picked on the page itself (Referer), never q / page /

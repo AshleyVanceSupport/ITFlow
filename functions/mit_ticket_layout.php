@@ -61,7 +61,9 @@ function mitTicketLayoutHtml() {
         'csrf' => $_SESSION['csrf_token'] ?? '',
     ];
     return '<script>window.mitTicketLayout = ' . json_encode($config, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ';</script>'
-        . '<script src="' . mitAsset('/agent/js/mit_ticket_layout.js') . '"></script>';
+        . '<script src="' . mitAsset('/agent/js/mit_ticket_layout.js') . '"></script>'
+        // NinjaOne buttons beside the ticket's assets (functions/mit_ninjaone.php)
+        . (function_exists('mitNinjaPageScript') ? mitNinjaPageScript() : '');
 }
 
 /**

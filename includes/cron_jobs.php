@@ -138,6 +138,15 @@ function cronJobRegistry(): array
             'daily_at' => '04:15',
         ],
         [
+            // Mountaineer IT (functions/mit_ninjaone.php)
+            'name' => 'mit_ninjaone_sync',
+            'label' => 'NinjaOne Sync',
+            'script' => 'mit_ninjaone_sync.php',
+            'description' => 'Brings NinjaOne devices in as assets of the ITFlow clients they are mapped to (Admin > Settings > NinjaOne). Does nothing until it is set up and switched on there.',
+            'schedule' => 'Interval',
+            'interval_minutes' => 60,
+        ],
+        [
             // Mountaineer IT (functions/mit_cron_health.php)
             'name' => 'mit_cron_watch',
             'label' => 'Cron Watch',

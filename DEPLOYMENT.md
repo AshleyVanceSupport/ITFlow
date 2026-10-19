@@ -195,6 +195,9 @@ break stock ITFlow, and lists what stops working after a move.
 - **California time records** – start / meal / end times, meal answers, change history and signed attestations stay in
   the `mit_ts_*` tables but are not shown; stock ITFlow has no California overtime or premiums. Export the payroll detail
   report first, and keep the tables (California asks for at least 3 years of time records).
+- **NinjaOne** – the sync, the mapping page and the NinjaOne buttons go (the mapping and device links stay in the
+  `mit_ninja_*` tables). The assets it made are ordinary ITFlow assets and stay, with the `[NinjaOne Sync]` lines in
+  their notes - so the n8n workflow picks them up again if you go back to it.
 - **Cron alerts** – the top-bar warning, the alert emails and `/mit_health.php` go; Maintenance > Cron still shows
   ITFlow's own status. Point your uptime monitor elsewhere (it will report the address as gone).
 - **Remembered Tickets filters** – stock ITFlow opens Tickets with its defaults every time (the saved
@@ -338,6 +341,15 @@ copy the card's **health address** into an uptime monitor (Uptime Kuma, UptimeRo
 every 5 minutes. It answers `OK`, or HTTP 503 when something is wrong. Do this on production and beta.
 If the monitor can send a header, send the key as `X-Health-Key: <key>` and leave `?key=` off the address, so the
 key does not end up in the web server's access log.
+
+## NinjaOne
+
+Admin > Settings > NinjaOne. In NinjaOne make an API client app (Administration > Apps > API > Client app IDs: API
+Services (machine-to-machine), scope Monitoring, client credentials) and put its ID and secret, your region and your own
+NinjaOne address (for the buttons) on the Settings tab. Then on Mapping either **Import from the n8n workflow** (its JSON
+file - takes over its organization -> client list) or pick a client per organization, and **Run sync now**. Read the run's
+report; when it looks right, switch the hourly sync on and **turn the n8n workflow off** (both would edit the same
+assets). It finds assets n8n made by the NinjaOne device ID in their notes, so the switch makes no duplicates.
 
 ## Smoke tests
 

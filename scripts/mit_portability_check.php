@@ -213,6 +213,9 @@ if ($n = $count("SELECT COUNT(*) FROM mit_reimbursements")) {
 if ($n = $count("SELECT COUNT(*) FROM mit_ts_work_periods") + $count("SELECT COUNT(*) FROM mit_ts_attestations")) {
     $after[] = "California time records: start / meal / end times, meal-period answers, change history and signed attestations ($n rows) are not shown by stock ITFlow - they stay in mit_ts_* (keep them at least 3 years); export the payroll detail report first.";
 }
+if ($n = $count("SELECT COUNT(*) FROM mit_ninja_devices WHERE asset_id IS NOT NULL")) {
+    $after[] = "NinjaOne: $n assets linked to NinjaOne devices - the sync, mapping and NinjaOne buttons stop; the assets stay (with the [NinjaOne Sync] lines in their notes, which the n8n workflow reads).";
+}
 if ($n = $count("SELECT COUNT(*) FROM mit_ticket_parts")) {
     $after[] = "Ticket parts: $n part" . ($n === 1 ? '' : 's') . " on tickets are not shown by stock ITFlow (billed ones are ordinary invoice lines and stay). Products' \"Order from\" vendor is not shown either.";
 }

@@ -199,3 +199,20 @@ test('Dispatch this week: in vs closed, SLA, by agent', async ({ page }) => {
     }
     await expectClean(page, errors);
 });
+
+test('NinjaOne: settings pages, and the status asked for beside assets', async ({ page }) => {
+    const errors = watch(page);
+    for (const tab of ['settings', 'mapping', 'runs']) {
+        await visit(page, `admin/mit_ninjaone.php?tab=${tab}`, errors);
+        await expect(page.locator('.card-title')).toContainText('NinjaOne');
+    }
+    // The endpoint the buttons use answers with an object of linked assets (empty when none are linked)
+    const { status, text } = await fetchText(page, '/agent/mit_ninjaone_ajax.php?status=1,2,3');
+    expect(status, 'NinjaOne status endpoint').toBe(200);
+    const devices = JSON.parse(text);
+    expect(typeof devices).toBe('object');
+    for (const device of Object.values(devices)) {
+        expect(device.url, 'button goes to a device page in NinjaOne').toMatch(/^https:\/\/[^/]+\/#\/deviceDashboard\/\d+\/overview$/);
+    }
+    await expectClean(page, errors);
+});
