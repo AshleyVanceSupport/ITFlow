@@ -691,6 +691,7 @@ if (isset($_GET['ticket_id'])) {
                                                 </div>
                                             <?php } ?>
                                         </div>
+                                        <?= $can_email_reply && function_exists('mitReplyRecipientsField') ? mitReplyRecipientsField($ticket_id) : '' // Mountaineer IT: pick who the email goes to ?>
 
                                         <?php
 

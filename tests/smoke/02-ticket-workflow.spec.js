@@ -3,7 +3,8 @@
 // see the booking on the calendar and Dispatch. Everything it makes is named
 // "Smoke test ..." and deleted again at the end, even when a step fails.
 // Nothing is emailed to a customer: the contact has no email address and the
-// note is internal (the booking email goes to the agent it is booked for).
+// note is internal (the booking email goes to the agent it is booked for) - until the
+// email-reply test gives it a reserved @example.invalid address, which never delivers.
 
 const { test, expect } = require('@playwright/test');
 const { smokeName, watch, visit, openModal, fillForm, submit, flash, action, fetchText, getJson, expectClean } = require('./helpers');
@@ -111,6 +112,44 @@ test('Dispatch Schedule dialog: the title is edited with the booking', async ({ 
     expect(refused.error).toContain('subject');
     await visit(page, ticketPage);
     await expect(page.locator('body')).toContainText(renamed);
+});
+
+test('email reply goes only to the people ticked, and the choice is remembered', async ({ page }) => {
+    test.skip(!made.ticketId, 'no ticket');
+    const errors = watch(page);
+    const ticketPage = `agent/ticket.php?client_id=${made.clientId}&ticket_id=${made.ticketId}`;
+    await visit(page, ticketPage, errors);
+    // The contact needs an address for "Email reply" - a reserved one that never delivers
+    const contactUrl = await page.locator('[data-modal-url*="modals/contact/contact.php?id="]').first().getAttribute('data-modal-url');
+    const contactId = new URL(contactUrl, page.url()).searchParams.get('id');
+    const modal = await openModal(page, `modals/contact/contact_edit.php?id=${contactId}`, 'lg');
+    await fillForm(modal, { email: 'smoke-contact@example.invalid' });
+    await submit(modal, 'edit_contact');
+    await visit(page, ticketPage, errors);
+    test.skip(await page.locator('label[for=public_reply_type_opt2]').count() === 0, 'mail is not set up on this install');
+
+    await page.click('label[for=public_reply_type_opt2]');
+    const box = page.locator('#mitSendTo');
+    await expect(box, 'the Send to list').toBeVisible();
+    const contact = box.locator('input[type=checkbox][value="smoke-contact@example.invalid"]');
+    await expect(contact, 'the contact starts ticked').toBeChecked();
+    await contact.uncheck();
+    await page.fill('#mitSendToNew', 'smoke-copy@example.invalid');
+    await page.click('#mitSendToAdd');
+    const form = page.locator('form:has(#replyComposer)');
+    await fillForm(form, { ticket_reply: 'Smoke test emailed reply' });
+    await submit(form, 'add_ticket_reply');
+
+    // Who it went to is in the ticket's history - only the address ticked
+    await visit(page, ticketPage, errors);
+    const history = page.locator('.card', { has: page.locator('.card-title i.fa-history') });
+    await expect(history).toContainText('Reply emailed to smoke-copy@example.invalid');
+    await expect(history).not.toContainText('smoke-contact@example.invalid');
+    // Next time it starts from the same choice
+    await page.click('label[for=public_reply_type_opt2]');
+    await expect(box.locator('input[type=checkbox][value="smoke-contact@example.invalid"]')).not.toBeChecked();
+    await expect(box.locator('input[type=checkbox][value="smoke-copy@example.invalid"]')).toBeChecked();
+    await expectClean(page, errors);
 });
 
 test('our boxes on the ticket page', async ({ page }) => {

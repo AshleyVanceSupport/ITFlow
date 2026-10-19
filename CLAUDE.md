@@ -357,6 +357,14 @@ model: see DEPLOYMENT.md.
   (`mitProjectBookingItems`, one line in `functions/calendar.php` projects branch); Dispatch and calendar_day still get all.
   Settings card `admin/includes/mit_project_card.php` (one require at the end of `admin/settings_project.php`), handler
   `admin/post/mit_project_settings.php`; `mit_settings` project_tickets_apart / project_ticket_color.
+- Email reply recipients (Oct 2026): `functions/mit_reply_recipients.php` + `agent/js/mit_reply_recipients.js` (ours) - the reply
+  box's "Email reply" lists who gets it: the contact and watchers (ticked), the lead agent and helpers, the client's other
+  contacts (not ticked) and typed addresses; only those ticked are emailed (contact: ITFlow's email, the rest with the
+  collaborator line), logged in the ticket history. The choice is remembered per ticket where it differs from that default
+  (`mit_ticket_mail_choices`, M021). Hooks: one line in `agent/ticket.php` after `#replyAudience` (`mitReplyRecipientsField`),
+  and in `agent/post/ticket.php` add_ticket_reply `mitReplyRecipientsMail` replaces `ticketMailContactAndWatchers` only when
+  the form posted `mit_send_to_present` (API and other senders unchanged). "Email reply" still needs a contact with an address
+  (ITFlow's `$can_email_reply`). `functions.php` (require).
 - Remembered list views (Oct 2026): `functions/mit_list_views.php` (ours) - the Tickets list keeps each agent's
   pill, filters, sort and List / Board in `mit_user_preferences` `listview.tickets` (like the calendar) and puts
   them back when Tickets is opened with none; saved only when picked on the page itself (Referer), never q / page /

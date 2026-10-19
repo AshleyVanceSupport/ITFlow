@@ -198,6 +198,8 @@ break stock ITFlow, and lists what stops working after a move.
 - **NinjaOne** – the sync, the mapping page and the NinjaOne buttons go (the mapping and device links stay in the
   `mit_ninja_*` tables). The assets it made are ordinary ITFlow assets and stay, with the `[NinjaOne Sync]` lines in
   their notes - so the n8n workflow picks them up again if you go back to it.
+- **Email reply recipients** – an email reply goes to the contact and every watcher again, as stock ITFlow does; the
+  per-ticket choices stay unused in `mit_ticket_mail_choices`.
 - **Project tickets** – they show on the Tickets board, the client's Tickets tab and the Dispatch queue again, and
   calendar bookings go back to the tech's color. They keep no SLA (ours took it off) - set one by hand on a ticket that
   needs it.

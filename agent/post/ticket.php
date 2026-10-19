@@ -1081,7 +1081,11 @@ if (isset($_POST['add_ticket_reply'])) {
                 $mail_subject = "Ticket update - [$reference] - $subject";
                 $body = "<i style=\'color: #808080\'>##- Please type your reply above this line -##</i><br><br>Hello $contact_name,<br><br>Your ticket regarding $subject has been updated.<br><br>--------------------------------<br>$ticket_reply<br>--------------------------------<br><br>Ticket: $reference<br>Subject: $subject<br>Status: $status_name<br>Portal: $portal<br><br>--<br>$company_name - Support<br>$from_email<br>$company_phone";
             }
-            ticketMailContactAndWatchers($ticket_id, $mail_subject, $body, $emailable_attachments['send']);
+            if (!empty($_POST['mit_send_to_present']) && function_exists('mitReplyRecipientsReady') && mitReplyRecipientsReady()) { // Mountaineer IT: only the people ticked
+                mitReplyRecipientsMail($ticket_id, $_POST, $mail_subject, $body, $emailable_attachments['send']);
+            } else {
+                ticketMailContactAndWatchers($ticket_id, $mail_subject, $body, $emailable_attachments['send']);
+            }
         }
 
         // Tell the agent it is assigned to, and whoever opened it
