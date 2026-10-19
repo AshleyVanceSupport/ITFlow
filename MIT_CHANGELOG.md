@@ -4,6 +4,9 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.67 - 2026-10-19
+- Fix: the Notify and To lists on the reply box close when you click into the note editor (it is its own frame, so the click was not seen and the list stayed open).
+
 ## 26.10.66 - 2026-10-19
 - Fix: a running ticket timer now stops when the note is saved. ITFlow reset it a moment after the button was clicked, which was missed when the page moved on quickly, so the timer kept running.
 - After a note the timer stays at 0, even with timer auto-start on; it starts again the next time the ticket is opened.

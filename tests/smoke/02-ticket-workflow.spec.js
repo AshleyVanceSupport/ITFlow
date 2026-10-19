@@ -96,6 +96,14 @@ test('internal note notifies the tech picked', async ({ page }) => {
     await expect(line, 'the Notify line on internal notes').toBeVisible();
     await expect(page.locator('#mitSendTo'), 'not the email To line').toBeHidden();
     const agent = await line.locator('select option').first().evaluate((o) => ({ id: o.value, name: o.textContent.trim() })).catch(() => null);
+    if (agent) {
+        // Its list closes on a click in the note editor (TinyMCE's frame, which the page never sees)
+        await line.locator('.itflow-select').click();
+        await expect(page.locator('.itflow-select-panel')).toHaveCount(1);
+        const editor = await page.locator('#replyComposer iframe').first().boundingBox();
+        await page.mouse.click(editor.x + editor.width - 20, editor.y + editor.height - 10); // clear of the open list
+        await expect(page.locator('.itflow-select-panel'), 'Notify list closed by a click in the editor').toHaveCount(0);
+    }
     test.skip(!agent, 'no other agent who can see this client');
     const form = page.locator('form:has(#replyComposer)');
     await fillForm(form, { ticket_reply: 'Smoke test note for a tech', 'mit_notify[]': [agent.id] });

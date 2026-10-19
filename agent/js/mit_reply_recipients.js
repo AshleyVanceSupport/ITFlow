@@ -6,6 +6,23 @@
 (function () {
     'use strict';
 
+    // A click in the note editor (TinyMCE's own frame) never reaches the page, so ITFlow's picker does not see it as a
+    // click outside and stays open - close our lists when focus moves into a frame
+    window.addEventListener('blur', function () {
+        setTimeout(function () {
+            const active = document.activeElement;
+            if (!active || active.tagName !== 'IFRAME') {
+                return;
+            }
+            ['mitNotifySelect', 'mitSendToSelect'].forEach(function (id) {
+                const el = document.getElementById(id);
+                if (el && el.itflowSelect) {
+                    el.itflowSelect.close(true, false);
+                }
+            });
+        }, 0);
+    });
+
     // Internal note: the Notify line
     const notify = document.getElementById('mitNotify');
     if (notify) {

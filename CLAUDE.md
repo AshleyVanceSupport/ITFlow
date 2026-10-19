@@ -385,7 +385,8 @@ model: see DEPLOYMENT.md.
   agent who can see the client (`mitAgentCanSeeClient`); each picked gets a bell notification and an email (ticket From address,
   [TCK-n] subject - a reply from the agent's own address is filed by ITFlow's parser as an internal reply). The `agent/ticket.php`
   hook now always calls `mitReplyRecipientsField($ticket_id, $can_email_reply)` (Notify needs no contact email); one guarded block in
-  `agent/post/ticket.php` add_ticket_reply after the agent notifications.
+  `agent/post/ticket.php` add_ticket_reply after the agent notifications. The script closes both pickers when focus moves into a frame (TinyMCE) -
+  ITFlow's picker closes on outside mousedown, which a click inside the editor's iframe never fires.
 - Remembered list views (Oct 2026): `functions/mit_list_views.php` (ours) - the Tickets list keeps each agent's
   pill, filters, sort and List / Board in `mit_user_preferences` `listview.tickets` (like the calendar) and puts
   them back when Tickets is opened with none; saved only when picked on the page itself (Referer), never q / page /
