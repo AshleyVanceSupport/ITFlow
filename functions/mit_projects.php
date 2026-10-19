@@ -144,12 +144,15 @@ function mitProjectTicketsSweep() {
 /**
  * Calendar items (calendarSourceItems 'tickets', so Dispatch too): project bookings in the project color,
  * with the tech's color kept for a dot (extendedProps.tech_color) and the project named in the detail.
+ * On the calendar page ($opts mit_split_projects, from agent/ajax.php calendar_items) project bookings belong
+ * to the Projects source instead (mitProjectBookingItems): left out here, or - 'only' - all that is kept.
  */
-function mitProjectCalendarItems(array $items) {
+function mitProjectCalendarItems(array $items, array $opts = []) {
     global $mysqli;
     if (!mitProjectTicketsApart()) {
         return $items;
     }
+    $split = $opts['mit_split_projects'] ?? false;
     $ids = [];
     foreach ($items as $item) {
         if (in_array($item['extendedProps']['kind'] ?? '', ['ticket', 'helper'], true)) {
@@ -157,17 +160,13 @@ function mitProjectCalendarItems(array $items) {
         }
     }
     $ids = array_filter(array_unique($ids));
-    if (!$ids) {
-        return $items;
-    }
     $projects = [];
-    $sql = mysqli_query($mysqli, "SELECT ticket_id, project_prefix, project_number, project_name FROM tickets
-        JOIN projects ON project_id = ticket_project_id WHERE ticket_id IN (" . implode(',', $ids) . ")");
-    while ($row = mysqli_fetch_assoc($sql)) {
-        $projects[intval($row['ticket_id'])] = projectReference($row) . ' ' . $row['project_name'];
-    }
-    if (!$projects) {
-        return $items;
+    if ($ids) {
+        $sql = mysqli_query($mysqli, "SELECT ticket_id, project_prefix, project_number, project_name FROM tickets
+            JOIN projects ON project_id = ticket_project_id WHERE ticket_id IN (" . implode(',', $ids) . ")");
+        while ($row = mysqli_fetch_assoc($sql)) {
+            $projects[intval($row['ticket_id'])] = projectReference($row) . ' ' . $row['project_name'];
+        }
     }
     $color = mitProjectTicketColor();
     foreach ($items as &$item) {
@@ -181,5 +180,18 @@ function mitProjectCalendarItems(array $items) {
         $item['color'] = $color;
     }
     unset($item);
+    if ($split) {
+        $items = array_values(array_filter($items, function ($item) use ($split) {
+            return isset($item['extendedProps']['project']) === ($split === 'only');
+        }));
+    }
     return $items;
+}
+
+/** The calendar page's Projects source: its tickets' bookings too (the tickets source leaves them out there). */
+function mitProjectBookingItems($from, $to, array $opts) {
+    if (empty($opts['mit_split_projects']) || !mitProjectTicketsApart()) {
+        return [];
+    }
+    return calendarSourceItems('tickets', $from, $to, ['mit_split_projects' => 'only'] + $opts);
 }

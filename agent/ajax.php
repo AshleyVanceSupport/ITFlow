@@ -2180,7 +2180,7 @@ if (isset($_GET['calendar_items'])) {
         echo json_encode(['error' => 'You do not have access to that client.']);
         exit;
     }
-    $opts = ['client_id' => $client_id, 'user_id' => intval($_GET['user_id'] ?? 0)];
+    $opts = ['client_id' => $client_id, 'user_id' => intval($_GET['user_id'] ?? 0), 'mit_split_projects' => true]; // Mountaineer IT: project bookings under Projects
 
     $calendar_ids = array_filter(array_map('intval', explode(',', (string) ($_GET['calendars'] ?? ''))));
     $items = calendarEventItems($calendar_ids, $from, $to, $opts);

@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
-const { smokeName, watch, visit, openModal, fillForm, submit, flash, action, expectClean } = require('./helpers');
+const { smokeName, watch, visit, openModal, fillForm, submit, flash, action, expectClean, fetchText } = require('./helpers');
 
 test.describe.configure({ mode: 'serial' });
 
@@ -215,6 +215,22 @@ test('a ticket in a project leaves the Tickets board and comes back when taken o
     expect(await onList('open'), 'a project ticket is off Open').toBe(0);
     expect(await onList('all'), 'and off All').toBe(0);
     expect(await onList('projects'), 'but on the Projects view').toBeGreaterThan(0);
+
+    // Booked, it is in the project color under the calendar's Projects source - not under Scheduled tickets
+    const day = new Date(Date.now() + 30 * 86400000);
+    await visit(page, ticketUrl(), errors);
+    modal = await openModal(page, `modals/ticket/ticket_edit_schedule.php?ticket_id=${made.ticketId}`);
+    await fillForm(modal, { scheduled_date_time: `${ymd(day)}T10:00`, onsite: '0' });
+    await submit(modal, 'edit_ticket_schedule');
+    const calendar = async (sources) => {
+        const { text } = await fetchText(page, `/agent/ajax.php?calendar_items=1&from=${ymd(day)}&to=${ymd(day)}&sources=${sources}`);
+        return JSON.parse(text).filter((item) => item.id === `ticket-${made.ticketId}`);
+    };
+    expect(await calendar('tickets'), 'project booking left out of Scheduled tickets').toHaveLength(0);
+    const booked = await calendar('projects');
+    expect(booked, 'project booking under Projects').toHaveLength(1);
+    expect(booked[0].extendedProps.tech_color, 'tech color kept for the dot').toBeTruthy();
+    await action(page, `cancel_ticket_schedule=${made.ticketId}`, ticketUrl());
 
     // Taken out of the project, it is a service ticket again
     await visit(page, ticketUrl(), errors);

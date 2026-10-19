@@ -360,7 +360,8 @@ Admin > Settings > Project > Project tickets (on by default). A ticket in a proj
 tickets: off the Tickets board (its own **Projects** view there; the Project filter still finds them), the client's
 Tickets tab and the Dispatch queue, and with no SLA - the project's due dates count. Techs still see their own in
 My tickets on the dashboard, the Dispatch workload, and on the calendar and Dispatch, where project bookings are in
-the project color (set on the same card) with a dot in the tech's color. A ticket taken out of its project gets its
+the project color (set on the same card) with a dot in the tech's color. On the calendar they come and go with the **Projects**
+tick box (with the project start / due dates), not Scheduled tickets. A ticket taken out of its project gets its
 SLA back counted from that moment. The cron job "Project Ticket SLAs" (every minute) catches tickets that join or
 leave a project through the API or a deleted project.
 

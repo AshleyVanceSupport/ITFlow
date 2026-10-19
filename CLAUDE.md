@@ -345,8 +345,11 @@ model: see DEPLOYMENT.md.
   when it left a project (`mit_project_ticket_sla`, M020). Moves call `mitProjectTicketMoved` (one line each in
   `agent/post/ticket.php` edit_ticket_project + bulk project, `functions/project.php` projectAddTicket / projectRemoveTicket);
   cron job `mit_project_tickets` (`cron/mit_project_tickets.php`, every minute, `mitProjectTicketsSweep`) catches the API and
-  project delete. Calendar: `mitProjectCalendarItems` (one line in `functions/calendar.php` tickets source) - project color,
-  `extendedProps.tech_color` drawn as a dot by `agent/js/calendar.js` (eventContent, 4 lines) and `agent/js/mit_dispatch.js`.
+  project delete. Calendar: `mitProjectCalendarItems($items, $opts)` (one line in `functions/calendar.php` tickets source) - project
+  color, `extendedProps.tech_color` drawn as a dot by `agent/js/calendar.js` (eventContent, 4 lines) and `agent/js/mit_dispatch.js`.
+  On the calendar page project bookings belong to the Projects tick box: `agent/ajax.php` calendar_items passes
+  `mit_split_projects` in `$opts` (one line), the tickets source then leaves them out and the projects source adds them
+  (`mitProjectBookingItems`, one line in `functions/calendar.php` projects branch); Dispatch and calendar_day still get all.
   Settings card `admin/includes/mit_project_card.php` (one require at the end of `admin/settings_project.php`), handler
   `admin/post/mit_project_settings.php`; `mit_settings` project_tickets_apart / project_ticket_color.
 - Remembered list views (Oct 2026): `functions/mit_list_views.php` (ours) - the Tickets list keeps each agent's
