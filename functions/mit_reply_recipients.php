@@ -2,8 +2,8 @@
 
 /*
  * Mountaineer IT - pick who an email reply goes to (agent/ticket.php reply box, agent/post/ticket.php add_ticket_reply).
- * ITFlow emails the contact and every watcher. Here the "Email reply" box lists the contact and the watchers (ticked),
- * the lead agent and helpers, the client's other contacts (not ticked) and any address typed in; whatever is ticked gets
+ * ITFlow emails the contact and every watcher. Here "Email reply" has a "To" line: the contact and the watchers start in it,
+ * the lead agent and helpers, the client's other contacts and any typed address can be added; whoever is in it gets
  * the email. The choice is remembered per ticket (mit_ticket_mail_choices, M021) where it differs from that default.
  * Without the database update, or from anywhere that does not post the list (the API, older forms), ITFlow's own
  * ticketMailContactAndWatchers() runs as before.
@@ -85,37 +85,33 @@ function mitReplyRecipients($ticket_id) {
     return $list;
 }
 
-/** The "Send to" box, under the reply type picker - shown when "Email reply" is picked. */
+/**
+ * The "To" line under the reply type picker (shown for "Email reply"): ITFlow's own picker (js/itflow_select.js) as a
+ * multi-select with chips - the people it goes to by name, everyone else found by typing (name, email or group), and a
+ * typed address added as it is (data-tags).
+ */
 function mitReplyRecipientsField($ticket_id) {
     if (!mitReplyRecipientsReady()) {
         return '';
     }
-    $groups = ['contact' => 'Contact', 'watcher' => 'Watchers', 'agent' => 'Our team', 'added' => 'Added before', 'client' => 'Other contacts at the client'];
-    $list = mitReplyRecipients($ticket_id);
-    $html = '<div class="border rounded p-2 mb-3 small" id="mitSendTo" hidden><input type="hidden" name="mit_send_to_present" value="1">'
-        . '<div class="d-flex align-items-center mb-1"><strong><i class="fas fa-fw fa-paper-plane me-1"></i>Send to</strong>'
-        . '<span class="text-body-secondary ms-2">Your choice is remembered for this ticket.</span></div>';
-    $i = 0;
-    foreach ($groups as $group => $label) {
-        $rows = array_filter($list, function ($r) use ($group) {
-            return $r['group'] === $group;
-        });
-        if (!$rows) {
-            continue;
+    $groups = ['contact' => 'Contact', 'watcher' => 'Watcher', 'agent' => 'Our team', 'added' => 'Added before', 'client' => 'Contact at the client'];
+    $options = '';
+    foreach (mitReplyRecipients($ticket_id) as $email => $r) {
+        $name = $r['name'];
+        $role = '';
+        if (preg_match('/^(.*) \((assigned|helping)\)$/', $name, $m)) {
+            [$name, $role] = [$m[1], ' - ' . $m[2]];
         }
-        $scroll = $group === 'client' && count($rows) > 6 ? ' style="max-height: 9.5rem; overflow-y: auto;"' : '';
-        $html .= '<div class="text-body-secondary mt-2">' . $label . '</div><div class="d-flex flex-wrap column-gap-3"' . $scroll . '>';
-        foreach ($rows as $email => $r) {
-            $id = 'mitSendTo' . $i++;
-            $html .= '<div class="form-check"><input type="hidden" name="mit_send_to_listed[]" value="' . escapeHtml($email) . '">'
-                . '<input class="form-check-input" type="checkbox" name="mit_send_to[]" value="' . escapeHtml($email) . '" id="' . $id . '"' . ($r['send'] ? ' checked' : '') . '>'
-                . '<label class="form-check-label" for="' . $id . '">' . ($r['name'] !== '' ? escapeHtml($r['name']) . ' <span class="text-body-secondary">&lt;' . escapeHtml($email) . '&gt;</span>' : escapeHtml($email)) . '</label></div>';
-        }
-        $html .= '</div>';
+        $label = $name !== '' ? $name : $email;
+        $options .= '<option value="' . escapeHtml($email) . '"' . ($r['send'] ? ' selected' : '')
+            . ' data-description="' . escapeHtml($groups[$r['group']] . $role) . '"'
+            . ' data-keywords="' . escapeHtml($email) . '">' . escapeHtml($label) . '</option>';
     }
-    $html .= '<div class="input-group input-group-sm mt-2" style="max-width: 26rem;"><input type="email" class="form-control" id="mitSendToNew" placeholder="Add an email address" aria-label="Add an email address">'
-        . '<button class="btn btn-outline-secondary" type="button" id="mitSendToAdd">Add</button></div></div>';
-    return $html . '<script src="' . mitAsset('/agent/js/mit_reply_recipients.js') . '"></script>';
+    return '<div class="input-group mb-3" id="mitSendTo" hidden><input type="hidden" name="mit_send_to_present" value="1">'
+        . '<span class="input-group-text" title="Your choice is remembered for this ticket">To</span>'
+        . '<select class="form-select select2" name="mit_send_to[]" id="mitSendToSelect" multiple data-tags="true" data-avatar="initials"'
+        . ' data-placeholder="Type a name or an email address" aria-label="Send to">' . $options . '</select></div>'
+        . '<script src="' . mitAsset('/agent/js/mit_reply_recipients.js') . '"></script>';
 }
 
 /**
@@ -138,7 +134,7 @@ function mitReplyRecipientsMail($ticket_id, array $post, $subject, $body, array 
         return $out;
     };
     $ticked = $clean($post['mit_send_to'] ?? []);
-    $listed = $clean($post['mit_send_to_listed'] ?? []) + $ticked;
+    $listed = array_fill_keys(array_keys($list), true) + $ticked;  // everyone offered, and anyone typed in
 
     // Remember it where it differs from the default; a typed address counts as not ticked by default
     foreach (array_slice(array_keys($listed), 0, 200) as $email) {

@@ -130,12 +130,19 @@ test('email reply goes only to the people ticked, and the choice is remembered',
 
     await page.click('label[for=public_reply_type_opt2]');
     const box = page.locator('#mitSendTo');
-    await expect(box, 'the Send to list').toBeVisible();
-    const contact = box.locator('input[type=checkbox][value="smoke-contact@example.invalid"]');
-    await expect(contact, 'the contact starts ticked').toBeChecked();
-    await contact.uncheck();
-    await page.fill('#mitSendToNew', 'smoke-copy@example.invalid');
-    await page.click('#mitSendToAdd');
+    await expect(box, 'the To line').toBeVisible();
+    const selected = () => box.locator('select').evaluate((el) => [...el.selectedOptions].map((o) => o.value));
+    expect(await selected(), 'the contact starts in To').toEqual(['smoke-contact@example.invalid']);
+    // As a person does: take the contact's chip out, type another address and add it
+    await box.locator('.itflow-select').click();
+    await page.keyboard.type('smoke-copy@example.invalid');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Escape');
+    await box.locator('select').evaluate((el) => {
+        el.querySelector('option[value="smoke-contact@example.invalid"]').selected = false;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(await selected()).toEqual(['smoke-copy@example.invalid']);
     const form = page.locator('form:has(#replyComposer)');
     await fillForm(form, { ticket_reply: 'Smoke test emailed reply' });
     await submit(form, 'add_ticket_reply');
@@ -147,8 +154,7 @@ test('email reply goes only to the people ticked, and the choice is remembered',
     await expect(history).not.toContainText('smoke-contact@example.invalid');
     // Next time it starts from the same choice
     await page.click('label[for=public_reply_type_opt2]');
-    await expect(box.locator('input[type=checkbox][value="smoke-contact@example.invalid"]')).not.toBeChecked();
-    await expect(box.locator('input[type=checkbox][value="smoke-copy@example.invalid"]')).toBeChecked();
+    expect(await selected(), 'To starts from the last choice').toEqual(['smoke-copy@example.invalid']);
     await expectClean(page, errors);
 });
 

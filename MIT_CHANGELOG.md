@@ -4,6 +4,9 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.64 - 2026-10-19
+- Email reply: who it goes to is now one "To" line - names as chips (no email addresses for people in ITFlow), type to find a contact, watcher or someone on our team, or type a new address.
+
 ## 26.10.63 - 2026-10-19
 - Version numbers: our build is ITFlow's release + an iteration, shown in the admin footer and on Admin > Update.
 - Release notes for every update so far (this list), shown under Admin > Update.

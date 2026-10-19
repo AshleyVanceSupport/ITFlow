@@ -367,8 +367,9 @@ model: see DEPLOYMENT.md.
   Settings card `admin/includes/mit_project_card.php` (one require at the end of `admin/settings_project.php`), handler
   `admin/post/mit_project_settings.php`; `mit_settings` project_tickets_apart / project_ticket_color.
 - Email reply recipients (Oct 2026): `functions/mit_reply_recipients.php` + `agent/js/mit_reply_recipients.js` (ours) - the reply
-  box's "Email reply" lists who gets it: the contact and watchers (ticked), the lead agent and helpers, the client's other
-  contacts (not ticked) and typed addresses; only those ticked are emailed (contact: ITFlow's email, the rest with the
+  box's "Email reply" has one "To" line (ITFlow's own picker, `js/itflow_select.js`: a multi-select with data-tags, names as chips,
+  group + email as search words): the contact and watchers start in it; the lead agent and helpers, the client's other
+  contacts and typed addresses can be added; only those in it are emailed (contact: ITFlow's email, the rest with the
   collaborator line), logged in the ticket history. The choice is remembered per ticket where it differs from that default
   (`mit_ticket_mail_choices`, M021). Hooks: one line in `agent/ticket.php` after `#replyAudience` (`mitReplyRecipientsField`),
   and in `agent/post/ticket.php` add_ticket_reply `mitReplyRecipientsMail` replaces `ticketMailContactAndWatchers` only when
