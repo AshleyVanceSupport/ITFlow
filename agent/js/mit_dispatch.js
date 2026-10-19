@@ -67,10 +67,11 @@
         const offset = (date.getDay() - firstDay + 7) % 7;
         return addDays(date, -offset);
     }
+    // Safe in text and in "..." / '...' attributes
     function escapeText(text) {
         const div = document.createElement('div');
         div.textContent = text == null ? '' : String(text);
-        return div.innerHTML;
+        return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
     // A project booking's tech, as a dot in their color (the booking itself is in the project color)
     function mitTechDot(color) {
@@ -276,7 +277,9 @@
             });
         }
         const html = '<div class="text-start small">'
-            + '<div class="mb-2 text-muted">' + escapeText(ticket.subject || '') + '</div>'
+            + (details && details.ticket
+                ? '<div class="mb-2"><label class="form-label mb-0" for="mdSubject">Title</label><input type="text" class="form-control form-control-sm" id="mdSubject" maxlength="500" value="' + escapeText(details.ticket.subject || '') + '"></div>'
+                : '<div class="mb-2 text-muted">' + escapeText(ticket.subject || '') + '</div>')
             + '<div class="row g-2">'
             + '<div class="col-12"><label class="form-label mb-0">Agent</label><select class="form-select form-select-sm" id="mdTech">'
             + techs.map(function (t) {
@@ -344,7 +347,15 @@
                     onsite: document.getElementById('mdOnsite').checked ? 1 : 0,
                     contact: document.getElementById('mdContact').checked ? 1 : 0
                 };
+                const subject = document.getElementById('mdSubject');
+                if (subject && !subject.value.trim()) {
+                    Swal.showValidationMessage('The ticket needs a title');
+                    return false;
+                }
                 if (document.getElementById('mdClient')) {
+                    if (subject) {
+                        post.detail_subject = subject.value;
+                    }
                     post.detail_client_id = document.getElementById('mdClient').value;
                     post.detail_contact_id = document.getElementById('mdContactPick').value;
                     post.detail_priority = document.getElementById('mdPriority').value;

@@ -318,7 +318,7 @@ function mitDispatchDetails($ticket_id) {
         return $list;
     };
     return [
-        'ticket' => ['client_id' => intval($row['ticket_client_id']), 'contact_id' => intval($row['ticket_contact_id']), 'priority' => $row['ticket_priority'],
+        'ticket' => ['subject' => $row['ticket_subject'], 'client_id' => intval($row['ticket_client_id']), 'contact_id' => intval($row['ticket_contact_id']), 'priority' => $row['ticket_priority'],
             'status_id' => intval($row['ticket_status']), 'category_id' => $category_id, 'sla_id' => $sla_id],
         // The statuses an agent may set by hand (ITFlow's own list), plus the one it has now when that is not one of them (New)
         'statuses' => array_values(array_map(function ($status) {
@@ -334,7 +334,7 @@ function mitDispatchDetails($ticket_id) {
 }
 
 /**
- * Save the details posted with a Dispatch booking (detail_client_id, detail_contact_id, detail_priority, detail_category_id,
+ * Save the details posted with a Dispatch booking (detail_subject, detail_client_id, detail_contact_id, detail_priority, detail_category_id,
  * detail_status, detail_sla - "auto", or an SLA id, 0 for none), only what changed, the way ITFlow's own forms do it: a new client as
  * "Change client" does (agent/post/ticket.php change_client_ticket - its public replies become internal, the old
  * client's asset, site and project links go); the contact only one of the client's; the priority through
@@ -358,6 +358,20 @@ function mitDispatchSaveDetails($ticket_id, array $post) {
     $old_client_id = intval($row['ticket_client_id']);
     $client_id = intval($post['detail_client_id']);
     $changed = [];
+
+    // Subject - checked before anything is saved; as ITFlow's Edit ticket keeps it (500 characters, no tags)
+    if (isset($post['detail_subject'])) {
+        $subject_input = trim((string) $post['detail_subject']);
+        if ($subject_input === '') {
+            return [false, 'A ticket needs a subject.'];
+        }
+        $subject = escapeSql(mb_substr($subject_input, 0, 500));
+        if ($subject !== escapeSql($row['ticket_subject'])) {
+            mysqli_query($mysqli, "UPDATE tickets SET ticket_subject = '$subject' WHERE ticket_id = $ticket_id");
+            logTicketHistory($ticket_id, "$session_name changed the subject to $subject");
+            $changed[] = 'subject';
+        }
+    }
 
     // Client
     if ($client_id && $client_id !== $old_client_id) {

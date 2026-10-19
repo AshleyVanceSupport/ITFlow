@@ -80,6 +80,39 @@ test('book it and see it on the calendar and Dispatch', async ({ page }) => {
     }
 });
 
+test('Dispatch Schedule dialog: the title is edited with the booking', async ({ page }) => {
+    test.skip(!made.ticketId, 'no ticket');
+    const ticketPage = `agent/ticket.php?client_id=${made.clientId}&ticket_id=${made.ticketId}`;
+    await visit(page, ticketPage);
+    const details = await fetchText(page, `mit_dispatch_ajax.php?details=${made.ticketId}`);
+    test.skip(details.status !== 200, 'Dispatch is off or not allowed');
+    const d = JSON.parse(details.text);
+    expect(d.ticket.subject, 'the dialog gets the title').toBeTruthy();
+    // The booking as it stands (tech and time), from ITFlow's own Schedule window
+    const modal = await openModal(page, `modals/ticket/ticket_edit_schedule.php?ticket_id=${made.ticketId}`);
+    const techId = await modal.locator('select[name=schedule_tech]').inputValue();
+    const start = (await modal.locator('input[name=scheduled_date_time]').inputValue()).replace('T', ' ') + ':00';
+    const csrf = await page.locator('input[name=csrf_token]').first().inputValue();
+    const book = (subject) => page.evaluate(async (body) => {
+        const response = await fetch('mit_dispatch_ajax.php', { method: 'POST', credentials: 'same-origin', body: new URLSearchParams(body) });
+        return response.json();
+    }, {
+        book: 1, csrf_token: csrf, ticket_id: made.ticketId, tech_id: techId, start, minutes: 60, onsite: 0, contact: 0,
+        detail_subject: subject, detail_client_id: d.ticket.client_id, detail_contact_id: d.ticket.contact_id, detail_priority: d.ticket.priority,
+        detail_status: d.ticket.status_id, detail_category_id: d.ticket.category_id, detail_sla: d.ticket.sla_id,
+    });
+    const renamed = smokeName('renamed "ticket"');
+    const saved = await book(renamed);
+    expect(saved.error, 'booking with a new title').toBeFalsy();
+    await visit(page, ticketPage);
+    await expect(page.locator('body')).toContainText(renamed);
+    // An empty title is refused, and nothing changes
+    const refused = await book('   ');
+    expect(refused.error).toContain('subject');
+    await visit(page, ticketPage);
+    await expect(page.locator('body')).toContainText(renamed);
+});
+
 test('our boxes on the ticket page', async ({ page }) => {
     test.skip(!made.ticketId, 'no ticket');
     const errors = watch(page);
