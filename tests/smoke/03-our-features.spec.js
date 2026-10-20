@@ -335,37 +335,54 @@ test('Microsoft 365 card offers a calendar-only app for Outlook', async ({ page 
     expect(await offer.count() + await done.count()).toBeGreaterThan(0);
 });
 
-test('modern look: on by default, Classic under Preferences turns it off', async ({ page }) => {
+test('modern look: on by default, light and dark, client tiles; Classic turns it off', async ({ page }) => {
     const prefs = async () => {
         await visit(page, 'agent/user/user_preferences.php');
         return page.locator('form:has([name="edit_your_user_preferences"])');
     };
-    const setLook = async (look) => {
+    const set = async (values) => {
         const form = await prefs();
-        await fillForm(form, { mit_look: look });
+        await fillForm(form, values);
         await submit(form, 'edit_your_user_preferences');
     };
     const form = await prefs();
-    const before = await form.locator('select[name="mit_look"]').inputValue();
-    test.skip(await page.locator('html').getAttribute('data-bs-theme') === 'dark', 'the modern look is light only');
+    const before = {
+        mit_look: await form.locator('select[name="mit_look"]').inputValue(),
+        dark_mode: await form.locator('input[name="dark_mode"]:checked').inputValue(),
+    };
     try {
-        await setLook('modern');
+        await set({ mit_look: 'modern', dark_mode: '0' });
         await visit(page, 'agent/tickets.php');
         await expect(page.locator('link[href*="/css/mit_theme.css"]')).toHaveCount(1);
         // The current page's menu item is the solid blue pill, the top bar is white with light menus
-        const active = page.locator('.app-sidebar .nav-link.active').first();
-        await expect(active).toHaveCSS('background-color', 'rgb(47, 111, 222)');
+        await expect(page.locator('.app-sidebar .nav-link.active').first()).toHaveCSS('background-color', 'rgb(47, 111, 222)');
         await expect(page.locator('.app-header')).toHaveAttribute('data-bs-theme', 'light');
         await expect(page.locator('.app-header.navbar')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
         // A status keeps its own colour as a tint
-        const status = page.locator('.badge[style*="background"]').first();
-        await expect(status).toHaveClass(/mit-tone/);
+        await expect(page.locator('.badge[style*="background"]').first()).toHaveClass(/mit-tone/);
 
-        await setLook('classic');
-        await visit(page, 'agent/tickets.php');
+        // A client's lists open with count tiles that link to what they count
+        for (const [list, first] of [['assets', 'Assets'], ['software', 'Licenses'], ['tickets', 'Open']]) {
+            await visit(page, `agent/${list}.php?client_id=1`);
+            await expect(page.locator('.mit-tiles .mit-tile')).not.toHaveCount(0);
+            await expect(page.locator('.mit-tiles .mit-tile-label').first()).toHaveText(first);
+        }
+        await expect(page.locator('.mit-tiles a.mit-tile[href*="show=overdue"]')).toHaveCount(1);
+        await expect(page.locator('.itflow-client-head .mit-client-meta')).toHaveCount(1);
+
+        // Dark: same look on dark panels, the top bar stays dark
+        await set({ dark_mode: '1' });
+        await visit(page, 'agent/assets.php?client_id=1');
+        await expect(page.locator('link[href*="/css/mit_theme.css"]')).toHaveCount(1);
+        await expect(page.locator('.app-header')).toHaveAttribute('data-bs-theme', 'dark');
+        await expect(page.locator('.mit-tile').first()).toHaveCSS('background-color', 'rgb(23, 33, 49)');
+
+        await set({ mit_look: 'classic', dark_mode: '0' });
+        await visit(page, 'agent/assets.php?client_id=1');
         await expect(page.locator('link[href*="/css/mit_theme.css"]')).toHaveCount(0);
+        await expect(page.locator('.mit-tiles')).toHaveCount(0);
         await expect(page.locator('.app-header')).toHaveAttribute('data-bs-theme', 'dark');
     } finally {
-        await setLook(before);
+        await set(before);
     }
 });

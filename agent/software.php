@@ -160,6 +160,7 @@ while ($license_type_row = mysqli_fetch_row($sql_license_types)) {
 
 ?>
 
+<?= $client_url && function_exists('mitClientTiles') ? mitClientTiles('licenses', $client_id) : '' // Mountaineer IT: count tiles ?>
 <div class="card">
     <div class="card-header bg-dark py-2">
         <h3 class="card-title mt-2"><i class="fas fa-fw fa-cube me-2"></i>Licenses</h3>

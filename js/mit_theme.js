@@ -1,15 +1,17 @@
 /*
  * Mountaineer IT - the modern look (css/mit_theme.css, loaded by functions/mit_theme.php).
- * The top bar is marked data-bs-theme="dark" in ITFlow's markup (it sat on the accent colour); here it is white, so its
- * search box and menus switch to Bootstrap's light colours. Statuses, tags and categories carry their colour inline -
+ * The top bar is marked data-bs-theme="dark" in ITFlow's markup (it sat on the accent colour); in light mode it is white
+ * here, so its search box and menus switch to Bootstrap's light colours. Statuses, tags and categories carry their colour inline -
  * it is copied into --mit-tone so the stylesheet can show a soft tint of it, also for badges added later (modals, lists).
  */
 (function () {
     'use strict';
 
-    document.querySelectorAll('.app-header[data-bs-theme="dark"]').forEach(function (bar) {
-        bar.setAttribute('data-bs-theme', 'light');
-    });
+    if (document.documentElement.getAttribute('data-bs-theme') !== 'dark') {
+        document.querySelectorAll('.app-header[data-bs-theme="dark"]').forEach(function (bar) {
+            bar.setAttribute('data-bs-theme', 'light');
+        });
+    }
 
     function tone(root) {
         root.querySelectorAll('.badge[style*="background"]').forEach(function (badge) {

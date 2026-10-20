@@ -3,8 +3,8 @@
 /*
  * Mountaineer IT - the modern look: css/mit_theme.css + js/mit_theme.js on top of ITFlow's own styles, for agent,
  * admin, account and report pages (includes/header.php, one line). Each agent picks Modern (the default) or Classic
- * under Account > Preferences, saved as the ui.look preference (mit_user_preferences). With ITFlow's Dark theme on,
- * the classic dark look is used - the modern look is light only.
+ * under Account > Preferences, saved as the ui.look preference (mit_user_preferences); it follows ITFlow's Light / Dark.
+ * With it on, a client's pages also get count tiles and a contact line in the header (functions/mit_client_tiles.php).
  */
 
 const MIT_LOOKS = ['modern' => 'Modern', 'classic' => 'Classic ITFlow'];
@@ -15,10 +15,19 @@ function mitLook($user_id) {
     return isset(MIT_LOOKS[$look]) ? $look : 'modern';
 }
 
-/** The stylesheet and script for the modern look, for includes/header.php - '' for Classic, Dark or nobody signed in. */
+/** True when the signed-in agent sees the modern look on this page. */
+function mitLookOn() {
+    global $session_user_id;
+    static $on = null;
+    if ($on === null) {
+        $on = !empty($session_user_id) && mitLook($session_user_id) === 'modern';
+    }
+    return $on;
+}
+
+/** The stylesheet and script for the modern look, for includes/header.php - '' for Classic or nobody signed in. */
 function mitThemeHead() {
-    global $session_user_id, $user_config_theme_dark;
-    if (empty($session_user_id) || !empty($user_config_theme_dark) || mitLook($session_user_id) !== 'modern') {
+    if (!mitLookOn()) {
         return '';
     }
     return '<link rel="stylesheet" href="' . mitAsset('/css/mit_theme.css') . '">'
@@ -33,7 +42,7 @@ function mitThemePreferenceField($user_id) {
     foreach (MIT_LOOKS as $value => $label) {
         $html .= '<option value="' . $value . '"' . ($look === $value ? ' selected' : '') . '>' . $label . '</option>';
     }
-    return $html . '</select></div><div class="form-text">Modern is used with the Light theme; Dark keeps ITFlow\'s dark look.</div></div>';
+    return $html . '</select></div><div class="form-text">Modern works with both Light and Dark.</div></div>';
 }
 
 /** Save it (a no-op when the form did not have it). */
@@ -42,3 +51,5 @@ function mitThemeSavePreference($user_id, array $post) {
         mitSetUserPreference($user_id, 'ui.look', isset(MIT_LOOKS[$post['mit_look']]) ? $post['mit_look'] : 'modern');
     }
 }
+
+require_once __DIR__ . '/mit_client_tiles.php';

@@ -45,6 +45,7 @@ if (empty($client_top_head_skip)) {
             <?php if ($client_is_lead) { ?><span class="badge rounded-pill text-bg-info fw-normal">Lead</span><?php } ?>
             <?php if ($client_archived_at) { ?><span class="badge rounded-pill text-bg-secondary fw-normal">Archived</span><?php } ?>
             <?= tagPills('client', $client_id, $client_tags) ?>
+            <?= function_exists('mitClientHeadMeta') ? mitClientHeadMeta() : '' // Mountaineer IT: contact line ?>
 
             <?php /* Open tickets and balance due, always in sight */ ?>
             <?php if ($client_head_glance_tickets || $client_head_glance_due) { ?>

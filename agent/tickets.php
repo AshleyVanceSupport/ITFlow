@@ -278,6 +278,7 @@ $export_extra = [
 
 ?>
 
+<?= $client_url && function_exists('mitClientTiles') ? mitClientTiles('tickets', $client_id) : '' // Mountaineer IT: count tiles ?>
 <div class="card">
     <div class="card-header bg-dark py-2">
         <h3 class="card-title mt-2"><i class="fa fa-fw fa-life-ring me-2"></i>Tickets</h3>

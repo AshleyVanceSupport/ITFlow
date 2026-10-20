@@ -206,6 +206,7 @@ $search_noun = $type_filter ? $asset_type_tabs[$type_filter]['label'] : 'assets'
 
 ?>
 
+<?= $client_url && function_exists('mitClientTiles') ? mitClientTiles('assets', $client_id) : '' // Mountaineer IT: count tiles ?>
 <div class="card">
     <div class="card-header bg-dark py-2">
         <h3 class="card-title mt-2"><i class="fas fa-fw fa-desktop me-2"></i>Assets</h3>

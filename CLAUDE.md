@@ -466,12 +466,19 @@ model: see DEPLOYMENT.md.
   changes: slate sidebar with a blue active pill, white top bar (the script switches ITFlow's `.app-header` `data-bs-theme="dark"`
   to light), grey rounded `.card` panels with white boxes inside, `.itflow-dash-rail` counts as pastel icon tiles, small-caps
   table headings, tinted badges (inline-coloured statuses / tags get `--mit-tone` + `.mit-tone` from the script), charts redrawn
-  in Inter. Agent / admin / account / report pages only (not the portal, guest pages or login), light mode only. Per agent:
+  in Inter. Agent / admin / account / report pages only (not the portal, guest pages or login), light and dark (every colour
+  is a `--mit-*` variable, set again under `[data-bs-theme="dark"]`; ITFlow's `--itflow-accent` / `--bs-success` ... are set
+  from them, which is also how its charts - js/dashboard.js, client_overview.js, reports.js - get the palette). Per agent:
   `mit_user_preferences` ui.look (modern - the default - | classic). Hooks: one line in `includes/header.php` after
   itflow_custom.css (`mitThemeHead()`), `mitThemePreferenceField` in `agent/user/user_preferences.php`, `mitThemeSavePreference`
   in `agent/user/post/profile.php`, `functions.php` (require). Selectors to re-check after an upstream restyle: `.app-header`,
   `.app-sidebar .nav-link.active`, `.card-header.bg-dark`, `.itflow-dash-rail*`, `.itflow-client-switcher`, `btn-outline-dark`
   / `-info` reply-type toggles.
+  Client tiles and header line (`functions/mit_client_tiles.php`, modern look only): `mitClientTiles('assets'|'licenses'|'tickets',
+  $client_id)` - one line each before the main card in `agent/assets.php`, `agent/software.php`, `agent/tickets.php` (only with
+  `$client_url`); tiles link to ITFlow's own filters (expire_days, show=overdue / unassigned / closed). `mitClientHeadMeta()` -
+  one line after `tagPills` in `agent/includes/inc_client_top_head.php` (primary contact, phone, email, website from
+  inc_all_client.php's variables).
 - Cron health (Oct 2026): `functions/mit_cron_health.php` (ours) reads ITFlow's own `cron_jobs` / `config_cron_last_dispatch_at`
   (`mitCronProblems`: not running > 5 min, switched off, a job Failed, stuck Running > 2 h, or late - interval jobs past two
   intervals (min +10 min), daily ones past 26 h). Shown as a warning next to the bell for admins (`includes/mit_cron_nav.php`,
