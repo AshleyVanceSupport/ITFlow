@@ -339,6 +339,12 @@ meal and end times each day, answer for a missed, late or short meal period, and
 The payroll report adds double time and meal / rest premium hours. Have an employment lawyer check the statement
 wording (`mitTsCaStatement` in `functions/mit_ts_california.php`) and the rules before relying on them.
 
+## Remote people's time zones
+
+ITFlow has one company time zone (Admin > Settings > Localization). Someone working elsewhere can have their own for
+their timesheet - Admin > Timesheets > People, or Account > Preferences: their "today" and the day their ticket time
+falls on follow their clock. Everything else (tickets, the calendar, emails) stays in company time.
+
 ## Cron alerts
 
 Admin > Maintenance > Cron has a **Cron alerts** card. Admins get a warning next to the bell, and an email,

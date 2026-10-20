@@ -295,6 +295,11 @@ model: see DEPLOYMENT.md.
   blocks (Start / End, any number - `blockRow` / `blocks()` in the script, posted as `times[blocks][i][start|end|gap]`, read by
   `mitTsCaParseBlocks`; the old six boxes still parse through `mitTsCaParseDay`). An off gap of 30 min+ still counts as a meal
   period in `mitTsCaAnalyze` (off duty); `mitTsCaPeriodsText` writes " / off / " between split shifts (change history, snapshot).
+  Time zones (M023): `mit_timesheet_people.time_zone` (NULL = the company's `config_timezone`, which ITFlow sets for the whole
+  request). `mitTsOwnZone` / `mitTsZone` / `mitTsToday` / `mitTsLocalDate` / `mitTsCompanyRange` in mit_timesheets.php: a person's
+  today (mitTsDays auto lost, future block, closure fill, auto-lock, reminders, CA save, view, page, default period) and the day
+  their ticket replies fall on (`mitTsTicketMinutesLive` - own-zone people reply by reply, `mitTsDayTickets`, `mitTsReplyTimeGuard`).
+  Set in the People modal and Account > Preferences (`mitTsZoneSelect`, `mitTsSaveZone`). Typed times are stored as typed.
   Behind on timesheets (team page `agent/mit_timesheets.php`): `mitTsBehind` (ended periods not submitted in the last
   MIT_TS_BEHIND_PERIODS, from the start date, approval on) with Remind / Remind all (`mit_ts_remind` -> `mitTsRemind`:
   notification + email, sets reminded_late_at, not again within an hour); Late badge and Send back on the rows. Send back emails too.

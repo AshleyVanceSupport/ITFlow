@@ -431,7 +431,7 @@ function mitTsCaSave(array $sheet, array $period, array $times, array $answers, 
             $problems[] = date('D M j', strtotime($date)) . ": $error";
             continue;
         }
-        if ($periods && $date > date('Y-m-d')) {
+        if ($periods && $date > mitTsToday($user_id)) {
             $problems[] = date('D M j', strtotime($date)) . ': times go on once the day has come';
             continue;
         }

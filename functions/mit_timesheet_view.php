@@ -37,7 +37,7 @@ function mitTsViewDays($user_id, array $period, array $only = []) {
     $days = mitTsDays([$user_id], $period['start'], $period['end'])[$user_id] ?? [];
     $entries = mitTsEntries([$user_id], $period['start'], $period['end'])[$user_id] ?? [];
     $ca_days = mitTsCaDays([$user_id], $period['start'], $period['end'])[$user_id] ?? [];
-    $today = date('Y-m-d');
+    $today = mitTsToday($user_id);
     $out = [];
     foreach ($days as $date => $d) {
         if ($only && !in_array($date, $only, true)) {

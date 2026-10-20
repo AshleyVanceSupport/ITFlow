@@ -6,6 +6,7 @@ CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to
 
 ## 26.10.69 - 2026-10-19
 - Timesheets (California rules): work times are now blocks - Start and End - with "Add another block" for as many as a day needs. Between blocks, pick a meal break or "off between shifts" for a split shift; the day shows the meal and the time off separately. Weekends and holidays take times like any other day.
+- Timesheets: time zones for remote people - set one on Admin > Timesheets > People, or yourself under Account > Preferences. Their timesheet's "today", days still to come and the day their ticket time falls on follow their own clock; the timesheet shows the zone.
 
 ## 26.10.68 - 2026-10-19
 - Timesheets: a Holidays tab under Admin > Timesheets - add, edit (date and name) and remove holidays a year at a time, or add the US holidays for a year. They are the same closure days as Admin > SLA.

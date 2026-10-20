@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
-const { watch, visit, expectClean } = require('./helpers');
+const { watch, visit, expectClean, fillForm, submit } = require('./helpers');
 
 const techState = path.join(__dirname, '.auth', 'tech.json');
 test.skip(!fs.existsSync(techState), 'no ITFLOW_TECH_EMAIL / ITFLOW_TECH_PASSWORD given');
@@ -67,4 +67,26 @@ test('the signing window can be used (nothing covers it)', async ({ page }) => {
     await sign.locator('input[name=mit_ca_signature]').fill('test');
     await sign.locator('[data-bs-dismiss="modal"]').last().click();
     await expect(sign).toBeHidden();
+});
+
+test('a remote person\'s own time zone sets their timesheet\'s today', async ({ page }) => {
+    const save = async (zone) => {
+        await visit(page, 'agent/user/user_preferences.php');
+        const form = page.locator('form:has([name="edit_your_user_preferences"])');
+        await fillForm(form, { mit_ts_time_zone: zone });
+        await submit(form, 'edit_your_user_preferences');
+    };
+    // UTC+14 - "today" there is a day ahead of the office for most of the day
+    await save('Pacific/Kiritimati');
+    try {
+        await visit(page, 'agent/mit_timesheet.php');
+        await expect(page.locator('#mitTsZone')).toContainText('Kiritimati');
+        const data = JSON.parse(await page.locator('#mitTsData').textContent());
+        const there = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Kiritimati' }).format(new Date());
+        expect(data.today).toBe(there);
+    } finally {
+        await save('');
+    }
+    await visit(page, 'agent/mit_timesheet.php');
+    await expect(page.locator('#mitTsZone')).toHaveCount(0);
 });

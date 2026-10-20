@@ -24,7 +24,7 @@ $user_id = intval($_GET['user_id'] ?? $session_user_id);
 if (!mitTsMaySee($user_id)) {
     $user_id = intval($session_user_id);
 }
-$period = mitTsPeriodFromRequest($_GET['start'] ?? '');
+$period = mitTsPeriodFromRequest($_GET['start'] ?? '', $user_id);
 // The person picker: who this agent may look at (with anyone who has hours in this period), and themselves
 $people = mitTsVisibleUsers($period) + mitTsUsers([$session_user_id, $user_id]);
 uasort($people, function ($a, $b) {
@@ -41,7 +41,7 @@ $own = $user_id === intval($session_user_id);
 $may_approve = $own ? mitTsLevel() >= 3 : mitTsMayApprove($user_id);
 $sheet = mitTsSheet($user_id, $period);
 $locked = mitTsWhyLocked($sheet);
-$today = date('Y-m-d');
+$today = mitTsToday($user_id);
 $ca = mitTsCaOn($user_id, $period['end']);
 $approval = $settings['approval'];
 $attest = $ca ? mitTsCaAttestation($sheet['sheet_id']) : null;
@@ -88,6 +88,7 @@ $status_text = [
                 <?php if ($approval || $sheet['status'] === 'approved') { ?><?= mitTsBadge($sheet['status']) ?><?php } ?>
                 <span><?= escapeHtml($status_text) ?></span>
                 <?php if ($ca) { ?><span class="badge text-bg-light border fw-normal" title="Start, meal and end times are recorded; California overtime and premium pay">California non-exempt</span><?php } ?>
+                <?php if ($zone = mitTsOwnZone($user_id)) { ?><span class="badge text-bg-light border fw-normal" id="mitTsZone" title="Days, today and the day ticket time falls on follow this time zone (the company's is <?= escapeHtml(mitTsZoneLabel(date_default_timezone_get())) ?>)"><i class="fas fa-globe-americas me-1"></i><?= escapeHtml(mitTsZoneLabel($zone)) ?></span><?php } ?>
             </div>
         </div>
         <?php if (count($people) > 1) { ?>
@@ -99,7 +100,7 @@ $status_text = [
         <?php } ?>
         <div class="btn-group" role="group" aria-label="Pay period">
             <a class="btn btn-outline-secondary" href="<?= $url($prev) ?>" title="Previous period"><i class="fas fa-chevron-left"></i></a>
-            <a class="btn btn-outline-secondary fw-semibold" href="<?= $url(mitTsPeriodFor()) ?>" title="Go to this period"><?= escapeHtml($period['label']) ?></a>
+            <a class="btn btn-outline-secondary fw-semibold" href="<?= $url(mitTsPeriodFor($today)) ?>" title="Go to this period"><?= escapeHtml($period['label']) ?></a>
             <a class="btn btn-outline-secondary" href="<?= $url($next) ?>" title="Next period"><i class="fas fa-chevron-right"></i></a>
         </div>
         <?php if (mitTsLevel() >= 1 || mitTsMyReports()) { ?>

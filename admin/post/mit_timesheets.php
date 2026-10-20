@@ -191,6 +191,9 @@ if (isset($_POST['mit_ts_person_save'])) {
         $set .= ", ca_rules = " . ($ca_rules === '1' ? 1 : ($ca_rules === '0' ? 0 : 'NULL'));
     }
     mysqli_query($mysqli, "INSERT INTO mit_timesheet_people SET user_id = $user_id, $set ON DUPLICATE KEY UPDATE $set");
+    if (isset($_POST['time_zone'])) {
+        mitTsSaveZone($user_id, $_POST['time_zone']);
+    }
     logAudit('Settings', 'Edit', "$session_name edited the timesheet details of user $user_id");
     flashAlert('Saved');
     redirect();
