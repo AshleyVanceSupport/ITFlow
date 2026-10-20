@@ -45,7 +45,12 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
     .mit-dispatch [data-kind="outlook_busy"] { background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, .25) 0 4px, transparent 4px 10px); opacity: .7; cursor: default; }
     .mit-dispatch [data-kind="helper"] { outline: 2px dashed rgba(255, 255, 255, .75); outline-offset: -3px; }
     .mit-dispatch-week th, .mit-dispatch-week td { vertical-align: top; }
-    .mit-dispatch-week td.mit-dw-cell { min-width: 130px; height: 70px; padding: .25rem; }
+    .mit-dispatch-week td.mit-dw-cell { min-width: 130px; width: 200px; max-width: 200px; height: 70px; padding: .25rem; }
+    /* Agent names stay at the left while the week scrolls sideways */
+    .mit-dispatch-week tbody th, .mit-dispatch-week thead th:first-child { position: sticky; left: 0; z-index: 1; box-shadow: inset -1px 0 0 var(--bs-border-color), 4px 0 6px -4px rgba(0, 0, 0, .15); }
+    .mit-dispatch-week thead th:first-child { z-index: 3; }
+    /* Solid, so the days scrolling under the names / heading don't show through (the modern look makes headings transparent) */
+    .table.mit-dispatch-week > tbody > tr > th, .table.mit-dispatch-week > thead > tr > th { background: var(--mit-panel, var(--bs-body-bg)) !important; }
     .mit-dispatch-week td.mit-dw-cell.is-off { background: var(--bs-tertiary-bg); }
     /* A project booking (functions/mit_projects.php) - project color, the tech's color as a dot */
     .mit-tech-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: .3rem; vertical-align: middle; flex-shrink: 0; box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .9); }
@@ -82,6 +87,7 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
         .mit-dispatch-pane .mit-dispatch-col { display: flex; flex-direction: column; }
         .mit-dispatch-pane .mit-dispatch-col [data-md-cal] { flex: 1 1 auto; min-height: 0; }
         .mit-dispatch-pane .mit-dispatch-week thead th { position: sticky; top: 0; z-index: 2; background: var(--bs-body-bg); }
+        .mit-dispatch-pane .mit-dispatch-week thead th:first-child { z-index: 3; }
         .mit-dispatch-pane .mit-dispatch-week-wrap { overflow: visible; }
     }
 </style>

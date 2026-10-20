@@ -423,6 +423,8 @@ model: see DEPLOYMENT.md.
   and Outlook busy times; items are drawn like the calendar page (`eventContent` with the itflow-cal-* classes: time, project
   tech dot, `extendedProps.icon` - fa-car onsite / fa-headset remote / meeting icons -, title, detail; the week chips carry the
   icon too). Clashes (`mitScheduleConflicts`) count those events as well (`mitEventConflicts`, all-day ones left out).
+  Week view: the Agent column is sticky (left: 0) with solid header / name cells (`.table.mit-dispatch-week > thead|tbody > tr > th`
+  beats the modern look's transparent table headings), and a day is at most 200px wide (chips cut short, full title on hover).
   "This week" card under the board (all views; `mitDispatchWeekStats`, `?week_stats=`, `renderStats` + Chart.js from ITFlow's footer):
   inbound vs closed per day (closed = COALESCE(resolved, closed)), vs last week / 4-week average, SLA met / missed for targets due
   this week (resolution also when closed this week), breached / close now, and per shown agent: assigned this week (created for

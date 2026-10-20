@@ -4,6 +4,9 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.88 - 2026-10-20
+- Dispatch Week view: the agent names stay on the left while the days scroll sideways, and each day is kept to a set width - long titles are cut short (hover for the whole title) instead of stretching one day across the screen.
+
 ## 26.10.87 - 2026-10-20
 - Dispatch: each agent's column (Day and Week) now also shows the rest of their day - calendar meetings and events they organise or are invited to, closure days (holidays) and their Outlook busy times - so tickets can be booked around them. Only tickets can be moved there; click a meeting to open it.
 - Dispatch: bookings show the onsite (car) or remote (headset) icon, as on the calendar page, with where / who underneath in the Day view.

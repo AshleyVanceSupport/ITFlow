@@ -120,6 +120,45 @@ test('dispatch: an agent\'s meetings show beside their bookings, count as a clas
     await expectClean(page, errors);
 });
 
+test('dispatch week: the agent names stay at the left when the days scroll sideways', async ({ browser, baseURL }) => {
+    const use = test.info().project.use;
+    const context = await browser.newContext({ storageState: use.storageState, baseURL, ignoreHTTPSErrors: use.ignoreHTTPSErrors, viewport: { width: 1000, height: 700 } });
+    const page = await context.newPage();
+    const errors = watch(page);
+    const response = await page.goto('agent/mit_dispatch.php');
+    test.skip(response.status() >= 400 || !(await page.locator('[data-md-view="week"]').count()), 'Dispatch is switched off');
+    const view = await page.locator('[data-md-view].active, [data-md-view].btn-secondary').first().getAttribute('data-md-view').catch(() => 'day');
+    await page.click('[data-md-view="week"]');
+    try {
+        const name = page.locator('.mit-dispatch-week tbody th').first();
+        await name.waitFor();
+        const before = (await name.boundingBox()).x;
+        const scrolled = await page.evaluate(() => {
+            // Whichever box around the table scrolls sideways (it depends on the screen width)
+            let scroller = document.querySelector('.mit-dispatch-week').parentElement;
+            while (scroller && !(scroller.scrollWidth > scroller.clientWidth + 5 && getComputedStyle(scroller).overflowX !== 'visible')) {
+                scroller = scroller.parentElement;
+            }
+            if (!scroller) {
+                return 0;
+            }
+            scroller.scrollLeft = 200;
+            return scroller.scrollLeft;
+        });
+        test.skip(scrolled === 0, 'the week fits without scrolling');
+        expect(Math.abs((await name.boundingBox()).x - before), 'the name did not move').toBeLessThan(2);
+        const corner = await page.locator('.mit-dispatch-week thead th').first().evaluate((th) => getComputedStyle(th).backgroundColor);
+        expect(corner, 'the corner is solid, so the days do not show through').not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+        await expectClean(page, errors);
+    } finally {
+        if (view && view !== 'week') {
+            await page.click(`[data-md-view="${view}"]`); // put the agent's view back (it is remembered)
+            await page.waitForTimeout(500);
+        }
+        await context.close();
+    }
+});
+
 test.afterAll(async ({ browser }) => {
     const use = test.info().project.use;
     const context = await browser.newContext({ storageState: use.storageState, baseURL: use.baseURL, ignoreHTTPSErrors: use.ignoreHTTPSErrors });
