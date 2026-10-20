@@ -82,6 +82,12 @@ function mitOutlookSetError($user_id, $error) {
  * ---------- signing in ----------
  */
 
+/** The app people's Outlook sign-ins go through: the calendar-only one once it is set up, else ITFlow's main app. */
+function mitOutlookClientId() {
+    $calendar = mitM365CalendarApp();
+    return $calendar ? $calendar['client_id'] : mitM365App()['client_id'];
+}
+
 /** The token address for the app's tenant (call only when mitOutlookAvailable()). */
 function mitOutlookTokenUrl() {
     return MIT_M365_LOGIN . '/' . rawurlencode(mitM365App()['tenant_id']) . '/oauth2/v2.0/token';
@@ -91,7 +97,7 @@ function mitOutlookTokenUrl() {
 function mitOutlookAuthorizeUrl($state) {
     $app = mitM365App();
     return MIT_M365_LOGIN . '/' . rawurlencode($app['tenant_id']) . '/oauth2/v2.0/authorize?' . http_build_query([
-        'client_id' => $app['client_id'],
+        'client_id' => mitOutlookClientId(),
         'response_type' => 'code',
         'redirect_uri' => mitM365RedirectUris()[1],
         'response_mode' => 'query',
@@ -107,9 +113,8 @@ function mitOutlookConnect($user_id, $code) {
     if (!mitOutlookAvailable()) {
         throw new RuntimeException('Microsoft 365 is no longer set up in ITFlow - ask an admin (Admin > Settings > Mail).');
     }
-    $app = mitM365App();
     $response = mitHttp('POST', mitOutlookTokenUrl(), [], mitMicrosoftTokenFields(mitOutlookTokenUrl(), [
-        'client_id' => $app['client_id'],
+        'client_id' => mitOutlookClientId(),
         'client_secret' => MIT_M365_CERT_SECRET,
         'grant_type' => 'authorization_code',
         'code' => $code,
@@ -161,12 +166,15 @@ function mitOutlookToken(array $link) {
     if (!mitOutlookAvailable()) {
         throw new RuntimeException('ITFlow\'s Microsoft 365 app has been removed - ask an admin to set it up again under Admin > Settings > Mail.');
     }
+    if ((string) $link['refresh_token'] === '') {
+        throw new RuntimeException('Click Reconnect to sign in to Outlook again - ITFlow now connects Outlook calendars through a calendar-only app.');
+    }
     $refresh = mitDecryptSecret($link['refresh_token']);
     if ($refresh === '') {
         throw new RuntimeException('This server cannot read your saved Outlook sign-in (ITFlow was restored onto another server, or config.php changed) - click Reconnect.');
     }
     $response = mitHttp('POST', mitOutlookTokenUrl(), [], mitMicrosoftTokenFields(mitOutlookTokenUrl(), [
-        'client_id' => mitM365App()['client_id'],
+        'client_id' => mitOutlookClientId(),
         'client_secret' => MIT_M365_CERT_SECRET,
         'grant_type' => 'refresh_token',
         'refresh_token' => $refresh,

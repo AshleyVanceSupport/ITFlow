@@ -142,6 +142,12 @@ model: see DEPLOYMENT.md.
   ticketMailSchedule hook, `mitOutlookSyncsEmail`); busy copy skips ITFlow invites
   (iCalUId `ticket-<id>@`). Disabled users (user_status 0) are paused, archived ones removed.
   Reads of our tables fall back quietly when the database update has not run yet.
+  Calendar-only app (26.10.73): Outlook sign-ins go through a second app with only User.Read + Calendars.ReadWrite
+  (`mitM365ProvisionCalendar`, settings m365_cal_client_id / m365_cal_object_id, `mitM365CalendarApp`, `mitOutlookClientId`), so
+  a stored tech refresh token cannot reach mail. Same tenant, same certificate (`mitMicrosoftTokenFields` signs for both client
+  ids; `mitM365RenewCertificate` addKeys the calendar app first). Made from the Microsoft 365 card (purpose `calendar` in
+  `admin/post/mit_m365.php` - which also refuses `create` while an app exists); making it empties every link's tokens with a
+  Reconnect message. The callback warns when the Outlook account is not the agent's ITFlow email.
 - Ticket timers in the top bar (Oct 2026): `includes/mit_timers_nav.php` + `js/mit_timers.js` (ours)
   list the browser's ticket timers (ITFlow's localStorage keys `<id>-startTime`/`-pausedTime`
   from `agent/js/ticket_time_tracking.js` - re-check if upstream changes them) with pause /

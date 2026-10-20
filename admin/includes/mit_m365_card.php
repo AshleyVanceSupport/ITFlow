@@ -97,6 +97,21 @@ $mit_m365_cert_expired = $mit_m365_app && $mit_m365_app['cert_expires'] !== '' &
                 </div>
             <?php } ?>
 
+            <?php if (mitM365CalendarApp()) { ?>
+                <div class="small text-body-secondary mb-2"><i class="fas fa-calendar-check me-2 text-success"></i>Staff Outlook calendars connect through their own
+                    calendar-only app (<code><?= escapeHtml(mitM365CalendarApp()['client_id']) ?></code>) - their sign-ins cannot reach their mail.</div>
+            <?php } elseif ($mit_m365_app['setup'] === 'automatic') { ?>
+                <div class="alert alert-warning">
+                    <strong>Give Outlook calendars their own app.</strong> Staff Outlook sign-ins go through this app, which also has the Mail
+                    permissions for ITFlow's mailbox - so a stolen copy of this server could read their mail. A calendar-only app (Calendars and
+                    User.Read, nothing else) fixes that. Sign in once as a <strong>Global Administrator</strong>; anyone who connected Outlook
+                    reconnects once afterwards.
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-sm btn-primary js-mit-m365-start" data-purpose="calendar"><i class="fab fa-microsoft me-2"></i>Make the calendar app</button>
+                    </div>
+                </div>
+            <?php } ?>
+
             <?php if ($mit_m365_mailbox_connected) { ?>
                 <?php if ($mit_m365_graph_unknown) { ?>
                     <div class="text-success"><i class="fas fa-check-circle me-2"></i>Mailbox connected - ITFlow checks which way mail goes the next time it sends or receives

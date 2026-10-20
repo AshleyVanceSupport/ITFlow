@@ -47,6 +47,13 @@ const MIT_M365_EXCHANGE_APP_ID = '00000002-0000-0ff1-ce00-000000000000';
 const MIT_M365_GRAPH_SCOPES = ['User.Read', 'Calendars.ReadWrite', 'Mail.ReadWrite', 'Mail.ReadWrite.Shared', 'Mail.Send', 'Mail.Send.Shared',
     'offline_access', 'openid', 'profile', 'email'];
 const MIT_M365_EXCHANGE_SCOPES = ['IMAP.AccessAsUser.All', 'SMTP.Send'];
+/**
+ * The calendar-only app for people's Outlook calendars (functions/mit_outlook.php): their saved sign-ins can only reach
+ * their calendar - not their mail, as they could through the main app, which has the Mail permissions for ITFlow's mailbox.
+ * Same tenant and the same certificate as the main app; settings m365_cal_client_id / m365_cal_object_id.
+ */
+const MIT_M365_CAL_APP_NAME = 'Mountaineer IT ITFlow Outlook calendars';
+const MIT_M365_CAL_SCOPES = ['User.Read', 'Calendars.ReadWrite'];
 
 /** Bumped when the permissions above change - an app set up with fewer is offered "Update permissions". */
 const MIT_M365_PERMISSIONS_VERSION = 2;
@@ -404,7 +411,9 @@ function mitMicrosoftTokenFields($url, array $fields) {
     }
     $login_host = parse_url(MIT_M365_LOGIN, PHP_URL_HOST);
     $client_id = (string) ($fields['client_id'] ?? '');
-    if (parse_url((string) $url, PHP_URL_HOST) !== $login_host || $client_id === '' || $client_id !== (string) mitSetting('m365_client_id', '')) {
+    // Our two apps (the main one and the calendar-only one) sign with the same certificate
+    if (parse_url((string) $url, PHP_URL_HOST) !== $login_host || $client_id === ''
+        || !in_array($client_id, array_filter([(string) mitSetting('m365_client_id', ''), (string) mitSetting('m365_cal_client_id', '')]), true)) {
         return $fields;
     }
 
@@ -758,6 +767,95 @@ function mitM365MaybeRenewCertificate() {
     }
 }
 
+/** The calendar-only app, or null while Outlook sign-ins still go through the main app. */
+function mitM365CalendarApp() {
+    $client_id = (string) mitSetting('m365_cal_client_id', '');
+    return $client_id === '' ? null : ['client_id' => $client_id, 'object_id' => (string) mitSetting('m365_cal_object_id', '')];
+}
+
+/** The current certificate as Graph wants it in keyCredentials (base64 DER). */
+function mitM365CertDerBase64() {
+    $pem = (string) mitSetting('m365_cert_pem', '');
+    return preg_replace('/-----[^-]+-----|\s+/', '', $pem);
+}
+
+/**
+ * Make the calendar-only app with an admin's setup token (Admin > Settings > Mail, the main app set up first): only
+ * User.Read and Calendars.ReadWrite, approved for the organization, signing in with the main app's certificate. Every
+ * Outlook connection made through the main app is set to Reconnect. Returns the app or throws.
+ */
+function mitM365ProvisionCalendar($token) {
+    global $mysqli;
+    $app = mitM365App();
+    if (!$app) {
+        throw new RuntimeException('Set up the main Microsoft 365 app first.');
+    }
+    if (mitM365CalendarApp()) {
+        throw new RuntimeException('The calendar-only app is already set up.');
+    }
+    if (mitM365TokenTenant($token) !== $app['tenant_id']) {
+        throw new RuntimeException('That sign-in belongs to a different Microsoft 365 organization than ITFlow\'s app.');
+    }
+    $der = mitM365CertDerBase64();
+    if ($der === '') {
+        throw new RuntimeException('ITFlow has no certificate for its Microsoft 365 app - set the app up again first.');
+    }
+    $graph = mitM365ResourceScopes($token, MIT_M365_GRAPH_APP_ID);
+    $entries = [];
+    foreach (MIT_M365_CAL_SCOPES as $scope) {
+        if (empty($graph['scopes'][$scope])) {
+            throw new RuntimeException("Microsoft did not list the $scope permission in this organization.");
+        }
+        $entries[] = ['id' => $graph['scopes'][$scope], 'type' => 'Scope'];
+    }
+    $created = mitGraph('POST', '/applications', $token, [
+        'displayName' => MIT_M365_CAL_APP_NAME,
+        'signInAudience' => 'AzureADMyOrg',
+        'notes' => 'Created by ITFlow (Mountaineer IT) for staff Outlook calendars only - no mail. Signs in with the same certificate as the email app.',
+        'web' => ['redirectUris' => [mitM365RedirectUris()[1]]],
+        'requiredResourceAccess' => [['resourceAppId' => MIT_M365_GRAPH_APP_ID, 'resourceAccess' => $entries]],
+        'keyCredentials' => [['type' => 'AsymmetricX509Cert', 'usage' => 'Verify', 'key' => $der, 'displayName' => 'ITFlow certificate ' . date('Y-m-d')]],
+    ]);
+    if ($created['status'] !== 201 || empty($created['json']['appId'])) {
+        throw new RuntimeException(mitM365Error($created, 'Creating the calendar app'));
+    }
+    $client_id = $created['json']['appId'];
+    $object_id = $created['json']['id'];
+    try {
+        $sp = null;
+        for ($attempt = 0; $attempt < 5 && !$sp; $attempt++) {
+            if ($attempt) {
+                sleep(3);
+            }
+            $response = mitGraph('POST', '/servicePrincipals', $token, ['appId' => $client_id]);
+            if ($response['status'] === 201) {
+                $sp = $response['json']['id'];
+            }
+        }
+        if (!$sp) {
+            throw new RuntimeException(mitM365Error($response, 'Creating the calendar app\'s service principal'));
+        }
+        $grant = mitGraph('POST', '/oauth2PermissionGrants', $token, ['clientId' => $sp, 'consentType' => 'AllPrincipals',
+            'resourceId' => $graph['id'], 'scope' => implode(' ', MIT_M365_CAL_SCOPES)]);
+        if ($grant['status'] !== 201) {
+            throw new RuntimeException(mitM365Error($grant, 'Approving the calendar app\'s permissions'));
+        }
+    } catch (Throwable $e) {
+        mitGraph('DELETE', '/applications/' . rawurlencode($object_id), $token);
+        throw $e;
+    }
+    mitSetSetting('m365_cal_client_id', $client_id);
+    mitSetSetting('m365_cal_object_id', $object_id);
+    // Sign-ins made through the main app can still reach mail - they go, and each person reconnects once
+    try {
+        mysqli_query($mysqli, "UPDATE mit_outlook_links SET refresh_token = '', access_token = '', access_expires_at = NULL,
+            last_error = 'ITFlow now connects Outlook calendars through a calendar-only app - click Reconnect once.'");
+    } catch (Throwable $e) {
+        // Outlook tables not there yet
+    }
+    return mitM365CalendarApp();
+}
+
 /**
  * Give the app a new certificate. The app adds the key itself (Graph application addKey, which an
  * app may always do for its own keys, proven with a token signed by its current key).
@@ -778,6 +876,29 @@ function mitM365RenewCertificate() {
     }
 
     $cert = mitM365NewCertificate();
+
+    // The calendar-only app shares the certificate: it gets the new key first (with its own token, signed by the current
+    // key), so a failure there leaves both apps on the old certificate rather than splitting them
+    $calendar = mitM365CalendarApp();
+    if ($calendar && $calendar['object_id'] !== '') {
+        $cal_token = mitHttp('POST', $token_url, [], [
+            'client_id' => $calendar['client_id'], 'scope' => 'https://graph.microsoft.com/.default', 'grant_type' => 'client_credentials',
+            'client_assertion_type' => 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+            'client_assertion' => mitM365ClientAssertion($token_url, $calendar['client_id']),
+        ]);
+        if (empty($cal_token['json']['access_token'])) {
+            throw new RuntimeException(mitM365Error($cal_token, 'Signing in to renew the calendar app\'s certificate'));
+        }
+        $cal_added = mitGraph('POST', '/applications/' . rawurlencode($calendar['object_id']) . '/addKey', $cal_token['json']['access_token'], [
+            'keyCredential' => ['type' => 'AsymmetricX509Cert', 'usage' => 'Verify', 'key' => $cert['der_base64'], 'displayName' => 'ITFlow certificate ' . date('Y-m-d')],
+            'passwordCredential' => null,
+            'proof' => mitM365SignedJwt(['aud' => '00000002-0000-0000-c000-000000000000', 'iss' => $calendar['object_id'], 'nbf' => time() - 60, 'exp' => time() + 600]),
+        ]);
+        if ($cal_added['status'] !== 200) {
+            throw new RuntimeException(mitM365Error($cal_added, 'Adding the new certificate to the calendar app'));
+        }
+    }
+
     $proof = mitM365SignedJwt(['aud' => '00000002-0000-0000-c000-000000000000', 'iss' => $app['object_id'],
         'nbf' => time() - 60, 'exp' => time() + 600]);
     $added = mitGraph('POST', '/applications/' . rawurlencode($app['object_id']) . '/addKey', $response['json']['access_token'], [

@@ -322,3 +322,13 @@ test('security headers, and API keys only in a header', async ({ page }) => {
     expect(api.status()).toBe(401);
     expect(await api.text()).toContain('X-API-Key');
 });
+
+test('Microsoft 365 card offers a calendar-only app for Outlook', async ({ page }) => {
+    await visit(page, 'admin/settings_mail.php?tab=oauth');
+    const card = page.locator('body');
+    test.skip(await page.locator('button.js-mit-m365-start[data-purpose="create"]').count() > 0, 'no Microsoft 365 app set up on this install');
+    // Either the button to make it, or the line saying Outlook already uses it
+    const offer = page.locator('button.js-mit-m365-start[data-purpose="calendar"]');
+    const done = card.getByText('calendar-only app (', { exact: false });
+    expect(await offer.count() + await done.count()).toBeGreaterThan(0);
+});

@@ -39,4 +39,9 @@ try {
 } catch (Throwable $e) {
     flashAlert("Outlook connected as " . escapeHtml($link['account_email']) . ", but the first sync failed: " . escapeHtml($e->getMessage()), 'warning');
 }
+// Another account than the person's own (a shared or service mailbox the browser was signed in to) gets their bookings,
+// and its appointments become their busy times - say so, so they can reconnect with their own
+if (strcasecmp(trim((string) $link['account_email']), trim((string) $session_email)) !== 0) {
+    flashAlert("Note: that is not your ITFlow email (" . escapeHtml($session_email) . ") - if it is not your own calendar, click Disconnect and connect again with your own account.", 'warning');
+}
 redirect('mit_outlook.php');
