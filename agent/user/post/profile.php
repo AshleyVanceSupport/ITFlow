@@ -125,6 +125,7 @@ if (isset($_POST['edit_your_user_preferences'])) {
         ON DUPLICATE KEY UPDATE user_config_calendar_first_day = $calendar_first_day, user_config_theme_dark = $dark_mode, user_config_records_per_page = $per_page");
     mitSaveAgentColor($session_user_id, $_POST); // Mountaineer IT: calendar colour
     mitTsSavePreferences($session_user_id, $_POST); // Mountaineer IT: timesheet
+    mitThemeSavePreference($session_user_id, $_POST); // Mountaineer IT: look
 
     logAudit("User Account", "Edit", "$session_name updated their preferences");
 

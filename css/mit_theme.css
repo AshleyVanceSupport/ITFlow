@@ -1,0 +1,432 @@
+/*
+ * Mountaineer IT - the modern look (functions/mit_theme.php loads it after ITFlow's own styles, light mode only).
+ * Slate sidebar with a solid blue pill on the current page, white top bar and page, soft grey rounded panels with
+ * white boxes inside, pastel icon tiles for counts, small-caps table headings, tinted status pills, Inter.
+ * Only colours, type and spacing - ITFlow's markup is untouched, so Account > Preferences > Look > Classic turns it off.
+ */
+
+@font-face {
+    font-family: "Inter Variable";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 100 900;
+    src: url(fonts/inter/inter-latin-ext-wght-normal.woff2) format("woff2-variations");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+    font-family: "Inter Variable";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 100 900;
+    src: url(fonts/inter/inter-latin-wght-normal.woff2) format("woff2-variations");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+    --mit-text: #1f2937;
+    --mit-muted: #6b7280;
+    --mit-accent: #2f6fde;
+    --mit-accent-dark: #1f5fc8;
+    --mit-accent-soft: #eef4fd;
+    --mit-panel: #f4f6f9;
+    --mit-line: #e6eaf0;
+    --mit-side: #1e2a3b;
+    --mit-side-text: #d6dde8;
+    --mit-side-muted: #8a97ab;
+    --mit-font: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --bs-body-font-family: var(--mit-font);
+    --bs-link-color: var(--mit-accent-dark);
+    --bs-link-color-rgb: 31, 95, 200;
+    --bs-link-hover-color: #174c9f;
+    --bs-link-hover-color-rgb: 23, 76, 159;
+    --bs-primary: var(--mit-accent);
+    --bs-primary-rgb: 47, 111, 222;
+}
+
+body, .btn, .form-control, .form-select, .table, .card, .nav-link, .dropdown-menu, .modal, .tooltip, .popover,
+input, select, textarea, button {
+    font-family: var(--mit-font) !important;
+    -webkit-font-smoothing: antialiased;
+}
+body, body.bg-body-tertiary, .app-wrapper, .app-main {
+    background: #fff !important;
+    color: var(--mit-text);
+}
+h1, .h1, h2, .h2, h3, .h3, h4, .h4 {
+    font-weight: 700;
+    letter-spacing: -.02em;
+}
+
+/* ---------- sidebar ---------- */
+.app-sidebar,
+.app-sidebar .sidebar-brand {
+    background: var(--mit-side) !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+.app-sidebar .itflow-brand-name,
+.app-sidebar .brand-text {
+    color: #fff !important;
+    font-weight: 700 !important;
+    letter-spacing: -.01em;
+}
+.app-sidebar .nav-header {
+    color: var(--mit-side-muted) !important;
+    text-transform: uppercase;
+    font-size: .7rem !important;
+    letter-spacing: .1em;
+    font-weight: 600 !important;
+    padding-top: 1.1rem !important;
+}
+.app-sidebar .nav-link {
+    color: var(--mit-side-text) !important;
+    border-radius: 8px !important;
+    font-weight: 500;
+    margin: 2px 0;
+}
+.app-sidebar .nav-link i {
+    color: var(--mit-side-text) !important;
+    opacity: .85;
+}
+.app-sidebar .nav-link:hover {
+    background: rgba(255, 255, 255, .06) !important;
+    color: #fff !important;
+}
+.app-sidebar .nav-link.active,
+.app-sidebar .nav-pills .nav-link.active {
+    background: var(--mit-accent) !important;
+    color: #fff !important;
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .25) !important;
+}
+.app-sidebar .nav-link.active i {
+    color: #fff !important;
+    opacity: 1;
+}
+.app-sidebar .nav-treeview .nav-link.active {
+    background: rgba(255, 255, 255, .1) !important;
+    box-shadow: none !important;
+}
+.app-sidebar .badge {
+    background: rgba(255, 255, 255, .08) !important;
+    color: var(--mit-side-text) !important;
+    font-weight: 600 !important;
+    border-radius: 6px !important;
+}
+.app-sidebar .badge.text-bg-danger,
+.app-sidebar .badge.bg-danger {
+    background: rgba(239, 68, 68, .22) !important;
+    color: #fecaca !important;
+}
+.app-sidebar .nav-link.active .badge {
+    background: rgba(255, 255, 255, .2) !important;
+    color: #fff !important;
+}
+.app-sidebar .itflow-client-switcher > .dropdown-toggle,
+.app-sidebar .itflow-client-switcher > button,
+.app-sidebar .itflow-client-switcher > a {
+    background: rgba(255, 255, 255, .06) !important;
+    border-radius: 12px !important;
+    border-left: 3px solid var(--mit-accent) !important;
+}
+
+/* ---------- top bar (js/mit_theme.js also switches it to Bootstrap's light colours) ---------- */
+body .app-header.navbar {
+    background-color: #fff !important;
+    border-bottom: 1px solid #eef1f5 !important;
+    box-shadow: none !important;
+}
+body .app-header.navbar > .container-fluid > .navbar-nav > .nav-item > .nav-link,
+body .app-header.navbar > .container-fluid > .navbar-nav > .nav-item > .nav-link > i {
+    color: #4b5563 !important;
+}
+.app-header .navbar-search input,
+.app-header .navbar-search .form-control,
+.app-header .navbar-search .btn {
+    background: var(--mit-panel) !important;
+    border: 1px solid #edf0f4 !important;
+    border-radius: 8px !important;
+    color: var(--mit-text) !important;
+}
+
+/* ---------- panels: soft grey, rounded, no border; white boxes inside ---------- */
+.card:not([class*="bg-"]):not([class*="text-bg-"]),
+.card.bg-dark {
+    background: var(--mit-panel) !important;
+    color: var(--mit-text) !important;
+    border: 0 !important;
+    border-radius: 16px !important;
+    box-shadow: none !important;
+}
+.card .card:not([class*="bg-"]):not([class*="text-bg-"]),
+.modal .card:not([class*="bg-"]):not([class*="text-bg-"]),
+.card .card.bg-dark {
+    background: #fff !important;
+    border: 1px solid var(--mit-line) !important;
+    border-radius: 12px !important;
+}
+.card-header:not([class*="bg-"]),
+.card-header.bg-dark,
+.card-footer:not([class*="bg-"]) {
+    background: transparent !important;
+    color: var(--mit-text) !important;
+    border-color: var(--mit-line) !important;
+}
+.card-header.bg-dark {
+    border-bottom: 0 !important;
+    padding-top: 1rem;
+}
+.card-header.bg-dark .card-title,
+.card-header.bg-dark h3,
+.card-header.bg-dark h5,
+.card.bg-dark .card-title {
+    color: var(--mit-text) !important;
+}
+.card-header .card-title,
+.card-header h3.card-title,
+.card-header h5.card-title {
+    font-weight: 700 !important;
+    letter-spacing: -.01em;
+}
+.card-header .card-title > i:first-child,
+.card-header h3 > i:first-child,
+.card-header h5 > i:first-child {
+    color: var(--mit-accent) !important;
+}
+.card-header.bg-dark .text-light,
+.card-header.bg-dark .text-white,
+.card.bg-dark a.text-light {
+    color: var(--mit-accent-dark) !important;
+}
+.card-header.bg-dark .btn-tool,
+.card-header.bg-dark .btn-link {
+    color: var(--mit-muted) !important;
+}
+.card > .list-group .list-group-item,
+.card > .list-group-flush .list-group-item {
+    background: transparent;
+    border-color: var(--mit-line);
+}
+.card > .list-group > .list-group-item:nth-child(even) {
+    background: #fff;
+}
+
+/* ---------- tables: white and grey rows, small-caps headings ---------- */
+.table {
+    --bs-table-bg: transparent;
+    --bs-table-striped-bg: transparent;
+}
+.table > thead > tr > th,
+.table > thead.table-light > tr > th,
+.table > thead.table-dark > tr > th {
+    background: transparent !important;
+    color: #4b5563 !important;
+    text-transform: uppercase;
+    font-size: .72rem;
+    letter-spacing: .08em;
+    font-weight: 600;
+    border-bottom: 1px solid var(--mit-line) !important;
+    border-top: 0 !important;
+}
+.table > thead > tr > th a {
+    color: inherit !important;
+}
+.table:not(.table-bordered) > tbody > tr:nth-child(odd) > * {
+    background: #fff;
+}
+.table:not(.table-bordered) > tbody > tr:nth-child(even) > * {
+    background: var(--mit-panel);
+}
+.table:not(.table-bordered) > tbody > tr > td {
+    border-bottom: 0;
+}
+.table-hover > tbody > tr:hover > * {
+    background: var(--mit-accent-soft) !important;
+    --bs-table-bg-state: transparent;
+}
+.table td a.text-dark,
+.table td a.text-body,
+.table td a.fw-bold,
+.table td a.text-bold {
+    color: var(--mit-accent-dark) !important;
+}
+
+/* ---------- buttons, tabs, inputs ---------- */
+.btn {
+    border-radius: 8px;
+    font-weight: 600;
+}
+.btn-primary,
+.btn-dark {
+    --bs-btn-bg: var(--mit-accent);
+    --bs-btn-border-color: var(--mit-accent);
+    --bs-btn-hover-bg: var(--mit-accent-dark);
+    --bs-btn-hover-border-color: var(--mit-accent-dark);
+    --bs-btn-active-bg: var(--mit-accent-dark);
+    --bs-btn-active-border-color: var(--mit-accent-dark);
+    --bs-btn-color: #fff;
+    --bs-btn-hover-color: #fff;
+    background-color: var(--bs-btn-bg) !important;
+    border-color: var(--bs-btn-border-color) !important;
+    color: #fff !important;
+}
+.btn-primary:hover,
+.btn-dark:hover {
+    background-color: var(--mit-accent-dark) !important;
+}
+.btn-light,
+.btn-secondary,
+.btn-outline-secondary,
+.btn-outline-dark,
+.btn-default {
+    --bs-btn-hover-bg: #f3f5f8;
+    --bs-btn-hover-color: var(--mit-text);
+    --bs-btn-active-bg: #eef1f5;
+    --bs-btn-active-color: var(--mit-text);
+    background-color: #fff;
+    border: 1px solid #d9dee6 !important;
+    color: var(--mit-text) !important;
+}
+.btn-check:checked + .btn-outline-secondary,
+.btn-check:checked + .btn-light,
+.btn-check:checked + .btn-outline-info,
+.btn-check:checked + .btn-outline-primary,
+.btn-outline-secondary.active {
+    background-color: var(--mit-accent) !important;
+    border-color: var(--mit-accent) !important;
+    color: #fff !important;
+}
+/* Internal note and other "dark" choices stay dark when picked */
+.btn-check:checked + .btn-outline-dark,
+.btn-outline-dark.active {
+    background-color: var(--mit-side) !important;
+    border-color: var(--mit-side) !important;
+    color: #fff !important;
+}
+.nav-pills .nav-link {
+    border-radius: 8px;
+    font-weight: 500;
+}
+.nav-pills .nav-link.active,
+.nav-pills .show > .nav-link {
+    background: var(--mit-accent) !important;
+    color: #fff !important;
+}
+.nav-pills .nav-link.active .badge {
+    background: rgba(255, 255, 255, .25) !important;
+    color: #fff !important;
+}
+.form-control,
+.form-select,
+.input-group-text {
+    border-radius: 8px;
+    border-color: #dfe3ea;
+}
+.form-control:focus,
+.form-select:focus {
+    border-color: #9dbcf0;
+    box-shadow: 0 0 0 .2rem rgba(47, 111, 222, .15);
+}
+.modal-content {
+    border: 0;
+    border-radius: 16px;
+    box-shadow: 0 20px 50px -12px rgba(15, 23, 42, .3);
+}
+.modal-header.bg-dark {
+    background: var(--mit-side) !important;
+    border-radius: 16px 16px 0 0;
+}
+.dropdown-menu {
+    border-color: var(--mit-line);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px -8px rgba(15, 23, 42, .18);
+}
+.page-link {
+    border-radius: 8px !important;
+    margin: 0 2px;
+}
+.page-item.active .page-link {
+    background: var(--mit-accent);
+    border-color: var(--mit-accent);
+}
+
+/* ---------- tinted pills ---------- */
+.badge {
+    border-radius: 6px;
+    font-weight: 600;
+}
+.badge.bg-primary, .badge.text-bg-primary { background: #dbe8fd !important; color: #1f5fc8 !important; }
+.badge.bg-success, .badge.text-bg-success { background: #d8f2e2 !important; color: #17653b !important; }
+.badge.bg-warning, .badge.text-bg-warning { background: #fdf0c4 !important; color: #8a5a00 !important; }
+.badge.bg-danger, .badge.text-bg-danger { background: #fde0e0 !important; color: #b42323 !important; }
+.badge.bg-info, .badge.text-bg-info { background: #d6f3f8 !important; color: #0b6a7d !important; }
+.badge.bg-secondary, .badge.text-bg-secondary,
+.badge.bg-dark, .badge.text-bg-dark,
+.badge.bg-light, .badge.text-bg-light { background: #e9edf2 !important; color: #374151 !important; }
+/* Statuses, tags and categories carry their own colour inline - js/mit_theme.js copies it into --mit-tone */
+.badge.mit-tone {
+    background: color-mix(in srgb, var(--mit-tone) 17%, #fff) !important;
+    color: color-mix(in srgb, var(--mit-tone) 72%, #000) !important;
+}
+
+/* ---------- counts on the dashboard and client overview: pastel icon tile, label, big number ---------- */
+.card.card:has(> .itflow-dash-rail) {
+    background: transparent !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+}
+.itflow-dash-rail {
+    gap: 12px;
+}
+.itflow-dash-rail-item {
+    display: grid !important;
+    grid-template-columns: 52px 1fr;
+    column-gap: 14px;
+    align-items: center;
+    background: var(--mit-panel) !important;
+    border: 0 !important;
+    border-radius: 14px;
+    padding: 12px !important;
+    box-shadow: none !important;
+}
+a.itflow-dash-rail-item:hover {
+    background: #eceff4 !important;
+}
+.itflow-dash-rail-label {
+    display: contents !important;
+    color: var(--mit-text) !important;
+    font-weight: 500;
+}
+.itflow-dash-rail-label > .fas {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+    width: 52px !important;
+    height: 52px;
+    margin: 0 !important;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    font-size: 1.25rem;
+    background: color-mix(in srgb, var(--itflow-dash-tone) 16%, #fff);
+    color: color-mix(in srgb, var(--itflow-dash-tone) 80%, #000) !important;
+}
+.itflow-dash-rail-count {
+    grid-column: 2;
+    grid-row: 2;
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--mit-text) !important;
+}
+.itflow-dash-rail-detail {
+    grid-column: 2;
+    grid-row: 3;
+}
+
+/* ---------- client header ---------- */
+.itflow-client-head-name {
+    font-weight: 700;
+}
+.itflow-client-avatar {
+    border-radius: 10px !important;
+}

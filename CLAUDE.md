@@ -461,6 +461,17 @@ model: see DEPLOYMENT.md.
   open, not in a client's ticket list. Hooks in `agent/tickets.php`: one line after `enforceUserPermission`
   (`mitListViewRestore('tickets')`, then filter_header.php runs again so sort / order / dates follow) and
   `mitListViewResetButton('tickets')` before the List / Board group (`?mit_reset_view=<csrf token>`). `functions.php` (require).
+- Modern look (Oct 2026): `functions/mit_theme.php`, `css/mit_theme.css`, `js/mit_theme.js`, `css/fonts/inter/` (Inter,
+  OFL - from @fontsource-variable/inter, latin + latin-ext) - ours. Colours, type and spacing over ITFlow's own styles, no markup
+  changes: slate sidebar with a blue active pill, white top bar (the script switches ITFlow's `.app-header` `data-bs-theme="dark"`
+  to light), grey rounded `.card` panels with white boxes inside, `.itflow-dash-rail` counts as pastel icon tiles, small-caps
+  table headings, tinted badges (inline-coloured statuses / tags get `--mit-tone` + `.mit-tone` from the script), charts redrawn
+  in Inter. Agent / admin / account / report pages only (not the portal, guest pages or login), light mode only. Per agent:
+  `mit_user_preferences` ui.look (modern - the default - | classic). Hooks: one line in `includes/header.php` after
+  itflow_custom.css (`mitThemeHead()`), `mitThemePreferenceField` in `agent/user/user_preferences.php`, `mitThemeSavePreference`
+  in `agent/user/post/profile.php`, `functions.php` (require). Selectors to re-check after an upstream restyle: `.app-header`,
+  `.app-sidebar .nav-link.active`, `.card-header.bg-dark`, `.itflow-dash-rail*`, `.itflow-client-switcher`, `btn-outline-dark`
+  / `-info` reply-type toggles.
 - Cron health (Oct 2026): `functions/mit_cron_health.php` (ours) reads ITFlow's own `cron_jobs` / `config_cron_last_dispatch_at`
   (`mitCronProblems`: not running > 5 min, switched off, a job Failed, stuck Running > 2 h, or late - interval jobs past two
   intervals (min +10 min), daily ones past 26 h). Shown as a warning next to the bell for admins (`includes/mit_cron_nav.php`,

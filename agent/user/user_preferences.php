@@ -60,6 +60,7 @@ $per_page = intval($me['user_config_records_per_page']) ?: 10;
                     <div class="form-text">Also changed from the bottom of any list.</div>
                 </div>
 
+                <?= mitThemePreferenceField($session_user_id) // Mountaineer IT ?>
                 <?= mitCalendarColorField($session_user_id) // Mountaineer IT ?>
                 <?= mitTsPreferenceFields($session_user_id) // Mountaineer IT ?>
             </div>

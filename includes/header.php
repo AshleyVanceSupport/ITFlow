@@ -63,6 +63,7 @@ header("X-Frame-Options: DENY");
              our own .bg-<colour> box colours still win. */ ?>
     <link rel="stylesheet" href="/libs/adminlte/css/adminlte-colors-v3.min.css">
     <link rel="stylesheet" href="/css/itflow_custom.css">
+    <?= function_exists('mitThemeHead') ? mitThemeHead() : '' // Mountaineer IT: modern look ?>
 
     <!-- Scripts -->
 </head>

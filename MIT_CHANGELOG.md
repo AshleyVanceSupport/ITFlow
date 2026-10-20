@@ -4,6 +4,9 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.74 - 2026-10-20
+- New modern look: a slate side menu with a blue pill on the page you're on, a white top bar, soft grey rounded panels, count tiles with pastel icons, tinted status pills and the Inter font. On for everyone; go back to ITFlow's look under Account > Preferences > Look > Classic. It's light only - the Dark theme keeps ITFlow's dark look.
+
 ## 26.10.73 - 2026-10-20
 - Security: changing a password (yourself, an admin, or the "reset all passwords" button) or turning MFA on or off now signs that person out everywhere else on their next click - also client portal logins.
 - API: send the key in an `X-API-Key` header (or `Authorization: Bearer`); keys in the address (`?api_key=`) are refused, since they end up in server logs. Update n8n and any scripts that used the address.

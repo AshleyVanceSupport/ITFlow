@@ -334,3 +334,38 @@ test('Microsoft 365 card offers a calendar-only app for Outlook', async ({ page 
     const done = card.getByText('calendar-only app (', { exact: false });
     expect(await offer.count() + await done.count()).toBeGreaterThan(0);
 });
+
+test('modern look: on by default, Classic under Preferences turns it off', async ({ page }) => {
+    const prefs = async () => {
+        await visit(page, 'agent/user/user_preferences.php');
+        return page.locator('form:has([name="edit_your_user_preferences"])');
+    };
+    const setLook = async (look) => {
+        const form = await prefs();
+        await fillForm(form, { mit_look: look });
+        await submit(form, 'edit_your_user_preferences');
+    };
+    const form = await prefs();
+    const before = await form.locator('select[name="mit_look"]').inputValue();
+    test.skip(await page.locator('html').getAttribute('data-bs-theme') === 'dark', 'the modern look is light only');
+    try {
+        await setLook('modern');
+        await visit(page, 'agent/tickets.php');
+        await expect(page.locator('link[href*="/css/mit_theme.css"]')).toHaveCount(1);
+        // The current page's menu item is the solid blue pill, the top bar is white with light menus
+        const active = page.locator('.app-sidebar .nav-link.active').first();
+        await expect(active).toHaveCSS('background-color', 'rgb(47, 111, 222)');
+        await expect(page.locator('.app-header')).toHaveAttribute('data-bs-theme', 'light');
+        await expect(page.locator('.app-header.navbar')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+        // A status keeps its own colour as a tint
+        const status = page.locator('.badge[style*="background"]').first();
+        await expect(status).toHaveClass(/mit-tone/);
+
+        await setLook('classic');
+        await visit(page, 'agent/tickets.php');
+        await expect(page.locator('link[href*="/css/mit_theme.css"]')).toHaveCount(0);
+        await expect(page.locator('.app-header')).toHaveAttribute('data-bs-theme', 'dark');
+    } finally {
+        await setLook(before);
+    }
+});
