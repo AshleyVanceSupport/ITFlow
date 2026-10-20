@@ -498,8 +498,8 @@ function userQueueMail($recipient, $recipient_name, $subject, $body_html) {
 
 /** An agent's own email, sent from the system - their account was changed. Queued; nothing when mail is not set up. */
 function userNotifyChange($name, $email, $what) {
-    global $config_smtp_host, $config_app_name, $session_company_name;
-    if (empty($config_smtp_host) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    global $config_smtp_host, $config_smtp_provider, $config_app_name, $session_company_name;
+    if ((empty($config_smtp_host) && empty($config_smtp_provider)) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         return;
     }
     $app = $config_app_name ?: 'ITFlow';

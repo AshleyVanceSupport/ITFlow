@@ -245,6 +245,10 @@ function mitReimbSave(array $ticket, ?array $row, array $post, array $files) {
     if ($row) {
         mysqli_query($mysqli, "UPDATE mit_reimbursements SET $set WHERE reimb_id = " . intval($row['reimb_id']));
         $reimb_id = intval($row['reimb_id']);
+        // Already recorded as an ITFlow expense (approved, then reopened): the expense follows the change
+        if ($kind === 'purchase' && intval($row['expense_id'])) {
+            mitReimbSyncExpense(array_merge($row, ['entry_date' => $date, 'description' => $description, 'vendor' => $vendor === '' ? null : $vendor, 'amount' => $amount]));
+        }
     } else {
         mysqli_query($mysqli, "INSERT INTO mit_reimbursements SET ticket_id = $ticket_id, client_id = $client_id, user_id = $user_id, kind = '$kind', $set, created_by = " . intval($session_user_id));
         $reimb_id = mysqli_insert_id($mysqli);
@@ -283,8 +287,19 @@ function mitReimbDelete(array $row) {
     if (intval($row['trip_id'])) {
         mysqli_query($mysqli, "DELETE FROM trips WHERE trip_id = " . intval($row['trip_id']));
     }
-    if (!empty($row['receipt']) && !intval($row['expense_id'])) {
+    if (!empty($row['receipt'])) {
         @unlink(dirname(__DIR__) . '/' . MIT_REIMB_RECEIPT_DIR . '/' . basename($row['receipt']));
+    }
+    // Already recorded as an ITFlow expense (approved, then reopened): that expense goes too, with its copy of the receipt
+    if (intval($row['expense_id'])) {
+        $expense = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT expense_receipt FROM expenses WHERE expense_id = " . intval($row['expense_id'])));
+        if ($expense) {
+            if (!empty($expense['expense_receipt'])) {
+                @unlink(dirname(__DIR__) . '/uploads/expenses/' . basename($expense['expense_receipt']));
+            }
+            mysqli_query($mysqli, "DELETE FROM expenses WHERE expense_id = " . intval($row['expense_id']));
+            logAudit('Expense', 'Delete', escapeSql(mitTsWho() . ' removed the expense of a reimbursed purchase that was taken off a timesheet'), intval($row['client_id']), intval($row['expense_id']));
+        }
     }
     mysqli_query($mysqli, "DELETE FROM mit_reimbursements WHERE reimb_id = " . intval($row['reimb_id']));
     $text = stripslashes((string) $session_name) . ' removed ' . ($row['kind'] === 'mileage' ? 'mileage' : 'a purchase') . ' for reimbursement: ' . mitReimbWhat($row) . ' (' . mitMoney($row['amount']) . ')';
@@ -293,6 +308,44 @@ function mitReimbDelete(array $row) {
     }
     logAudit('Ticket', 'Edit', escapeSql($text), intval($row['client_id']), intval($row['ticket_id']));
     return [true, 'Removed' . (intval($row['part_id']) ? ' - the part it added is still on the ticket.' : '.')];
+}
+
+/** The words an expense recorded from a purchase carries. */
+function mitReimbExpenseDescription(array $row) {
+    $user_name = (string) getFieldById('users', intval($row['user_id']), 'user_name');
+    return "Reimbursed to $user_name: " . $row['description'] . ($row['vendor'] ? ' (' . $row['vendor'] . ')' : '') . ' - ticket ' . mitReimbTicketText($row);
+}
+
+/** A purchase already recorded as an ITFlow expense was changed: the expense's date, amount and words follow it. */
+function mitReimbSyncExpense(array $row) {
+    global $mysqli;
+    mysqli_query($mysqli, "UPDATE expenses SET expense_date = '" . escapeSql($row['entry_date']) . "', expense_amount = " . round((float) $row['amount'], 2) . ",
+        expense_description = '" . escapeSql(mitReimbExpenseDescription($row)) . "' WHERE expense_id = " . intval($row['expense_id']));
+    logAudit('Expense', 'Edit', escapeSql(mitTsWho() . ' changed a reimbursed purchase - its expense was updated to match'), intval($row['client_id']), intval($row['expense_id']));
+}
+
+/**
+ * Without timesheet approval, purchases become ITFlow expenses once their period has settled (cron, like leave earned -
+ * mitLeaveAccrueEnded): when it locks, or else 7 days after it ends. Returns lines for the log.
+ */
+function mitReimbRecordEnded() {
+    $log = [];
+    if (!mitReimbReady() || mitTsSettings()['approval']) {
+        return $log;
+    }
+    $wait = mitTsSettings()['autolock_days'] ?: 7;
+    $period = mitTsPeriodShift(mitTsPeriodFor(), -1);
+    for ($i = 0; $i < 4; $i++, $period = mitTsPeriodShift($period, -1)) {
+        if (date('Y-m-d') <= date('Y-m-d', strtotime($period['end'] . " +$wait days"))) {
+            continue;  // still settling
+        }
+        foreach (mitTsUsers() as $user_id => $user) {
+            if (($done = mitReimbRecordExpenses($user_id, $period)) > 0) {
+                $log[] = "{$user['user_name']}: $done purchase(s) recorded as expenses for {$period['label']}";
+            }
+        }
+    }
+    return $log;
 }
 
 /**
@@ -306,7 +359,6 @@ function mitReimbRecordExpenses($user_id, array $period) {
         return 0;
     }
     $currency = $session_company_currency ?: (string) mysqli_fetch_row(mysqli_query($mysqli, "SELECT company_currency FROM companies WHERE company_id = 1"))[0];
-    $user_name = (string) getFieldById('users', $user_id, 'user_name');
     $done = 0;
     foreach (mitReimbForUsers([$user_id], $period['start'], $period['end'])[intval($user_id)] ?? [] as $row) {
         if ($row['kind'] !== 'purchase' || intval($row['expense_id'])) {
@@ -318,7 +370,7 @@ function mitReimbRecordExpenses($user_id, array $period) {
             $copy = randomString(32) . '.' . strtolower(pathinfo($row['receipt'], PATHINFO_EXTENSION));
             $receipt = is_file($from) && @copy($from, dirname(__DIR__) . "/uploads/expenses/$copy") ? $copy : '';
         }
-        $description = "Reimbursed to $user_name: " . $row['description'] . ($row['vendor'] ? ' (' . $row['vendor'] . ')' : '') . ' - ticket ' . mitReimbTicketText($row);
+        $description = mitReimbExpenseDescription($row);
         mysqli_query($mysqli, "INSERT INTO expenses SET expense_date = '" . escapeSql($row['entry_date']) . "', expense_amount = " . round((float) $row['amount'], 2) . ",
             expense_currency_code = '" . escapeSql($currency) . "', expense_account_id = " . intval($settings['account_id']) . ", expense_vendor_id = 0,
             expense_client_id = " . intval($row['client_id']) . ", expense_category_id = " . intval($settings['category_id']) . ",

@@ -590,8 +590,15 @@ function mitNinjaSyncRun() {
     $claimed = [];
     $report = [
         'unmapped' => [], 'client_problems' => [], 'misplaced' => [], 'archived' => [], 'duplicates' => [], 'serial_conflicts' => [],
-        'same_name' => [], 'orphans' => [], 'per_org' => [],
+        'same_name' => [], 'orphans' => [], 'deleted' => [], 'per_org' => [],
     ];
+    // Devices that were linked to an asset which has since been deleted in ITFlow (the link was cleared by the foreign key):
+    // deleting it was a choice, so the sync doesn't make it again
+    $gone = [];
+    $result = mysqli_query($mysqli, "SELECT device_id FROM mit_ninja_devices WHERE asset_id IS NULL AND synced_at IS NOT NULL");
+    while ($row = mysqli_fetch_row($result)) {
+        $gone[intval($row[0])] = true;
+    }
     $count = ['ignored' => 0, 'unchanged' => 0];
     $org_tally = function ($org_id, $what) use (&$report) {
         $report['per_org'][$org_id][$what] = ($report['per_org'][$org_id][$what] ?? 0) + 1;
@@ -681,7 +688,8 @@ function mitNinjaSyncRun() {
                 'action' => $settings['misplaced'] === 'create' ? 'made a new asset in the mapped client - archive the old one' : 'not synced - move the asset to the mapped client (Transfer to Client) or fix the mapping'];
             if ($settings['misplaced'] !== 'create') {
                 $org_tally($org_id, 'skipped');
-                $plan[] = ['action' => 'link', 'device' => $device, 'asset_id' => null];
+                // Its link is left as it is (the asset keeps its NinjaOne button while it is sorted out)
+                $plan[] = ['action' => 'link', 'device' => $device, 'asset_id' => false];
                 continue;
             }
         } elseif ($archived) {
@@ -707,6 +715,12 @@ function mitNinjaSyncRun() {
             }));
             if ($others) {
                 $report['serial_conflicts'][] = $entry + ['client' => $client_label($client_id), 'elsewhere' => array_map($brief, $others)];
+            }
+            if (isset($gone[$device_id])) {
+                $report['deleted'][] = $entry + ['client' => $client_label($client_id)];
+                $org_tally($org_id, 'skipped');
+                $plan[] = ['action' => 'link', 'device' => $device, 'asset_id' => false];
+                continue;
             }
             // Never taken over by its name: a separate asset is made, and the clash reported
             $named = $by_name[$client_id . '|' . strtolower($want['name'])] ?? [];
@@ -798,6 +812,9 @@ function mitNinjaSyncRun() {
     if ($report['serial_conflicts']) {
         $warnings[] = count($report['serial_conflicts']) . ' device(s) share a serial with an asset in another client';
     }
+    if ($report['deleted']) {
+        $warnings[] = count($report['deleted']) . ' device(s) had their asset deleted in ITFlow and were not made again - to sync one again, add an asset with its serial number in its client';
+    }
     if ($report['orphans']) {
         $warnings[] = count($report['orphans']) . ' asset(s) are linked to NinjaOne devices that no longer exist (nothing was deleted - review them)';
     }
@@ -813,7 +830,7 @@ function mitNinjaSyncRun() {
         'unmapped' => array_sum(array_column($report['unmapped'], 'devices')), 'warranty_calls' => $warranty_calls,
     ];
     $report['outcome'] = $errors ? 'problems' : ($warnings ? 'warnings' : 'ok');
-    foreach (['misplaced', 'archived', 'duplicates', 'serial_conflicts', 'same_name', 'orphans', 'failed'] as $list) {
+    foreach (['misplaced', 'archived', 'duplicates', 'serial_conflicts', 'same_name', 'orphans', 'deleted', 'failed'] as $list) {
         $report[$list] = array_slice($report[$list], 0, 200);
     }
     return $report;
@@ -928,7 +945,7 @@ function mitNinjaRememberDevice(array $device, $asset_id) {
     $name = mysqli_real_escape_string($mysqli, mitNinjaClean($device['displayName'] ?? ($device['systemName'] ?? '')));
     $class = mysqli_real_escape_string($mysqli, mb_substr((string) ($device['nodeClass'] ?? ''), 0, 50));
     $contact = isset($device['lastContact']) ? mitNinjaDateTime($device['lastContact']) : null;
-    $fields = "uid = '$uid', org_id = " . intval($device['organizationId'] ?? 0) . ", name = '$name', node_class = '$class', offline = " . (empty($device['offline']) ? 0 : 1)
+    $fields = "uid = '$uid', org_id = " . intval($device['organizationId'] ?? 0) . ", name = '$name', node_class = '$class', offline = " . (!array_key_exists('offline', $device) || $device['offline'] === null ? 'NULL' : (empty($device['offline']) ? 0 : 1))
         . ', last_contact = ' . ($contact ? "'$contact'" : 'NULL') . ', status_checked_at = NOW(), seen_at = NOW()'
         . ($asset_id !== false ? ', asset_id = ' . ($asset_id ? intval($asset_id) : 'NULL') . ', synced_at = NOW()' : '');
     mysqli_query($mysqli, "INSERT INTO mit_ninja_devices SET device_id = $id, $fields ON DUPLICATE KEY UPDATE $fields");

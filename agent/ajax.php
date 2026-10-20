@@ -905,7 +905,7 @@ if (isset($_GET['share_generate_link'])) {
     $config_mail_from_email = escapeSql($config_mail_from_email);
 
     // Send user e-mail, if specified
-    if(!empty($config_smtp_host) && filter_var($item_email, FILTER_VALIDATE_EMAIL)){
+    if((!empty($config_smtp_host) || !empty($config_smtp_provider)) && filter_var($item_email, FILTER_VALIDATE_EMAIL)){
 
         $subject = "Time sensitive - $company_name secure link enclosed";
         if ($item_expires_friendly == "never") {

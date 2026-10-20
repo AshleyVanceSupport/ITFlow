@@ -27,7 +27,13 @@ if (isset($_GET['action']) && $_GET['action'] == "view") {
 }
 
 // Look up the attachment
-$sql = mysqli_query($mysqli, "SELECT * FROM ticket_attachments WHERE ticket_attachment_id = $attachment_id LIMIT 1");
+// Only files the portal shows: on the ticket itself, or on a reply that is not an internal note and not archived
+$sql = mysqli_query($mysqli, "SELECT ticket_attachments.* FROM ticket_attachments
+    LEFT JOIN ticket_replies ON ticket_reply_id = ticket_attachment_reply_id
+    WHERE ticket_attachment_id = $attachment_id
+    AND (ticket_attachment_reply_id IS NULL OR ticket_attachment_reply_id = 0
+        OR (ticket_reply_id IS NOT NULL AND ticket_reply_type != 'Internal' AND ticket_reply_archived_at IS NULL))
+    LIMIT 1");
 
 if (mysqli_num_rows($sql) !== 1) {
     http_response_code(404);

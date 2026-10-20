@@ -62,7 +62,7 @@ if (isset($_POST['add_user'])) {
     }
 
     // Their sign in details by email - the password goes as typed, so it is theirs to change
-    if (!empty($_POST['send_email']) && !empty($config_smtp_host)) {
+    if (!empty($_POST['send_email']) && (!empty($config_smtp_host) || !empty($config_smtp_provider))) {
         $company_name = (string) mysqli_fetch_row(mysqli_query($mysqli, "SELECT company_name FROM companies WHERE company_id = 1"))[0];
         $login_url = "https://$config_base_url/login.php" . ($config_login_key_required == 1 ? "?key=$config_login_key_secret" : '');
         $mail = userQueueMail($email, $name, "Your new $company_name ITFlow account",

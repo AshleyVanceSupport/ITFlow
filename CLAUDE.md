@@ -66,6 +66,15 @@ model: see DEPLOYMENT.md.
   (quote / invoice add-item rows lost the Tax choice - upstream develop), `agent/post/quote_model.php` quote_discount default. Also removed
   `agent/client_autopay.php` (unlinked, broken queries) and the `agent/custom/post.php` require of a
   missing `post/ai.php` (commit 2985b652) - if an upstream merge brings them back, check they work first.
+  Oct 20 (full-program audit, 26.10.72): `js/ajax_modal.js` loads same-origin URLs only, and the ticket / mail-queue purifiers
+  (`agent/ticket.php`, `agent/modals/ticket/ticket.php`, `admin/modals/mail_queue/mail_queue_message_view.php`) forbid the
+  `ajax-modal` class (an emailed link could load and run another site's page); "mail is set up" also accepts
+  `config_smtp_provider` (OAuth leaves the host empty: `client/login_reset.php`, `client/post.php`, `functions/user.php`
+  userNotifyChange, `admin/post/users.php`, `admin/modals/user/user_form.php`, `agent/ajax.php`, `guest/guest_post.php`,
+  `guest/guest_pay_invoice_stripe.php`); portal: only the primary contact changes logins (`client/post.php` edit_contact),
+  `client/ticket_attachment.php` refuses internal / archived replies' files, `verifyContactTicketAccess` "Any";
+  `cron/cron.php` records a job stopped with a non-zero code as Failed (parser connect error passed on);
+  autopay includes Partial invoices (`cron/nightly_tasks.php`); `api/v1/clients/delete.php` uploads path.
   These fixes carry no "Mountaineer IT" marker (they are plain bug fixes, meant to match upstream's
   eventual fix) - find them with `git log`.
   When an upstream release fixes the same thing, resolve conflicts in favour of upstream.
@@ -431,6 +440,19 @@ model: see DEPLOYMENT.md.
   cron_alert_email, cron_alert_to - empty = active admins); `/mit_health.php?key=` (ours, web root, `cron_health_key`) answers
   200 OK / 503 PROBLEM for an outside uptime monitor - the only alert when cron itself stops. Settings card
   `admin/includes/mit_cron_card.php` (one require at the end of `admin/cron.php`), handlers `admin/post/mit_cron_health.php`.
+- Audit fixes (Oct 20, 26.10.72) in our code: Graph mail listing pages on past flagged mail and fails the job on errors
+  other than throttling (`functions/mit_m365_mailbox.php`); `api/v1/clients/delete.php` calls `mitQuoteImagesDelete` /
+  `mitTicketPartsDeleting` (hooks, like agent/post/client.php); reimbursed purchases keep their expense in step
+  (`mitReimbSyncExpense`, delete removes it) and become expenses from cron when approval is off (`mitReimbRecordEnded`);
+  `mitLock` / `mitUnlock` (mit_common) around timesheet decide / reopen, PO create / add items, vendor bill, receiving and
+  billing parts (`mitProcLock` now refuses when busy); NinjaOne: an asset deleted in ITFlow is reported, not re-created
+  (`deleted`), misplaced devices keep their link, unknown offline = NULL; Outlook keeps events of bookings older than the
+  window; cron health reports never-run jobs (`cron_never_ran_<job>` in mit_settings) and the M365 certificate (renew error /
+  < 14 days); M025 renumbers duplicate PO numbers and adds the unique key M015 skipped; restores run ITFlow's database
+  updates before ours (`mitRestoreItflowUpdates`); the schedule modal checks the new lead first and cancels the old lead's
+  invite only after the reassign; our cron mails use `mitMailFrom()` (globals are escaped by nightly_tasks);
+  `scripts/install.sh` runs setup before enabling the site, keeps `https_only` with `--ssl none` (mod_remoteip for private
+  proxies, `SetEnvIf X-Forwarded-Proto`).
 - Review fixes (Oct 2026): `functions/mit_common.php` (ours, required first in `functions.php`) - shared
   helpers: `mitMailBody` / `mitSqlHtml` (HTML for SQL without escapeSql's strip_tags), `mitProductIsTangible`,
   module switches (`mitModuleOn`, `mitModuleRequire` for pages/modals, `mitModuleGuard` for handler files,

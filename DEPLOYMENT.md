@@ -58,7 +58,9 @@ curl -fsSL https://raw.githubusercontent.com/MountaineerIT/ITFLOW/develop/script
 (Minimal Debian may not have `curl`: use `wget -qO- <same URL> | bash -s -- --branch develop`.)
 
 It asks for the server name, HTTPS type (Let's Encrypt for a public name, self-signed for an
-internal one, or `none` for a server behind a reverse proxy that handles HTTPS), timezone, company name and the first admin's name, email and password,
+internal one, or `none` for a server behind a reverse proxy that handles HTTPS - the proxy must send `X-Forwarded-Proto: https`
+and `X-Forwarded-For`; proxies on a private network are trusted for the visitor's address, add `RemoteIPTrustedProxy <ip>` to
+`/etc/apache2/sites-available/itflow.conf` for a public one), timezone, company name and the first admin's name, email and password,
 shows a summary and asks to continue. It then:
 
 - installs Apache, MariaDB, PHP and git, and sets PHP upload limits to 500 MB

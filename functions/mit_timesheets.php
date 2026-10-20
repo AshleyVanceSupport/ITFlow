@@ -1423,7 +1423,7 @@ function mitTsNotify($user_id, $text, $link, $entity_id, $email = false) {
         notification_action = '" . escapeSql($link) . "', notification_user_id = " . intval($user_id) . ", notification_entity_id = " . intval($entity_id));
     $user = $email ? (mitTsUsers([$user_id])[intval($user_id)] ?? null) : null;
     if ($user && !empty($config_smtp_provider) && filter_var($user['user_email'], FILTER_VALIDATE_EMAIL)) {
-        addToMailQueue([['from' => escapeSql($config_mail_from_email), 'from_name' => escapeSql($config_mail_from_name),
+        addToMailQueue([['from' => escapeSql(mitMailFrom()['email']), 'from_name' => escapeSql(mitMailFrom()['name']),
             'recipient' => escapeSql($user['user_email']), 'recipient_name' => escapeSql($user['user_name']), 'subject' => escapeSql($text),
             // mitMailBody, not escapeSql: escapeSql strips tags and would take the link out
             'body' => mitMailBody('Hello ' . escapeHtml($user['user_name']) . ',<br><br>' . escapeHtml($text) . '.<br><br><a href="https://' . escapeHtml($config_base_url . $link) . '">Open your timesheet</a>')]]);
@@ -1511,6 +1511,20 @@ function mitTsSnapshotTickets($user_id, array $period) {
 
 /** Approve or send back a timesheet (Full access, or the person's approver). $decision 'approve' | 'return'. Returns [ok, message]. */
 function mitTsDecide(array $sheet, array $period, $decision, $note = '') {
+    // One decision at a time per timesheet (a double click, bulk approve and an approver at once), on its state now
+    $lock = 'ts_sheet_' . intval($sheet['user_id']) . '_' . $period['start'];
+    if (!mitLock($lock)) {
+        return [false, 'Someone else is working on this timesheet right now - try again.'];
+    }
+    try {
+        return mitTsDecideNow(mitTsSheet($sheet['user_id'], $period), $period, $decision, $note);
+    } finally {
+        mitUnlock($lock);
+    }
+}
+
+/** mitTsDecide() under its lock. */
+function mitTsDecideNow(array $sheet, array $period, $decision, $note = '') {
     global $mysqli, $session_user_id;
     $note = trim((string) $note);
     if ($decision === 'approve') {
@@ -1552,6 +1566,19 @@ function mitTsDecide(array $sheet, array $period, $decision, $note = '') {
 
 /** Reopen an approved period (Full access, or the person's approver) - ticket and unaccounted time are live again until it is approved again. */
 function mitTsReopen(array $sheet, array $period) {
+    $lock = 'ts_sheet_' . intval($sheet['user_id']) . '_' . $period['start'];
+    if (!mitLock($lock)) {
+        return [false, 'Someone else is working on this timesheet right now - try again.'];
+    }
+    try {
+        return mitTsReopenNow(mitTsSheet($sheet['user_id'], $period), $period);
+    } finally {
+        mitUnlock($lock);
+    }
+}
+
+/** mitTsReopen() under its lock. */
+function mitTsReopenNow(array $sheet, array $period) {
     global $mysqli;
     if ($sheet['status'] !== 'approved') {
         return [false, 'Only an approved timesheet can be reopened.'];

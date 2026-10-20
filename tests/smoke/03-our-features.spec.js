@@ -288,3 +288,25 @@ test('Admin > Timesheets > Holidays: add, edit and remove a holiday', async ({ p
     await expect(row(), 'removed').toHaveCount(0);
     await expectClean(page, errors);
 });
+
+test('a pop-up link to another site is not loaded (ajax-modal runs the page it gets)', async ({ page }) => {
+    await visit(page, 'agent/tickets.php');
+    const outside = [];
+    page.on('request', (request) => {
+        if (new URL(request.url()).hostname === 'mit-smoke.example.invalid') {
+            outside.push(request.url());
+        }
+    });
+    // As a link in an emailed ticket would look, had it kept its class
+    await page.evaluate(() => {
+        const link = document.createElement('a');
+        link.className = 'ajax-modal';
+        link.id = 'mitSmokeOutsideModal';
+        link.href = 'https://mit-smoke.example.invalid/modal.json';
+        link.textContent = 'View invoice';
+        document.body.appendChild(link);
+    });
+    await page.click('#mitSmokeOutsideModal');
+    await page.waitForTimeout(500);
+    expect(outside).toEqual([]);
+});

@@ -16,6 +16,9 @@ function verifyContactTicketAccess($requested_ticket_id, $expected_ticket_state)
     if ($expected_ticket_state == "Closed") {
         // Closed tickets
         $ticket_state_snippet = "ticket_status = 5";
+    } elseif ($expected_ticket_state == "Any") {
+        // Open or closed (e.g. attachments stay downloadable after the ticket closes)
+        $ticket_state_snippet = "1 = 1";
     } else {
         // Open (working/hold) tickets
         $ticket_state_snippet = "ticket_status != 5";

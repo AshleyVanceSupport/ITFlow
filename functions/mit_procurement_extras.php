@@ -135,8 +135,20 @@ function mitPoExpense(array $po) {
     return mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT expense_id, expense_amount, expense_date, expense_reference, expense_archived_at FROM expenses WHERE expense_id = " . intval($po['expense_id']))) ?: null;
 }
 
-/** Record the vendor's bill as an expense. Returns [expense_id, message]. */
+/** Record the vendor's bill as an expense. Returns [expense_id, message]. One at a time per PO, on the PO as it is now. */
 function mitPoRecordBill(array $po, array $post) {
+    $lock = 'po_bill_' . intval($po['po_id']);
+    if (!mitLock($lock)) {
+        return [0, 'Someone else is recording this bill right now - try again.'];
+    }
+    try {
+        return mitPoRecordBillNow(mitPoRow($po['po_id']) ?: $po, $post);
+    } finally {
+        mitUnlock($lock);
+    }
+}
+
+function mitPoRecordBillNow(array $po, array $post) {
     global $mysqli, $session_company_currency;
     if (mitPoExpense($po)) {
         return [0, 'This PO already has its vendor bill recorded.'];

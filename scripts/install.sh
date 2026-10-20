@@ -50,6 +50,7 @@ Options:
   -s, --ssl MODE         letsencrypt | self-signed | none
                          letsencrypt needs the domain's public DNS pointing here and ports 80/443 open.
                          none = plain HTTP, for a server behind a reverse proxy that handles HTTPS.
+                         The proxy must send X-Forwarded-Proto: https and X-Forwarded-For.
   --email ADDRESS        Email for Let's Encrypt expiry notices
   -t, --timezone TZ      e.g. America/New_York (default: this server's timezone)
   --locale LOCALE        Default: en_US
@@ -173,7 +174,7 @@ fi
 [[ "$SSL_MODE" == "letsencrypt" || "$SSL_MODE" == "self-signed" || "$SSL_MODE" == "none" ]] \
     || die "--ssl must be letsencrypt, self-signed or none"
 [[ "$SSL_MODE" == "letsencrypt" ]] && ask LE_EMAIL "Email for Let's Encrypt notices"
-if [[ "$SSL_MODE" == "none" ]]; then SITE_URL="http://$DOMAIN"; else SITE_URL="https://$DOMAIN"; fi
+SITE_URL="https://$DOMAIN"   # with --ssl none, the reverse proxy serves HTTPS
 
 DEFAULT_TZ="$(cat /etc/timezone 2>/dev/null || timedatectl show -p Timezone --value 2>/dev/null || echo UTC)"
 ask TIMEZONE "Timezone" "$DEFAULT_TZ"
@@ -282,7 +283,7 @@ ok "cloned into $INSTALL_DIR ($(sudo_web git -C "$INSTALL_DIR" rev-parse --short
 # ---------------------------------------------------------------------------- Apache + HTTPS
 
 info "Configuring Apache and HTTPS"
-a2enmod -q rewrite headers ssl alias >/dev/null
+a2enmod -q rewrite headers ssl alias remoteip >/dev/null
 a2dissite -q 000-default >/dev/null 2>&1 || true
 
 SITE_CONF="/etc/apache2/sites-available/itflow.conf"
@@ -299,6 +300,32 @@ else
     [[ -f "$CERT_FILE" ]] || make-ssl-cert generate-default-snakeoil >/dev/null 2>&1 || true
 fi
 
+# ---------------------------------------------------------------------------- ITFlow setup
+# Before the Apache site is switched on: until setup has written config.php, ITFlow's web setup page would answer
+# anyone who can reach this server (and could be pointed at their own database or backup)
+
+info "Running ITFlow setup"
+SETUP_LOG="$(mktemp)"   # private to root (not a guessable /tmp name)
+(
+    cd "$INSTALL_DIR/scripts"
+    sudo_web php setup_cli.php --non-interactive \
+        --host=localhost --username="$DB_USER" --password="$DB_PASS" --database="$DB_NAME" \
+        --base-url="$DOMAIN" --locale="$LOCALE" --timezone="$TIMEZONE" --currency="$CURRENCY" \
+        --company-name="$COMPANY_NAME" --country="$COUNTRY" \
+        --user-name="$ADMIN_NAME" --user-email="$ADMIN_EMAIL" --user-password="$ADMIN_PASSWORD" \
+        --repo-branch="$BRANCH" < /dev/null > "$SETUP_LOG" 2>&1
+) || { cat "$SETUP_LOG" >&2; die "ITFlow setup failed (output above)."; }
+grep -q "config_enable_setup = 0" "$INSTALL_DIR/config.php" || { cat "$SETUP_LOG" >&2; die "ITFlow setup did not finish."; }
+rm -f "$SETUP_LOG"
+# Our own secret key (Microsoft 365 certificate, Outlook sign-ins) - made now, so it never falls back to a weaker one
+grep -q 'config_mit_secret_key' "$INSTALL_DIR/config.php" || printf "\n// Mountaineer IT: key for the Microsoft 365 certificate and Outlook sign-ins - keep it with the backup key\n\$config_mit_secret_key = '%s';\n" "$(random_password)$(random_password)" >> "$INSTALL_DIR/config.php"
+chmod 640 "$INSTALL_DIR/config.php"
+# Behind a reverse proxy ITFlow still insists on HTTPS (secure cookies): the proxy says the visit was HTTPS with
+# X-Forwarded-Proto, which ITFlow and the Apache site below both read
+ok "company, admin user and config.php created (tracking '$BRANCH')"
+
+# ---------------------------------------------------------------------------- Apache site
+
 if [[ "$SSL_MODE" == "none" ]]; then
     # Plain HTTP - HTTPS is handled by a reverse proxy in front of this server
     cat > "$SITE_CONF" <<EOF
@@ -306,6 +333,13 @@ if [[ "$SSL_MODE" == "none" ]]; then
 <VirtualHost *:80>
     ServerName $DOMAIN
     DocumentRoot $INSTALL_DIR
+
+    # The visitor's own address from the proxy (X-Forwarded-For), trusted only from private-network proxies - so
+    # sign-in lockouts and logs see each visitor, not the proxy. Add RemoteIPTrustedProxy <ip> for a public one.
+    RemoteIPHeader X-Forwarded-For
+    RemoteIPInternalProxy 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.1 ::1 fc00::/7
+    # The proxy served the visit over HTTPS
+    SetEnvIf X-Forwarded-Proto "^https\$" HTTPS=on
 
     <Directory $INSTALL_DIR>
         Options -Indexes +FollowSymLinks
@@ -364,32 +398,8 @@ if [[ "$SSL_MODE" == "letsencrypt" ]]; then
 elif [[ "$SSL_MODE" == "self-signed" ]]; then
     ok "self-signed certificate (browsers will warn until you trust it)"
 else
-    ok "plain HTTP on port 80 - point your reverse proxy at this server"
+    ok "plain HTTP on port 80 - point your reverse proxy at this server (it must send X-Forwarded-Proto and X-Forwarded-For)"
 fi
-
-# ---------------------------------------------------------------------------- ITFlow setup
-
-info "Running ITFlow setup"
-SETUP_LOG="$(mktemp)"   # private to root (not a guessable /tmp name)
-(
-    cd "$INSTALL_DIR/scripts"
-    sudo_web php setup_cli.php --non-interactive \
-        --host=localhost --username="$DB_USER" --password="$DB_PASS" --database="$DB_NAME" \
-        --base-url="$DOMAIN" --locale="$LOCALE" --timezone="$TIMEZONE" --currency="$CURRENCY" \
-        --company-name="$COMPANY_NAME" --country="$COUNTRY" \
-        --user-name="$ADMIN_NAME" --user-email="$ADMIN_EMAIL" --user-password="$ADMIN_PASSWORD" \
-        --repo-branch="$BRANCH" < /dev/null > "$SETUP_LOG" 2>&1
-) || { cat "$SETUP_LOG" >&2; die "ITFlow setup failed (output above)."; }
-grep -q "config_enable_setup = 0" "$INSTALL_DIR/config.php" || { cat "$SETUP_LOG" >&2; die "ITFlow setup did not finish."; }
-rm -f "$SETUP_LOG"
-# Our own secret key (Microsoft 365 certificate, Outlook sign-ins) - made now, so it never falls back to a weaker one
-grep -q 'config_mit_secret_key' "$INSTALL_DIR/config.php" || printf "\n// Mountaineer IT: key for the Microsoft 365 certificate and Outlook sign-ins - keep it with the backup key\n\$config_mit_secret_key = '%s';\n" "$(random_password)$(random_password)" >> "$INSTALL_DIR/config.php"
-chmod 640 "$INSTALL_DIR/config.php"
-if [[ "$SSL_MODE" == "none" ]]; then
-    # The proxy talks to ITFlow over plain HTTP, so ITFlow must not insist on HTTPS itself
-    sed -i 's/^\$config_https_only = TRUE;/$config_https_only = FALSE;/' "$INSTALL_DIR/config.php"
-fi
-ok "company, admin user and config.php created (tracking '$BRANCH')"
 
 # ---------------------------------------------------------------------------- cron
 

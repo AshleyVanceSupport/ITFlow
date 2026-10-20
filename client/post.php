@@ -743,6 +743,22 @@ if (isset($_POST['edit_contact'])) {
         $contact_billing = intval($row['contact_billing']);
     }
 
+    // Only the primary contact can give someone a portal login or change a login's email or sign-in method: otherwise
+    // any contact manager could point another contact's (e.g. a billing contact's) login at their own address, reset
+    // its password and take it over
+    if ($session_contact_primary != 1) {
+        $login = $contact_user_id > 0 ? mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT user_email, user_auth_method FROM users WHERE user_id = $contact_user_id")) : null;
+        $email_changed = $login && strcasecmp((string) $login['user_email'], (string) $_POST['contact_email']) !== 0;
+        $method_changed = $login && $contact_auth_method !== '' && $contact_auth_method !== $login['user_auth_method'];
+        if ($email_changed || $method_changed || (!$login && $contact_auth_method !== '')) {
+            flashAlert("Only the primary contact can change who can sign in to the portal, or a sign-in's email address", 'danger');
+            redirect('contact_edit.php?id=' . $contact_id);
+        }
+        if ($login) {
+            $contact_auth_method = $login['user_auth_method'];
+        }
+    }
+
     // Check the email isn't already in use
     $sql = mysqli_query($mysqli, "SELECT user_id FROM users WHERE user_email = '$contact_email' AND user_id != $contact_user_id");
     if ($sql && mysqli_num_rows($sql) > 0) {
@@ -908,7 +924,7 @@ if (isset($_GET['add_payment_by_provider'])) {
         mysqli_query($mysqli, "INSERT INTO history SET history_status = 'Paid', history_description = 'Online Payment added (agent)', history_invoice_id = $invoice_id");
 
         // Email receipt
-        if (!empty($config_smtp_host)) {
+        if (!empty($config_smtp_host) || !empty($config_smtp_provider)) {
             $subject = "Payment Received - Invoice $invoice_prefix$invoice_number";
             $body = "Hello $contact_name,<br><br>We have received online payment for the amount of " . numfmt_format_currency($currency_format, $invoice_amount, $invoice_currency_code) . " for invoice <a href=\'https://$config_base_url/guest/guest_view_invoice.php?invoice_id=$invoice_id&url_key=$invoice_url_key\'>$invoice_prefix$invoice_number</a>. Please keep this email as a receipt for your records.<br><br>Amount Paid: " . numfmt_format_currency($currency_format, $invoice_amount, $invoice_currency_code) . "<br><br>Thank you for your business!<br><br><br>--<br>$company_name - Billing Department<br>$config_invoice_from_email<br>$company_phone";
 
@@ -1236,7 +1252,7 @@ if (isset($_GET['stripe_save_card'])) {
     // Email Confirmation
     $sql_settings = mysqli_query($mysqli, "
         SELECT company_name, company_phone, company_phone_country_code, config_invoice_from_email,
-            config_invoice_from_name, config_smtp_host FROM companies, settings
+            config_invoice_from_name, config_smtp_host, config_smtp_provider FROM companies, settings
         WHERE companies.company_id = settings.company_id
         AND companies.company_id = 1
     ");
@@ -1247,7 +1263,7 @@ if (isset($_GET['stripe_save_card'])) {
     $config_invoice_from_email = escapeSql($row['config_invoice_from_email']);
     $config_invoice_from_name = escapeSql($row['config_invoice_from_name']);
 
-    if (!empty($row['config_smtp_host'])) {
+    if (!empty($row['config_smtp_host']) || !empty($row['config_smtp_provider'])) {
         $subject = "Payment method saved";
         $body = "Hello $session_contact_name<br><br>
         Were writing to confirm that your payment details have been securely stored with Stripe our trusted payment processor.<br><br>

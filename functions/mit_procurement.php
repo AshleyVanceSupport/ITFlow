@@ -283,8 +283,22 @@ function mitProcWho() {
     return stripslashes((string) $session_name);
 }
 
-/** A draft PO from waiting items, all from $vendor_id. Returns the new po_id, or 0. */
+/**
+ * A draft PO from waiting items, all from $vendor_id. Returns the new po_id, or 0. Under one lock with mitPoAddItems, so
+ * two buyers at once can't put the same waiting items on two POs (the items are read again inside it).
+ */
 function mitPoCreate(array $item_ids, $vendor_id) {
+    if (!mitLock('proc_order')) {
+        return 0;
+    }
+    try {
+        return mitPoCreateNow($item_ids, $vendor_id);
+    } finally {
+        mitUnlock('proc_order');
+    }
+}
+
+function mitPoCreateNow(array $item_ids, $vendor_id) {
     global $mysqli, $session_user_id;
     $items = mitProcItemsByIds($item_ids);
     $vendor_id = intval($vendor_id);
@@ -327,8 +341,19 @@ function mitPoCreate(array $item_ids, $vendor_id) {
     return $po_id;
 }
 
-/** Add waiting items to a draft PO. */
+/** Add waiting items to a draft PO (under the same lock as mitPoCreate). */
 function mitPoAddItems($po_id, array $item_ids) {
+    if (!mitLock('proc_order')) {
+        return 0;
+    }
+    try {
+        return mitPoAddItemsNow($po_id, $item_ids);
+    } finally {
+        mitUnlock('proc_order');
+    }
+}
+
+function mitPoAddItemsNow($po_id, array $item_ids) {
     global $mysqli;
     $po = mitPoRow($po_id);
     if (!$po || $po['status'] !== 'draft') {
@@ -384,13 +409,14 @@ function mitPoNeedsApproval($total) {
 
 /** A database lock around receiving or billing (two clicks at once wait for each other); released when the request ends anyway. */
 function mitProcLock($what) {
-    global $mysqli;
-    mysqli_query($mysqli, "SELECT GET_LOCK('mit_proc_" . preg_replace('/[^a-z]/', '', $what) . "', 15)");
+    if (!mitLock('proc_' . preg_replace('/[^a-z]/', '', $what))) {
+        flashAlert('Someone else is doing this right now - try again in a moment.', 'error');
+        redirect();
+    }
 }
 
 function mitProcUnlock($what) {
-    global $mysqli;
-    mysqli_query($mysqli, "SELECT RELEASE_LOCK('mit_proc_" . preg_replace('/[^a-z]/', '', $what) . "')");
+    mitUnlock('proc_' . preg_replace('/[^a-z]/', '', $what));
 }
 
 /**

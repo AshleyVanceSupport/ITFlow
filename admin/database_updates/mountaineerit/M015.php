@@ -20,7 +20,7 @@ if (!mitIndexExists($mysqli, 'mit_purchase_orders', 'mit_purchase_orders_number'
     if (intval($mit_duplicates) === 0) {
         mysqli_query($mysqli, "ALTER TABLE `mit_purchase_orders` ADD UNIQUE KEY `mit_purchase_orders_number` (`po_number`)");
     } else {
-        error_log("Mountaineer IT M015: $mit_duplicates purchase order number(s) are used twice - renumber them, then run the update again to make PO numbers unique");
+        error_log("Mountaineer IT M015: $mit_duplicates purchase order number(s) are used twice - database update M025 renumbers them and makes PO numbers unique");
     }
 }
 

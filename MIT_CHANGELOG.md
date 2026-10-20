@@ -4,6 +4,24 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.72 - 2026-10-20
+- Security: a link in an emailed ticket could load another website's page into ITFlow and run it as the agent who clicked it - pop-ups now only open ITFlow's own pages, and ticket text can't carry the pop-up marker.
+- With Microsoft 365 (or Google) mail, portal "Forgot password?", payment receipts, quote accept / decline emails, new-user emails, share-link emails and the "your account was changed" security emails were silently skipped - they are sent again.
+- Microsoft 365 mail reading no longer stops when about 200 unprocessed messages pile up in the inbox, and a failed mailbox read (or a mail server refusing the connection) now shows as a failed job, so cron alerts report it.
+- Client portal: only the primary contact can give someone a portal login or change a login's email or sign-in method (another contact could take over a billing contact's login); files on internal notes can no longer be downloaded from the portal; attachments on closed tickets download again.
+- Installer: setup runs before the site goes live (the setup page was briefly open to the internet); "behind a reverse proxy" mode keeps secure cookies and sees each visitor's real address (one proxy address could lock everyone out).
+- Autopay now charges invoices that are partly paid.
+- Reimbursed purchases: changing or removing one after a reopen updates or removes its expense; with timesheet approval off they are recorded as expenses once the period settles.
+- Two people (or a double click) approving a timesheet, recording a vendor bill or putting the same items on a PO at once can no longer double up.
+- NinjaOne: an asset you delete in ITFlow is no longer made again by the next sync (it is reported instead); a device whose asset is under another client keeps its link; an unknown online status no longer shows as Online.
+- Outlook: events of bookings older than 30 days are no longer removed from techs' calendars.
+- Cron alerts also report a job that has never run, and a Microsoft 365 certificate that failed to renew or runs out within 14 days.
+- Purchase order numbers are now unique on every install (duplicates are renumbered, noted in the PO's history).
+- API client delete puts unbilled parts back in stock and removes the client's files and quote images.
+- Restoring an older backup runs ITFlow's database updates before ours.
+- Scheduling: picking a new tech who can't see the client is refused, and the old tech's invite is only withdrawn once the new one has the ticket.
+- Emails from our nightly jobs no longer show a backslash in names with an apostrophe.
+
 ## 26.10.71 - 2026-10-20
 - Timesheets: changing someone's time zone now counts from that moment - or, if they have a submitted or approved timesheet that ends later, from the day after it - so ticket time already on a timesheet stays where it was (it could be counted twice or dropped before). Every change is logged with who made it.
 - Timesheets (California rules): a block that starts and ends at the same time, or blocks typed out of order, are refused with a message instead of being saved as 24 hours or as the next morning. At most 12 blocks a day.

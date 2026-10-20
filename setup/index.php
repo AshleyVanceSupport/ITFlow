@@ -270,8 +270,11 @@ if (isset($_POST['restore'])) {
         exit;
     }
 
-    // Mountaineer IT: a backup from stock ITFlow (or an older build of ours) gets our database updates
-    require_once "../admin/database_updates_mountaineerit.php";
+    // Mountaineer IT: a backup from an older ITFlow release gets ITFlow's database updates first, then ours (update_cli's order)
+    $mit_itflow_error = mitRestoreItflowUpdates();
+    if ($mit_itflow_error === '') {
+        require_once "../admin/database_updates_mountaineerit.php";
+    }
 
     // Close setup behind us. The gate above would now do this on its own because the
     // restored database has users, but the flag is what stops the wizard being reachable
@@ -280,7 +283,9 @@ if (isset($_POST['restore'])) {
     if (@file_put_contents($config_path, "\n\$config_enable_setup = 0;\n\n", FILE_APPEND | LOCK_EX) === false) {
         $_SESSION['alert_message'] = "Backup restored, but config.php could not be updated - please set \$config_enable_setup = 0 in it by hand.";
     } else {
-        $_SESSION['alert_message'] = "Backup restored. Log in with the credentials that were in use when the backup was taken.";
+        $_SESSION['alert_message'] = "Backup restored. Log in with the credentials that were in use when the backup was taken."
+            . ($mit_itflow_error !== '' ? " A database update failed (" . htmlspecialchars($mit_itflow_error) . ") - run php scripts/update_cli.php --update_db." : '')
+            . (!empty($mit_updates_error) ? " A Mountaineer IT database update failed (" . htmlspecialchars($mit_updates_error) . ") - run php scripts/update_cli.php --update_db." : '');
     }
 
     header("Location: ../login.php");

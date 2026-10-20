@@ -42,6 +42,7 @@ if (!empty($client_id)) {
         $sql_quotes = mysqli_query($mysqli, "SELECT quote_id FROM quotes WHERE quote_client_id = $client_id");
         while ($quote_row = mysqli_fetch_assoc($sql_quotes)) {
             $quote_id = intval($quote_row['quote_id']);
+            mitQuoteImagesDelete($quote_id); // Mountaineer IT: the lines' image files
             mysqli_query($mysqli, "DELETE FROM quote_items WHERE item_quote_id = $quote_id");
         }
         mysqli_query($mysqli, "DELETE FROM quotes WHERE quote_client_id = $client_id");
@@ -62,6 +63,7 @@ if (!empty($client_id)) {
         $sql_tickets = mysqli_query($mysqli, "SELECT ticket_id FROM tickets WHERE ticket_client_id = $client_id");
         while ($ticket_row = mysqli_fetch_assoc($sql_tickets)) {
             $ticket_id = intval($ticket_row['ticket_id']);
+            mitTicketPartsDeleting($ticket_id); // Mountaineer IT: put unbilled stock parts back
             mysqli_query($mysqli, "DELETE FROM ticket_replies WHERE ticket_reply_ticket_id = $ticket_id");
             mysqli_query($mysqli, "DELETE FROM ticket_views WHERE view_ticket_id = $ticket_id");
         }
@@ -69,7 +71,7 @@ if (!empty($client_id)) {
         mysqli_query($mysqli, "DELETE FROM trips WHERE trip_client_id = $client_id");
         mysqli_query($mysqli, "DELETE FROM vendors WHERE vendor_client_id = $client_id");
 
-        removeDirectory("../../uploads/clients/$client_id");
+        removeDirectory(__DIR__ . "/../../../uploads/clients/$client_id");
 
         $delete_sql = mysqli_query($mysqli, "DELETE FROM clients WHERE client_id = $client_id");
 

@@ -200,6 +200,9 @@ $badge = function ($outcome) use ($outcomes) {
                     'misplaced' => ['Under another client', function ($row) {
                         return escapeHtml($row['name']) . ' should be in ' . escapeHtml($row['expected']) . ' - found in ' . escapeHtml(implode(', ', array_column($row['found'], 'client'))) . ' - ' . escapeHtml($row['action']);
                     }],
+                    'deleted' => ['Deleted in ITFlow', function ($row) {
+                        return escapeHtml($row['name']) . ' in ' . escapeHtml($row['client']) . ' - its asset was deleted, so it was not made again (add an asset with serial ' . escapeHtml($row['serial'] ?: '-') . ' to sync it again)';
+                    }],
                     'archived' => ['Archived in ITFlow', function ($row) {
                         return escapeHtml($row['name']) . ' in ' . escapeHtml($row['client']) . ' - still in NinjaOne; unarchive the asset if it is in use';
                     }],

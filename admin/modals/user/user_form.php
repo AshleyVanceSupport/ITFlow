@@ -133,7 +133,7 @@ $value = function ($key) use ($form) {
 
         <?php if ($is_new) { ?>
             <div class="col-12">
-                <?php if (!empty($config_smtp_host)) { ?>
+                <?php if (!empty($config_smtp_host) || !empty($config_smtp_provider)) { ?>
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" role="switch" name="send_email" value="1" id="<?= $form_id ?>SendEmail" checked>
                         <label class="form-check-label" for="<?= $form_id ?>SendEmail">Email them their sign in details</label>

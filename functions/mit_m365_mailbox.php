@@ -32,6 +32,18 @@ class MitGraphMailbox {
         return $response;
     }
 
+    /** GET a next-page link from Graph - only links back to Graph itself are followed. */
+    public function next($url) {
+        if (strpos($url, MIT_M365_GRAPH . '/') !== 0) {
+            throw new RuntimeException('Microsoft 365: a next-page link pointed somewhere unexpected');
+        }
+        $response = mitGraph('GET', substr($url, strlen(MIT_M365_GRAPH)), $this->token);
+        if ($response['status'] !== 200) {
+            throw new RuntimeException(mitM365Error($response, 'Microsoft 365 GET (next page)'));
+        }
+        return $response;
+    }
+
     /** The message's MIME source. */
     public function mime($message_id) {
         $response = mitHttp('GET', MIT_M365_GRAPH . $this->base . '/messages/' . rawurlencode($message_id) . '/$value',
@@ -180,20 +192,39 @@ class MitGraphMessageQuery {
     }
 
     public function get() {
-        // A listing Microsoft refuses (throttled, a hiccup) is just no mail this run - the parser tries again next minute
-        try {
-            // Oldest first, as the IMAP path reads them (Graph wants the $orderby property in the $filter, first).
-            // Flagged mail - what the parser could not process - is skipped below; the window allows for some of it.
-            $filter = rawurlencode('receivedDateTime ge 1900-01-01T00:00:00Z and isRead eq false');
-            $list = $this->mailbox->call('GET', '/mailFolders/' . rawurlencode($this->folder_id)
-                . "/messages?\$filter=$filter&\$orderby=receivedDateTime%20asc&\$select=id,receivedDateTime,flag&\$top=" . min(1000, $this->limit * 4));
-        } catch (Throwable $e) {
-            logApp("Cron-Email-Parser", "warning", "Microsoft 365: could not list new mail - " . $e->getMessage());
-            return [];
+        // Oldest first, as the IMAP path reads them (Graph wants the $orderby property in the $filter, first). Flagged mail -
+        // what the parser could not process - is skipped here, so pages are read on (up to 20) until there are enough
+        // messages to work on: a pile of flagged mail at the oldest end must not hide newer mail for good.
+        $filter = rawurlencode('receivedDateTime ge 1900-01-01T00:00:00Z and isRead eq false');
+        $path = '/mailFolders/' . rawurlencode($this->folder_id)
+            . "/messages?\$filter=$filter&\$orderby=receivedDateTime%20asc&\$select=id,receivedDateTime,flag&\$top=" . min(1000, $this->limit * 4);
+        $rows = [];
+        $skipped = 0;
+        $next = '';
+        for ($page = 0; $page < 20 && ($page === 0 || $next !== '') && count($rows) < $this->limit; $page++) {
+            try {
+                $list = $page === 0 ? $this->mailbox->call('GET', $path) : $this->mailbox->next($next);
+            } catch (Throwable $e) {
+                // Throttled or a passing hiccup: no mail this run, the parser tries again next minute. Anything else
+                // (permission removed, certificate expired) fails the job, so cron health reports it.
+                if (preg_match('/\(HTTP (429|502|503|504)\)/', $e->getMessage())) {
+                    logApp("Cron-Email-Parser", "warning", "Microsoft 365: could not list new mail this run - " . $e->getMessage());
+                    break;
+                }
+                throw $e;
+            }
+            foreach ($list['json']['value'] ?? [] as $row) {
+                if (($row['flag']['flagStatus'] ?? '') === 'flagged') {
+                    $skipped++;
+                } else {
+                    $rows[] = $row;
+                }
+            }
+            $next = (string) ($list['json']['@odata.nextLink'] ?? '');
         }
-        $rows = array_values(array_filter($list['json']['value'] ?? [], function ($row) {
-            return ($row['flag']['flagStatus'] ?? '') !== 'flagged';
-        }));
+        if (!$rows && $skipped >= $this->limit * 4) {
+            logApp("Cron-Email-Parser", "warning", "Microsoft 365: $skipped unread messages in the mailbox are flagged (mail the parser could not process) - review and clear them");
+        }
         $messages = [];
         $bytes = 0;
         foreach (array_slice($rows, 0, $this->limit) as $row) {

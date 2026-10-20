@@ -10,6 +10,8 @@ require "../../../libs/htmlpurifier/HTMLPurifier.standalone.php";
 $purifier_config = HTMLPurifier_Config::createDefault();
 $purifier_config->set('Cache.DefinitionImpl', null); // Disable cache by setting a non-existent directory or an invalid one
 $purifier_config->set('URI.AllowedSchemes', ['data' => true, 'src' => true, 'http' => true, 'https' => true]);
+// Classes that make our scripts act on a link (ajax-modal loads and runs a page) are never taken from stored HTML
+$purifier_config->set('Attr.ForbiddenClasses', ['ajax-modal']);
 $purifier = new HTMLPurifier($purifier_config);
 
 $sql = mysqli_query($mysqli, "SELECT email_attempts, email_content, email_failed_at, email_from, email_from_name,

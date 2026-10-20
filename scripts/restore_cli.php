@@ -138,13 +138,19 @@ if (!$ok) {
 
 logAudit("Backup", "Restore", "Restored from " . escapeSql(basename($file)) . " via the command line");
 
-// Mountaineer IT: a backup from stock ITFlow (or an older build of ours) gets our database updates
-require_once __DIR__ . "/../admin/database_updates_mountaineerit.php";
-foreach ($mit_updates_applied as $applied_name) {
-    echo "  Mountaineer IT database update $applied_name applied\n";
-}
-if ($mit_updates_error) {
-    fwrite(STDERR, "Warning: Mountaineer IT database update failed at $mit_updates_error - run php scripts/update_cli.php --update_db to retry.\n");
+// Mountaineer IT: a backup from an older ITFlow release gets ITFlow's database updates first, then ours - the same order
+// as update_cli (ours can add columns a later ITFlow update adds too, so ITFlow's must not come after them)
+$mit_itflow_error = mitRestoreItflowUpdates();
+if ($mit_itflow_error !== '') {
+    fwrite(STDERR, "Warning: ITFlow database update failed at $mit_itflow_error - run php scripts/update_cli.php --update_db to finish (Mountaineer IT updates were left until then).\n");
+} else {
+    require_once __DIR__ . "/../admin/database_updates_mountaineerit.php";
+    foreach ($mit_updates_applied as $applied_name) {
+        echo "  Mountaineer IT database update $applied_name applied\n";
+    }
+    if ($mit_updates_error) {
+        fwrite(STDERR, "Warning: Mountaineer IT database update failed at $mit_updates_error - run php scripts/update_cli.php --update_db to retry.\n");
+    }
 }
 
 echo "\nDone.\n";

@@ -11,7 +11,7 @@ require_once '../functions.php';
 require_once '../includes/load_global_settings.php';
 
 
-if (empty($config_smtp_host)) {
+if (empty($config_smtp_host) && empty($config_smtp_provider)) {
     header("Location: /login.php");
     exit();
 }

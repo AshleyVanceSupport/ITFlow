@@ -1797,12 +1797,16 @@ if (isset($_POST['edit_ticket_schedule'])) {
     // Mountaineer IT: the tech doing it (assigned to them if it is someone new) and how long it takes
     $schedule_tech = intval($_POST['schedule_tech'] ?? $row['ticket_assigned_to']);
     if ($schedule_tech && $schedule_tech !== intval($row['ticket_assigned_to'])) {
-        mitScheduleLeadChanging($row, $schedule_tech); // the old lead's invite is cancelled
+        if (!mitAgentCanSeeClient($schedule_tech, $row['ticket_client_id'])) {
+            flashAlert('That agent does not have access to this client.', 'error');
+            redirect();
+        }
         [$assigned_ok, $assigned_message] = ticketChangeAssignee($row['ticket_id'], $schedule_tech);
         if (!$assigned_ok) {
             flashAlert($assigned_message, 'error');
             redirect();
         }
+        mitScheduleLeadChanging($row, $schedule_tech); // the old lead's invite is cancelled, once the new one has it
         $row = ticketForRequest($row['ticket_id'], 2);
     }
     $schedule_minutes = max(15, min(24 * 60, intval($_POST['schedule_minutes'] ?? CALENDAR_TICKET_MINUTES)));

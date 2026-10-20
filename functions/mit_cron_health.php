@@ -61,6 +61,21 @@ function mitCronProblems() {
         $label = $jobs[$name]['label'];
         $last_run = $row['cron_job_last_run_at'] ? strtotime($row['cron_job_last_run_at']) : 0;
         $status = (string) $row['cron_job_last_status'];
+        // A job that has never run: late once it has been waiting longer than it may (counted from when it was first
+        // seen waiting - the table keeps no "enabled since")
+        if (!$last_run) {
+            $waiting = (string) mitSetting("cron_never_ran_$name", '');
+            if ($waiting === '') {
+                mitSetSetting("cron_never_ran_$name", date('Y-m-d H:i:s'));
+            } elseif (time() - strtotime($waiting) > mitCronAllowedGap($row) && !in_array('not_running', array_column($problems, 'kind'), true)) {
+                $problems[] = ['key' => "never:$name", 'job' => $name, 'label' => $label, 'kind' => 'overdue',
+                    'text' => "$label has never run - it has been waiting since " . mitCronAgo($waiting) . '.', 'detail' => ''];
+            }
+            continue;
+        }
+        if (mitSetting("cron_never_ran_$name", '') !== '') {
+            mitDeleteSetting("cron_never_ran_$name");
+        }
 
         if ($status === 'Failed') {
             $problems[] = ['key' => "failed:$name", 'job' => $name, 'label' => $label, 'kind' => 'failed',
@@ -73,6 +88,18 @@ function mitCronProblems() {
             // Late only means something while cron itself is running; otherwise "not running" says it all
             $problems[] = ['key' => "overdue:$name", 'job' => $name, 'label' => $label, 'kind' => 'overdue',
                 'text' => "$label is behind - it last ran " . mitCronAgo($row['cron_job_last_run_at']) . '.', 'detail' => ''];
+        }
+    }
+
+    // The Microsoft 365 certificate (functions/mit_m365.php): renewed by the mail jobs 30 days before it runs out - a
+    // renewal that keeps failing is reported here, so it is fixed before mail stops
+    if (function_exists('mitM365App') && ($app = mitM365App())) {
+        $expires = $app['cert_expires'] !== '' ? strtotime($app['cert_expires']) : 0;
+        if ($app['renew_error'] !== '' || ($expires && $expires - time() < 14 * 86400)) {
+            $problems[] = ['key' => 'm365_certificate', 'job' => '', 'label' => 'Microsoft 365', 'kind' => 'failed',
+                'text' => 'The Microsoft 365 certificate ' . ($expires && $expires < time() ? 'has run out' : ($expires ? 'runs out ' . date('M j', $expires) : 'could not be renewed'))
+                    . ' - mail stops when it does. See Admin > Settings > Mail.',
+                'detail' => mb_substr($app['renew_error'], 0, 500)];
         }
     }
     return $problems;
@@ -222,7 +249,7 @@ function mitCronWatch() {
 
     $mail = [];
     foreach (mitCronAlertRecipients() as $email => $name) {
-        $mail[] = ['from' => escapeSql($config_mail_from_email), 'from_name' => escapeSql($config_mail_from_name),
+        $mail[] = ['from' => escapeSql(mitMailFrom()['email']), 'from_name' => escapeSql(mitMailFrom()['name']),
             'recipient' => escapeSql($email), 'recipient_name' => escapeSql($name), 'subject' => escapeSql($subject),
             'body' => mitMailBody($body)]; // not escapeSql: it would strip the list and the link
     }

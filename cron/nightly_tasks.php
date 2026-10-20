@@ -737,7 +737,7 @@ $sql_recurring_payments = mysqli_query($mysqli, "
     LEFT JOIN clients ON client_id = invoice_client_id
     LEFT JOIN contacts ON client_id = contact_client_id AND contact_primary = 1
     WHERE invoice_due = CURDATE()
-      AND (invoice_status = 'Sent' OR invoice_status = 'Viewed')
+      AND invoice_status IN ('Sent', 'Viewed', 'Partial')
 ");
 
 while ($row = mysqli_fetch_assoc($sql_recurring_payments)) {

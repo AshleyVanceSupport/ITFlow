@@ -96,6 +96,56 @@ function mitModulesSave(array $post) {
 }
 
 /**
+ * The system mail From address and name, read from the settings as stored. Not the $config_mail_from_* globals: a
+ * cron job before ours (nightly_tasks) SQL-escapes those in the shared scope, so "O'Brien" would go out as "O\'Brien".
+ */
+function mitMailFrom() {
+    global $mysqli;
+    static $from = null;
+    if ($from === null) {
+        $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT config_mail_from_email, config_mail_from_name FROM settings WHERE company_id = 1")) ?: [];
+        $from = ['email' => (string) ($row['config_mail_from_email'] ?? ''), 'name' => (string) ($row['config_mail_from_name'] ?? '')];
+    }
+    return $from;
+}
+
+/**
+ * After a restore (setup/index.php, scripts/restore_cli.php): ITFlow's own database updates up to this release, as
+ * update_cli runs them, so ours come after. Returns '' or "version: error".
+ */
+function mitRestoreItflowUpdates() {
+    global $mysqli;
+    defined('LATEST_DATABASE_VERSION') || require __DIR__ . '/../includes/database_version.php';
+    $row = mysqli_fetch_row(mysqli_query($mysqli, "SELECT config_current_database_version FROM settings LIMIT 1"));
+    $current = trim((string) ($row[0] ?? ''));
+    if ($current === '' || !version_compare($current, LATEST_DATABASE_VERSION, '<') || defined('CURRENT_DATABASE_VERSION')) {
+        return '';
+    }
+    define('CURRENT_DATABASE_VERSION', $current);
+    $database_updates_applied = [];
+    $database_updates_error = null;
+    require __DIR__ . '/../admin/database_updates.php';
+    return (string) $database_updates_error;
+}
+
+/**
+ * A named database lock (MySQL GET_LOCK) so two requests can't do the same thing at once - a double click, two approvers.
+ * $name is made safe here. Returns true when it was taken within $timeout seconds; release it with mitUnlock().
+ */
+function mitLock($name, $timeout = 15) {
+    global $mysqli;
+    $name = 'mit_' . substr(preg_replace('/[^a-z0-9_]/', '_', strtolower((string) $name)), 0, 56);
+    $row = mysqli_fetch_row(mysqli_query($mysqli, "SELECT GET_LOCK('$name', " . intval($timeout) . ")"));
+    return intval($row[0] ?? 0) === 1;
+}
+
+function mitUnlock($name) {
+    global $mysqli;
+    $name = 'mit_' . substr(preg_replace('/[^a-z0-9_]/', '_', strtolower((string) $name)), 0, 56);
+    mysqli_query($mysqli, "SELECT RELEASE_LOCK('$name')");
+}
+
+/**
  * The address of one of our scripts with its file time on the end (/js/x.js?v=1729...), so a browser
  * fetches it again after an update instead of running the copy it kept.
  */

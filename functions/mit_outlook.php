@@ -22,7 +22,7 @@
  * anyone's calendar.
  */
 
-/** Bookings that ended longer ago than this are left alone (and not added). */
+/** Bookings that ended longer ago than this are left alone: not added, and an event already there is kept. */
 const MIT_OUTLOOK_PAST_DAYS = 30;
 /** How often Outlook itself is checked for events changed or deleted there. */
 const MIT_OUTLOOK_CHECK_MINUTES = 15;
@@ -194,12 +194,15 @@ function mitOutlookToken(array $link) {
  * ---------- what should be in the calendar ----------
  */
 
-/** The person's open booked tickets - as the lead or helping - ticket_id => row. */
-function mitOutlookBookings($user_id) {
+/**
+ * The person's open booked tickets - as the lead or helping - ticket_id => row: those that ended within the last
+ * MIT_OUTLOOK_PAST_DAYS, or within $past_days when given (to tell an old booking from a cancelled one).
+ */
+function mitOutlookBookings($user_id, $past_days = null) {
     global $mysqli;
     $user_id = intval($user_id);
     $default_minutes = intval(CALENDAR_TICKET_MINUTES);
-    $past_days = intval(MIT_OUTLOOK_PAST_DAYS);
+    $past_days = intval($past_days ?? MIT_OUTLOOK_PAST_DAYS);
     $result = mysqli_query($mysqli, "SELECT ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_schedule, ticket_schedule_end, ticket_onsite,
             client_name, contact_name, contact_phone, contact_mobile, location_name, location_address, location_city, location_state, location_zip
         FROM tickets
@@ -371,8 +374,13 @@ function mitOutlookSyncLocked($user_id, $check) {
                 }
             });
         }
+        $old = null;  // bookings still in place but older than the window: their events stay
         foreach ($have as $ticket_id => $row) {
             if (!isset($want[$ticket_id])) {
+                $old = $old ?? mitOutlookBookings($user_id, 3650);
+                if (isset($old[$ticket_id])) {
+                    continue;
+                }
                 $each($ticket_id, function () use ($token, $user_id, $ticket_id, $row, &$counts) {
                     global $mysqli;
                     mitOutlookDelete($token, $row['event_id']);
