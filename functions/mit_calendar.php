@@ -206,6 +206,21 @@ function mitScheduleConflicts($user_id, $start, $end, $ticket_id = 0) {
     if (function_exists('mitOutlookBusyConflicts')) {
         $conflicts = array_merge($conflicts, mitOutlookBusyConflicts($user_id, $start, $end));
     }
+    return array_merge($conflicts, mitEventConflicts($user_id, $start, $end));
+}
+
+/** Calendar events the agent organises or is invited to that overlap $start - $end (repeats expanded; all-day ones left out). */
+function mitEventConflicts($user_id, $start, $end) {
+    if (!function_exists('calendarEventItems') || !function_exists('calendarList')) {
+        return [];
+    }
+    $conflicts = [];
+    foreach (calendarEventItems(array_keys(calendarList()), $start, $end, ['client_id' => 0, 'user_id' => intval($user_id)]) as $item) {
+        if (!empty($item['allDay']) || empty($item['end']) || $item['end'] <= $start || $item['start'] >= $end) {
+            continue;
+        }
+        $conflicts[] = $item['title'] . ' @ ' . date('g:ia', strtotime($item['start'])) . '-' . date('g:ia', strtotime($item['end']));
+    }
     return $conflicts;
 }
 

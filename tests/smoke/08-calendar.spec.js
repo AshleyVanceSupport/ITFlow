@@ -8,7 +8,7 @@ const { smokeName, watch, visit, openModal, fillForm, submit, flash, action, get
 
 test.describe.configure({ mode: 'serial' });
 
-const made = { clientName: smokeName('client'), clientId: 0, ticketId: 0, whose: null };
+const made = { clientName: smokeName('client'), clientId: 0, ticketId: 0, whose: null, eventId: 0 };
 
 function day(offset, time = '10:00') {
     const d = new Date(Date.now() + offset * 86400000);
@@ -90,6 +90,36 @@ test('calendar: To schedule and Left behind follow Whose, and a passed booking i
     await expectClean(page, errors);
 });
 
+test('dispatch: an agent\'s meetings show beside their bookings, count as a clash, and bookings carry onsite / remote', async ({ page }) => {
+    test.skip(!made.ticketId, 'no ticket');
+    const errors = watch(page);
+    await visit(page, 'agent/calendar.php', errors);
+    const me = await page.locator('#itflowCalendar').getAttribute('data-user-id');
+    const tomorrow = day(1).slice(0, 10);
+    // A meeting tomorrow 10:00 - 11:00 with me on it - the ticket was booked tomorrow 10:00 above
+    const modal = await openModal(page, 'modals/calendar/calendar_event_add.php', 'lg');
+    await fillForm(modal, { title: 'Smoke test meeting', start_date: tomorrow, start_time: '10:00', end_date: tomorrow, end_time: '11:00', 'agents[]': [me], send_invites: false });
+    await submit(modal, 'add_event');
+
+    const dispatch = await page.evaluate(async ([date, me]) => {
+        const res = await fetch(`/agent/mit_dispatch_ajax.php?items=1&from=${date}&to=${date}&techs=${me}`, { credentials: 'same-origin' });
+        return res.ok ? res.json() : null;
+    }, [tomorrow, me]);
+    test.skip(dispatch === null, 'Dispatch is switched off');
+    const meeting = dispatch.find((i) => i.extendedProps.kind === 'event' && i.title === 'Smoke test meeting');
+    expect(meeting, 'the meeting on my Dispatch column').toBeTruthy();
+    made.eventId = meeting.extendedProps.event_id;
+    expect(meeting.editable, 'not movable from Dispatch').toBeFalsy();
+    const booking = dispatch.find((i) => i.extendedProps.kind === 'ticket' && i.extendedProps.ticket_id === made.ticketId);
+    expect(booking && ['fa-car', 'fa-headset'], 'the booking says onsite or remote').toContain(booking && booking.extendedProps.icon);
+
+    // Booking over it: the meeting is named as a clash
+    await visit(page, 'agent/calendar.php', errors);
+    const moved = await book(page, `${tomorrow} 10:30`);
+    expect((moved.conflicts || []).join(' | '), 'the meeting as a clash').toContain('Smoke test meeting');
+    await expectClean(page, errors);
+});
+
 test.afterAll(async ({ browser }) => {
     const use = test.info().project.use;
     const context = await browser.newContext({ storageState: use.storageState, baseURL: use.baseURL, ignoreHTTPSErrors: use.ignoreHTTPSErrors });
@@ -98,6 +128,20 @@ test.afterAll(async ({ browser }) => {
         await page.goto('agent/calendar.php');
         await pickWhose(page, made.whose);
         await page.waitForTimeout(1500); // the choice is saved to the account a moment after the change
+    }
+    // The meeting - found again when a failed step never learnt its id
+    if (!made.eventId && made.ticketId) {
+        await page.goto('agent/calendar.php');
+        const date = day(1).slice(0, 10);
+        made.eventId = await page.evaluate(async (date) => {
+            const calendars = [...document.querySelectorAll('[data-calendar]')].map((box) => box.dataset.calendar).join(',');
+            const items = await (await fetch(`ajax.php?calendar_items=1&from=${date}&to=${date}&calendars=${calendars}`, { credentials: 'same-origin' })).json();
+            const found = items.find((i) => i.title === 'Smoke test meeting');
+            return found ? found.extendedProps.event_id : 0;
+        }, date);
+    }
+    if (made.eventId) {
+        await action(page, `delete_event=${made.eventId}`, 'agent/calendar.php');
     }
     if (made.ticketId) {
         await action(page, `delete_ticket=${made.ticketId}`, `agent/ticket.php?client_id=${made.clientId}&ticket_id=${made.ticketId}`);

@@ -418,6 +418,11 @@ model: see DEPLOYMENT.md.
   hours today / this week vs Admin > SLA working hours; flags Falling behind (breached / past due), Watch, Overloaded / Has room
   vs the team average (`mitDispatchWorkloadFlags`). Move to: unbooked = `mitDispatchAssign`, booked = the Schedule dialog.
   No tables or hooks of its own (who assigned a ticket is in ITFlow's ticket history).
+  The board also shows what else is on each agent's day (`mitDispatchItems`): calendar events they organise or are invited to
+  (ITFlow's `calendarEventItems` with their user_id - not movable there, click opens the event), closure days (holidays source)
+  and Outlook busy times; items are drawn like the calendar page (`eventContent` with the itflow-cal-* classes: time, project
+  tech dot, `extendedProps.icon` - fa-car onsite / fa-headset remote / meeting icons -, title, detail; the week chips carry the
+  icon too). Clashes (`mitScheduleConflicts`) count those events as well (`mitEventConflicts`, all-day ones left out).
   "This week" card under the board (all views; `mitDispatchWeekStats`, `?week_stats=`, `renderStats` + Chart.js from ITFlow's footer):
   inbound vs closed per day (closed = COALESCE(resolved, closed)), vs last week / 4-week average, SLA met / missed for targets due
   this week (resolution also when closed this week), breached / close now, and per shown agent: assigned this week (created for

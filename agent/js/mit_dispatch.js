@@ -666,16 +666,42 @@
                     label.textContent = arg.text;
                     return {domNodes: [label]};
                 },
+                // The time, a project's tech dot, an icon for what it is (onsite / remote, a meeting...), the title and
+                // where / who - drawn like the calendar page's (agent/js/calendar.js, itflow-cal-* styles)
+                eventContent: function (arg) {
+                    const props = arg.event.extendedProps || {};
+                    const wrap = document.createElement('div');
+                    wrap.className = 'itflow-cal-event ' + (arg.event.allDay ? 'is-daygrid' : 'is-timegrid');
+                    if (arg.timeText && !arg.event.allDay) {
+                        const time = document.createElement('span');
+                        time.className = 'itflow-cal-time';
+                        time.textContent = arg.timeText;
+                        wrap.appendChild(time);
+                    }
+                    if (props.tech_color) {
+                        wrap.appendChild(mitTechDot(props.tech_color));
+                    }
+                    if (props.icon) {
+                        const icon = document.createElement('i');
+                        icon.className = 'fas fa-fw ' + props.icon + ' itflow-cal-icon';
+                        icon.title = props.icon === 'fa-car' ? 'Onsite' : (props.icon === 'fa-headset' ? 'Remote' : '');
+                        wrap.appendChild(icon);
+                    }
+                    const title = document.createElement('span');
+                    title.className = 'itflow-cal-title';
+                    title.textContent = arg.event.title;
+                    wrap.appendChild(title);
+                    if (props.detail && !arg.event.allDay) {
+                        const detail = document.createElement('div');
+                        detail.className = 'itflow-cal-detail';
+                        detail.textContent = props.detail;
+                        wrap.appendChild(detail);
+                    }
+                    return {domNodes: [wrap]};
+                },
                 eventDidMount: function (info) {
                     const props = info.event.extendedProps || {};
                     info.el.dataset.kind = props.kind || '';
-                    if (props.tech_color) {
-                        let main = info.el; // the innermost first line - the time - so the dot sits in front of it
-                        while (main.firstElementChild) {
-                            main = main.firstElementChild;
-                        }
-                        main.prepend(mitTechDot(props.tech_color));
-                    }
                     info.el.setAttribute('title', info.event.title + (props.detail ? '\n' + props.detail : ''));
                 },
                 eventClick: function (info) {
@@ -804,7 +830,9 @@
                         return '<div class="mit-dw-chip" style="background: ' + escapeText(item.color || '#6c757d') + '" data-kind="' + escapeText(props.kind || '') + '"'
                             + (props.kind === 'ticket' && item.editable ? ' data-ticket="' + props.ticket_id + '" data-start="' + escapeText(String(item.start).substring(0, 16)) + '" data-minutes="' + minutes + '" data-onsite="' + (props.icon === 'fa-car' ? 1 : 0) + '"' : '')
                             + ' data-modal="' + escapeText(props.modal || '') + '" title="' + escapeText(item.title + (props.detail ? '\n' + props.detail : '')) + '">'
-                            + (props.tech_color ? mitTechDot(props.tech_color).outerHTML : '') + escapeText(startText + ' ' + item.title) + '</div>';
+                            + (props.tech_color ? mitTechDot(props.tech_color).outerHTML : '')
+                            + (props.icon ? '<i class="fas fa-fw ' + escapeText(props.icon) + ' me-1" aria-hidden="true"></i>' : '')
+                            + escapeText(startText + ' ' + item.title) + '</div>';
                     }).join('') + '</td>';
                 }).join('');
                 html += '<tr><th class="small"><span class="d-inline-block rounded-circle me-1" style="width: 10px; height: 10px; background: ' + escapeText(t.color) + '"></span>'

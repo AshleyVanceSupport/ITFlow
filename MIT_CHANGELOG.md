@@ -4,6 +4,11 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.87 - 2026-10-20
+- Dispatch: each agent's column (Day and Week) now also shows the rest of their day - calendar meetings and events they organise or are invited to, closure days (holidays) and their Outlook busy times - so tickets can be booked around them. Only tickets can be moved there; click a meeting to open it.
+- Dispatch: bookings show the onsite (car) or remote (headset) icon, as on the calendar page, with where / who underneath in the Day view.
+- Booking a ticket over an agent's meeting now warns about the clash, like overlapping tickets and Outlook appointments already did.
+
 ## 26.10.86 - 2026-10-20
 - Dispatch: a third queue tab, "Left behind" - every agent's open tickets booked on a day that has gone, oldest first, with the day they were booked. Drag one onto an agent and time to book it again.
 

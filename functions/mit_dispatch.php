@@ -172,14 +172,17 @@ function mitDispatchQueue($tab, array $filters = []) {
 }
 
 /**
- * The board's bookings from $from to $to (Y-m-d) for these techs: each tech's tickets (lead and helper)
- * and their Outlook busy times, as FullCalendar items with 'tech' set.
+ * The board's bookings from $from to $to (Y-m-d) for these techs: each tech's tickets (lead and helper), the calendar
+ * events they organise or are invited to, their Outlook busy times and closure days (holidays), as FullCalendar items
+ * with 'tech' set. Only tickets can be moved here; the rest is there to book around.
  */
 function mitDispatchItems($from, $to, array $tech_ids) {
     $techs = mitDispatchTechs();
     $sources = calendarSources();
     $items = [];
     $ticket_ids = [];
+    $calendar_ids = array_keys(calendarList());
+    $holidays = isset($sources['holidays']) ? calendarSourceItems('holidays', "$from 00:00:00", "$to 23:59:59") : [];
     foreach (array_unique(array_map('intval', $tech_ids)) as $tech_id) {
         if (!isset($techs[$tech_id])) {
             continue;
@@ -189,6 +192,8 @@ function mitDispatchItems($from, $to, array $tech_ids) {
         if (isset($sources['outlook_busy'])) {
             $found = array_merge($found, calendarSourceItems('outlook_busy', "$from 00:00:00", "$to 23:59:59", $opts));
         }
+        // Their meetings and other events, and the days the office is closed
+        $found = array_merge($found, calendarEventItems($calendar_ids, "$from 00:00:00", "$to 23:59:59", $opts), $holidays);
         foreach ($found as $item) {
             $kind = $item['extendedProps']['kind'] ?? '';
             $ticket_ids[] = intval($item['extendedProps']['ticket_id'] ?? 0);
@@ -196,6 +201,7 @@ function mitDispatchItems($from, $to, array $tech_ids) {
             if ($kind === 'helper' && intval($item['extendedProps']['user_id'] ?? 0) !== $tech_id) {
                 continue;
             }
+            $item['id'] = ($item['id'] ?? '') . ($kind === 'ticket' || $kind === 'helper' ? '' : "-t$tech_id"); // the same event on two agents' columns
             $item['extendedProps']['tech'] = $tech_id;
             $item['editable'] = $kind === 'ticket' && !empty($item['editable']);
             $item['durationEditable'] = $item['editable'];
