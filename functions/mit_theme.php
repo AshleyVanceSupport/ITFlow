@@ -34,6 +34,11 @@ function mitThemeHead() {
         . '<script src="' . mitAsset('/js/mit_theme.js') . '" defer></script>';
 }
 
+/** The sign-in screens' backdrop and card (login.php, client/login_reset.php) - for everyone, before anyone is signed in. */
+function mitLoginHead() {
+    return '<link rel="stylesheet" href="' . mitAsset('/css/mit_login.css') . '">';
+}
+
 /** The Look choice on Account > Preferences. */
 function mitThemePreferenceField($user_id) {
     $look = mitLook($user_id);

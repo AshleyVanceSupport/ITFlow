@@ -386,3 +386,28 @@ test('modern look: on by default, light and dark, client tiles; Classic turns it
         await set(before);
     }
 });
+
+test('sign-in page: the dark backdrop with its network art loads, and the skip links stay hidden', async ({ browser, baseURL }) => {
+    const context = await browser.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
+    const page = await context.newPage();
+    const refused = [];
+    page.on('console', (m) => { if (m.type() === 'error') refused.push(m.text()); });
+    try {
+        for (const url of ['login.php', 'client/login_reset.php']) {
+            await page.goto(url);
+            await expect(page.locator('link[href*="/css/mit_login.css"]')).toHaveCount(1);
+            await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(11, 18, 32)');
+            await expect(page.locator('.login-page .card').first()).toHaveCSS('border-top-left-radius', '18px');
+        }
+        await page.goto('login.php');
+        // The art is a file of its own (the page's security policy refuses data: images)
+        expect(await page.evaluate(() => fetch('/css/mit_login_nodes.svg').then((r) => r.status))).toBe(200);
+        expect(await page.evaluate(() => getComputedStyle(document.body, '::after').backgroundImage)).toContain('mit_login_nodes.svg');
+        // AdminLTE's "Skip to" links show only when tabbed to
+        const skip = await page.locator('.skip-links a').first().boundingBox();
+        expect(!skip || skip.y + skip.height <= 0 || skip.x + skip.width <= 0 || skip.width <= 1).toBeTruthy();
+        expect(refused.filter((t) => /Content Security Policy|mit_login/.test(t))).toEqual([]);
+    } finally {
+        await context.close();
+    }
+});

@@ -474,6 +474,10 @@ model: see DEPLOYMENT.md.
   in `agent/user/post/profile.php`, `functions.php` (require). Selectors to re-check after an upstream restyle: `.app-header`,
   `.app-sidebar .nav-link.active`, `.card-header.bg-dark`, `.itflow-dash-rail*`, `.itflow-client-switcher`, `btn-outline-dark`
   / `-info` reply-type toggles.
+  Sign-in screens (for everyone, not per agent): `css/mit_login.css` + `css/mit_login_nodes.svg` (a file - login.php sends
+  `Content-Security-Policy: default-src 'self'`, which refuses data: images), loaded by `mitLoginHead()` - one line after
+  itflow_custom.css in `login.php` and `client/login_reset.php`. Only `.login-box` / the "Powered by" line are lifted over the
+  backdrop - AdminLTE's `.skip-links` must stay as they are (hidden until tabbed to).
   Client tiles and header line (`functions/mit_client_tiles.php`, modern look only): `mitClientTiles('assets'|'licenses'|'tickets',
   $client_id)` - one line each before the main card in `agent/assets.php`, `agent/software.php`, `agent/tickets.php` (only with
   `$client_url`); tiles link to ITFlow's own filters (expire_days, show=overdue / unassigned / closed). `mitClientHeadMeta()` -

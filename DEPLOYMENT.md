@@ -208,7 +208,7 @@ break stock ITFlow, and lists what stops working after a move.
   their notes - so the n8n workflow picks them up again if you go back to it.
 - **Email reply recipients** – an email reply goes to the contact and every watcher again, as stock ITFlow does; the
   per-ticket choices stay unused in `mit_ticket_mail_choices`.
-- **Modern look** – pages go back to ITFlow's own look, without the client count tiles and header contact line; the Look
+- **Modern look** – pages (and the sign-in screen) go back to ITFlow's own look, without the client count tiles and header contact line; the Look
   choice stays unused in `mit_user_preferences`.
 - **Version number** – the footer and Admin > Update show ITFlow's own release (26.10) again; `MIT_CHANGELOG.md` is ours.
 - **Project tickets** – they show on the Tickets board, the client's Tickets tab and the Dispatch queue again, and
