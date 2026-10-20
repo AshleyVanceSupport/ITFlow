@@ -473,6 +473,20 @@ body .app-header.navbar > .container-fluid > .navbar-nav > .nav-item > .nav-link
 .itflow-dash-rail-clear {
     grid-column: 1 / -1;
 }
+/* Tiles made of other pieces (the client overview's Financial strip: label / amount / note) stay stacked */
+.itflow-dash-rail-item:not(:has(> .itflow-dash-rail-label)) {
+    display: flex !important;
+    flex-direction: column;
+    justify-content: center;
+    gap: .15rem;
+    padding: 12px 16px !important;
+}
+.itflow-dash-rail-item:not(:has(> .itflow-dash-rail-label)) .itflow-dash-money-value {
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+}
 /* A second row only for a detail line, so a plain label sits in the middle */
 .itflow-dash-rail-item:has(> .itflow-dash-rail-detail),
 .mit-tile:has(> .mit-tile-detail) {

@@ -472,7 +472,8 @@ model: see DEPLOYMENT.md.
   `mit_user_preferences` ui.look (modern - the default - | classic). Hooks: one line in `includes/header.php` after
   itflow_custom.css (`mitThemeHead()`), `mitThemePreferenceField` in `agent/user/user_preferences.php`, `mitThemeSavePreference`
   in `agent/user/post/profile.php`, `functions.php` (require). Selectors to re-check after an upstream restyle: `.app-header`,
-  `.app-sidebar .nav-link.active`, `.card-header.bg-dark`, `.itflow-dash-rail*`, `.itflow-client-switcher`, `btn-outline-dark`
+  `.app-sidebar .nav-link.active`, `.card-header.bg-dark`, `.itflow-dash-rail*` (items with `.itflow-dash-rail-label` get the
+  one-line tile; others, like the client overview's Financial strip `.itflow-ov-stats`, stay stacked), `.itflow-client-switcher`, `btn-outline-dark`
   / `-info` reply-type toggles.
   Sign-in screens (for everyone, not per agent): `css/mit_login.css` + `css/mit_login_nodes.svg` (a file - login.php sends
   `Content-Security-Policy: default-src 'self'`, which refuses data: images), loaded by `mitLoginHead()` - one line after

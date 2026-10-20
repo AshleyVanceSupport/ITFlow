@@ -369,6 +369,13 @@ test('modern look: on by default, light and dark, client tiles; Classic turns it
         }
         await expect(page.locator('.mit-tiles a.mit-tile[href*="show=overdue"]')).toHaveCount(1);
         await expect(page.locator('.itflow-client-head .mit-client-meta')).toHaveCount(1);
+        // The client overview's Financial boxes keep label / amount / note stacked, the amount on one line
+        await visit(page, 'agent/client_overview.php?client_id=1');
+        const money = page.locator('.itflow-ov-stats .itflow-dash-rail-item').first();
+        if (await money.count()) {
+            await expect(money).toHaveCSS('flex-direction', 'column');
+            await expect(money.locator('.itflow-dash-money-value')).toHaveCSS('white-space', 'nowrap');
+        }
 
         // Quotes and invoices read as a document: tinted item headings, a broken logo picture hidden
         let documents = 0;
