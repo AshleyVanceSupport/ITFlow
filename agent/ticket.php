@@ -582,6 +582,7 @@ if (isset($_GET['ticket_id'])) {
                                             <a class="dropdown-item ajax-modal" href="#" id="clientChangeTicketModalLoad" data-modal-url="modals/ticket/ticket_change_client.php?ticket_id=<?= $ticket_id ?>">
                                                 <i class="fas fa-fw fa-people-carry me-2"></i>Move to another client
                                             </a>
+                                            <?= function_exists('mitBoardEscalateMenuItem') ? mitBoardEscalateMenuItem($ticket) : '' // Mountaineer IT: service boards ?>
                                             <?php if ($show_quote_button || $show_invoice_button) { ?>
                                                 <div class="dropdown-divider"></div>
                                                 <?php if ($show_quote_button) { ?>
@@ -1008,6 +1009,7 @@ if (isset($_GET['ticket_id'])) {
                             </div>
 
                             <?= mitTicketTechsProp($ticket, $can_change_fields) // Mountaineer IT: additional techs ?>
+                            <?= function_exists('mitBoardTicketProp') ? mitBoardTicketProp($ticket, $can_change_fields) : '' // Mountaineer IT: service boards ?>
 
                             <?php if ($sla_in_use) {
                                 // What the SLA value says - the clock state when there is one, else the plan

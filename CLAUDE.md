@@ -463,6 +463,28 @@ model: see DEPLOYMENT.md.
   open, not in a client's ticket list. Hooks in `agent/tickets.php`: one line after `enforceUserPermission`
   (`mitListViewRestore('tickets')`, then filter_header.php runs again so sort / order / dates follow) and
   `mitListViewResetButton('tickets')` before the List / Board group (`?mit_reset_view=<csrf token>`). `functions.php` (require).
+- Service boards (Oct 2026, part 1): `functions/mit_boards.php` (ours) - who works a ticket (Service Desk, Tier 1, Tier 2, Sysadmin,
+  Sales), apart from its category. Tables M026: `mit_boards` (one `board_is_default`, archived kept), `mit_board_members` (notify
+  per member), `mit_ticket_boards` (no row = the default board - `mitBoardSql($alias)`), `mit_board_rules` (mailbox / client /
+  category -> board; first match in that order, else the default). Organise only - no visibility limits. New tickets: New Ticket's
+  Board picker (`mitBoardNewTicketField` beside Category in `agent/modals/ticket/ticket_add.php`; `mitBoardAfterCreate` in
+  `agent/post/ticket.php` add_ticket, `mitBoardRoute` for per-asset tickets), the parser by the To / Cc / Delivered-To /
+  X-Original-To addresses (`$GLOBALS['mit_board_addresses'] = mitBoardMessageAddresses($message)` in the message loop,
+  `mitBoardRoute` in addTicket after applyTicketSla), and cron job `mit_boards` (`cron/mit_boards.php`, every minute,
+  `mitBoardSweep`: tickets since `mit_settings` boards_since with no row - portal, API, recurring, projects). Members with notify
+  on (and access to the client, never the one who moved it) get a bell + email (`mitBoardNotify`). Ticket page: Board line
+  (`mitBoardTicketProp` after `mitTicketTechsProp` in `agent/ticket.php`) and "Escalate to another board" in the ⋮ menu
+  (`mitBoardEscalateMenuItem`, after Move to another client) - modal `agent/modals/mit_board/board_move.php` (escalate: reason
+  required -> internal note, unassign ticked), handler `agent/post/mit_boards.php` (`mitBoardMove`). Tickets list: board switcher
+  with open counts (`mitBoardSwitcher` after the h3, `mitBoardTicketsFilter` after the Project filter, `mitBoardHiddenInput` in the
+  form of `agent/tickets.php`; `board` remembered by `mit_list_views.php`), a board tag per row (`mitBoardListTag` in
+  `agent/ticket_list.php` / `ticket_kanban.php`). Admin > Settings > Boards `admin/mit_boards.php` (tabs Boards / Routing, "Place
+  open tickets by category"), modal `admin/modals/mit_boards/board.php`, handlers `admin/post/mit_boards.php` (archiving moves
+  its tickets to the default and drops its rules); menu in `admin/includes/mit_admin_nav.php`. Dispatch: board picker (All / My
+  boards - the default when the agent is on one - / each; `mitDispatchBoardChoice`, saved in dispatch.state with `board_techs`),
+  queue / Workload / This week filtered (`mitDispatchBoardWhere`), board tag on queue cards, Board field in the Schedule dialog
+  (`detail_board` -> `mitBoardMove`), "Only the board's members" in the Agents list (a board with nobody on it shows everyone),
+  side-menu count on the agent's own boards. Part 2 (later): dashboard filter, board report, round-robin.
 - Modern look (Oct 2026): `functions/mit_theme.php`, `css/mit_theme.css`, `js/mit_theme.js`, `css/fonts/inter/` (Inter,
   OFL - from @fontsource-variable/inter, latin + latin-ext) - ours. Colours, type and spacing over ITFlow's own styles, no markup
   changes: slate sidebar with a blue active pill, white top bar (the script switches ITFlow's `.app-header` `data-bs-theme="dark"`

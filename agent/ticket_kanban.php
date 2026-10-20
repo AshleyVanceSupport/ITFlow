@@ -94,6 +94,7 @@ $task_counts = ticketTaskCounts($board_ids);
                         <div class="d-flex align-items-center gap-2 small">
                             <span class="itflow-ticket-move <?= $move === 'us' ? 'is-ours' : '' ?>" <?= $move === 'us' ? 'title="Needs a reply from us"' : 'aria-hidden="true"' ?>></span>
                             <a class="font-monospace text-body-secondary" href="<?= $url ?>"><?= $reference ?></a>
+                            <?= function_exists('mitBoardListTag') ? mitBoardListTag($ticket_id) : '' // Mountaineer IT: service boards ?>
                             <span class="ms-auto"><?= ticketPriorityHtml($row['ticket_priority'], 'detail') ?></span>
                             <div class="dropdown">
                                 <button class="btn btn-sm btn-link text-body-secondary p-0 px-1" type="button" data-bs-toggle="dropdown" title="More actions"><i class="fas fa-fw fa-ellipsis-v"></i></button>

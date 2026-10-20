@@ -156,6 +156,15 @@ function cronJobRegistry(): array
             'interval_minutes' => 1,
         ],
         [
+            // Mountaineer IT (functions/mit_boards.php)
+            'name' => 'mit_boards',
+            'label' => 'Service Boards',
+            'script' => 'mit_boards.php',
+            'description' => 'Puts tickets made by the portal, the API, recurring tickets and projects on their board by the routing rules (tickets from email and New Ticket get theirs at once).',
+            'schedule' => 'Interval',
+            'interval_minutes' => 1,
+        ],
+        [
             // Mountaineer IT (functions/mit_cron_health.php)
             'name' => 'mit_cron_watch',
             'label' => 'Cron Watch',

@@ -49,7 +49,11 @@ function mitDispatchTechs() {
     return $techs;
 }
 
-/** The saved board settings for the signed-in agent: view (day | week | workload), hidden (tech ids), weekends. */
+/**
+ * The saved board settings for the signed-in agent: view (day | week | workload), hidden (tech ids), weekends, and the
+ * service board(s) it shows (functions/mit_boards.php): board = all | mine | a board id - "mine" to start with for an agent on
+ * a board - and board_techs = only those boards' members as agent columns.
+ */
 function mitDispatchState() {
     global $session_user_id;
     $state = json_decode((string) mitUserPreference($session_user_id, 'dispatch.state', ''), true);
@@ -58,7 +62,50 @@ function mitDispatchState() {
         'view' => in_array($state['view'] ?? '', ['week', 'workload'], true) ? $state['view'] : 'day',
         'hidden' => array_values(array_filter(array_map('intval', (array) ($state['hidden'] ?? [])))),
         'weekends' => !empty($state['weekends']),
+        'board' => mitDispatchBoardChoice($state['board'] ?? null),
+        'board_techs' => !empty($state['board_techs']),
     ];
+}
+
+/** A Dispatch board choice made safe: all, mine (only for an agent on a board), or a board's id; null = the default. */
+function mitDispatchBoardChoice($choice) {
+    global $session_user_id;
+    if (!function_exists('mitBoards') || !mitBoards()) {
+        return 'all';
+    }
+    $mine = (bool) mitBoardsOfUser($session_user_id);
+    if ($choice === null || $choice === '') {
+        return $mine ? 'mine' : 'all';
+    }
+    $choice = (string) $choice;
+    if ($choice === 'mine') {
+        return $mine ? 'mine' : 'all';
+    }
+    return isset(mitBoards()[intval($choice)]) ? (string) intval($choice) : 'all';
+}
+
+/** " AND <the ticket is on the chosen board(s)>" for Dispatch's lists - '' for all boards. */
+function mitDispatchBoardWhere($choice, $alias = 'tickets') {
+    global $session_user_id;
+    return function_exists('mitBoardWhere') ? mitBoardWhere(mitDispatchBoardChoice($choice), $session_user_id, $alias) : '';
+}
+
+/** The boards for Dispatch's picker and agent columns: [{id, name, color, members: [user ids]}]. */
+function mitDispatchBoards() {
+    global $mysqli;
+    if (!function_exists('mitBoards') || !mitBoards()) {
+        return [];
+    }
+    $members = [];
+    $result = mysqli_query($mysqli, "SELECT board_id, user_id FROM mit_board_members");
+    while ($row = mysqli_fetch_row($result)) {
+        $members[intval($row[0])][] = intval($row[1]);
+    }
+    $list = [];
+    foreach (mitBoards() as $id => $board) {
+        $list[] = ['id' => $id, 'name' => $board['board_name'], 'color' => $board['board_color'], 'members' => $members[$id] ?? []];
+    }
+    return $list;
 }
 
 /**
@@ -76,6 +123,7 @@ function mitDispatchQueue($tab, array $filters = []) {
     if (in_array($priority, ['Urgent', 'High', 'Medium', 'Low'], true)) {
         $where .= " AND ticket_priority = '$priority'";
     }
+    $where .= mitDispatchBoardWhere($filters['board'] ?? '');
     $q = trim((string) ($filters['q'] ?? ''));
     if ($q !== '') {
         $like = escapeSql(mb_substr($q, 0, 100));
@@ -91,7 +139,8 @@ function mitDispatchQueue($tab, array $filters = []) {
         $counts[$key] = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COUNT(*) FROM tickets LEFT JOIN clients ON client_id = ticket_client_id WHERE $where AND $condition"))[0]);
     }
     $result = mysqli_query($mysqli, "SELECT tickets.ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_priority, ticket_onsite, ticket_client_id, ticket_created_at,
-            ticket_schedule, ticket_schedule_end, ticket_assigned_to, client_name, user_name, ticket_status_name
+            ticket_schedule, ticket_schedule_end, ticket_assigned_to, client_name, user_name, ticket_status_name,
+            " . (function_exists('mitBoardSql') ? mitBoardSql() : '0') . " AS mit_board_id
         FROM tickets
         LEFT JOIN clients ON client_id = ticket_client_id
         LEFT JOIN users ON user_id = ticket_assigned_to
@@ -113,6 +162,7 @@ function mitDispatchQueue($tab, array $filters = []) {
             'tech_name' => (string) $row['user_name'],
             'age' => timeAgo($row['ticket_created_at']),
             'minutes' => mitTicketScheduleMinutes($row['ticket_schedule'], $row['ticket_schedule_end']),
+            'board' => intval($row['mit_board_id']),
         ];
     }
     return ['tab' => $tab, 'counts' => $counts, 'tickets' => $tickets];
@@ -330,6 +380,8 @@ function mitDispatchDetails($ticket_id) {
         'priorities' => TICKET_PRIORITIES,
         'categories' => $pick("SELECT category_id, category_name FROM categories WHERE category_type = 'Ticket' AND (category_archived_at IS NULL OR category_id = $category_id) ORDER BY category_name"),
         'slas' => $pick("SELECT sla_id, sla_name FROM slas WHERE sla_archived_at IS NULL OR sla_id = $sla_id ORDER BY sla_name"),
+        'board' => function_exists('mitBoardOf') ? mitBoardOf($row['ticket_id']) : 0,
+        'boards' => array_map(function ($b) { return ['id' => $b['id'], 'name' => $b['name']]; }, mitDispatchBoards()),
     ];
 }
 
@@ -456,6 +508,13 @@ function mitDispatchSaveDetails($ticket_id, array $post) {
         $changed[] = "SLA $sla_name";
     } elseif ($client_id !== $old_client_id) {
         applyTicketSla($ticket_id);
+    }
+
+    // The board - moved as the ticket's Board line does, its members told
+    $board_id = intval($post['detail_board'] ?? 0);
+    if ($board_id && function_exists('mitBoardMove') && isset(mitBoards()[$board_id]) && $board_id !== mitBoardOf($ticket_id)) {
+        mitBoardMove($ticket_id, $board_id);
+        $changed[] = 'board ' . mitBoards()[$board_id]['board_name'];
     }
 
     if ($changed) {

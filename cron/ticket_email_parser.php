@@ -109,6 +109,7 @@ function addTicket($contact_id, $contact_name, $contact_email, $client_id, $date
     mysqli_query($mysqli, "INSERT INTO tickets SET ticket_prefix = '$ticket_prefix_esc', ticket_number = $ticket_number, ticket_source = 'Email', ticket_subject = '$subject', ticket_details = '$message_esc', ticket_priority = 'Medium', ticket_status = 1, ticket_billable = $config_ticket_default_billable, ticket_created_by = 0, ticket_contact_id = $contact_id, ticket_url_key = '$url_key', ticket_client_id = $client_id");
     $id = mysqli_insert_id($mysqli);
     applyTicketSla($id);
+    if (function_exists('mitBoardRoute')) { mitBoardRoute($id, $GLOBALS['mit_board_addresses'] ?? []); } // Mountaineer IT: service boards (by the address it was sent to)
 
     // Logging
     logAudit("Ticket", "Create", "Email parser: Client contact $contact_email_esc created ticket $ticket_prefix_esc$ticket_number ($subject) ($id)", $client_id, $id);
@@ -727,6 +728,8 @@ foreach ($messages as $message) {
                 $ccs[] = $cc_mail;
             }
         }
+
+        $GLOBALS['mit_board_addresses'] = function_exists('mitBoardMessageAddresses') ? mitBoardMessageAddresses($message) : []; // Mountaineer IT: service boards
 
         // Date (string)
         $dateObj = $message->date(); // ?CarbonInterface

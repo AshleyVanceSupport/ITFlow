@@ -150,6 +150,7 @@ $sort_link = function ($column, $label, $class = '') use ($url_query_strings_sor
                                     <a class="font-monospace text-body-secondary" href="<?= $url ?>"><?= $reference ?></a>
                                     <span title="Opened <?= escapeHtml($row['ticket_created_at']) ?>"><?= timeAgo($row['ticket_created_at']) ?></span>
                                     <?= ticketSourceIcon($row['ticket_source']) ?>
+                                    <?= function_exists('mitBoardListTag') ? mitBoardListTag($ticket_id) : '' // Mountaineer IT: service boards ?>
                                     <?php if ($row['category_name'] !== null && $row['category_name'] !== '') { ?>
                                         <span class="text-nowrap"><i class="fas fa-circle itflow-ticket-dot" <?= $category_color ? 'style="color: ' . $category_color . '"' : '' ?>></i><?= escapeHtml($row['category_name']) ?></span>
                                     <?php } ?>

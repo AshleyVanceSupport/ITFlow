@@ -150,6 +150,7 @@ if ($project_filter) {
     $filter_sql[] = "AND ticket_project_id = $project_filter";
     $active_filters[] = ['label' => 'Project', 'value' => escapeHtml(getFieldById('projects', $project_filter, 'project_name')), 'drop' => ['project' => null]];
 }
+if (function_exists('mitBoardTicketsFilter')) { mitBoardTicketsFilter($filter_sql); } // Mountaineer IT: service boards
 
 // SLA state - the dashboard's "SLA breached" links here
 $sla_filters = [
@@ -282,6 +283,7 @@ $export_extra = [
 <div class="card">
     <div class="card-header bg-dark py-2">
         <h3 class="card-title mt-2"><i class="fa fa-fw fa-life-ring me-2"></i>Tickets</h3>
+        <?= function_exists('mitBoardSwitcher') ? mitBoardSwitcher($filter_url) : '' // Mountaineer IT: service boards ?>
         <div class="card-tools">
             <div class="btn-group">
                 <?php if ($can_edit) { ?>
@@ -312,6 +314,7 @@ $export_extra = [
             <input type="hidden" name="show" value="<?= escapeHtml($show) ?>">
             <input type="hidden" name="sort" value="<?= escapeHtml($sort) ?>">
             <input type="hidden" name="order" value="<?= escapeHtml($order) ?>">
+            <?= function_exists('mitBoardHiddenInput') ? mitBoardHiddenInput() : '' // Mountaineer IT: service boards ?>
             <?php if ($billing_filter && !$show_billing) { ?>
                 <!-- No Billing filter for this agent, but a link's billing filter still survives a search -->
                 <input type="hidden" name="billing" value="<?= escapeHtml($billing_filter) ?>">

@@ -38,7 +38,7 @@ function mitDispatchWorkingDay() {
  * overdue, unbooked, quiet, oldest, booked_today, booked_week, capacity_today, capacity_week, flags, tickets}], team =>
  * averages, week => [from, to]]. $first_day 0 = weeks start on Sunday, 1 = Monday (the agent's calendar setting).
  */
-function mitDispatchWorkload(array $tech_ids, $first_day = 0) {
+function mitDispatchWorkload(array $tech_ids, $first_day = 0, $board = '') {
     global $mysqli;
     $techs = mitDispatchTechs();
     $tech_ids = array_values(array_filter(array_unique(array_map('intval', $tech_ids)), function ($id) use ($techs) {
@@ -86,7 +86,7 @@ function mitDispatchWorkload(array $tech_ids, $first_day = 0) {
         LEFT JOIN clients ON client_id = ticket_client_id
         LEFT JOIN ticket_statuses ON ticket_status_id = ticket_status
         $helper_join
-        WHERE " . TICKET_OPEN_SQL . " AND ticket_archived_at IS NULL" . clientScopeSql('ticket_client_id') . "
+        WHERE " . TICKET_OPEN_SQL . " AND ticket_archived_at IS NULL" . clientScopeSql('ticket_client_id') . mitDispatchBoardWhere($board) . "
             AND (ticket_assigned_to IN ($in)$helper_where)");
     $tickets = [];
     while ($row = mysqli_fetch_assoc($result)) {
@@ -269,14 +269,14 @@ const MIT_DISPATCH_DONE_AT = "COALESCE(tickets.ticket_resolved_at, tickets.ticke
  * resolution_met, resolution_missed, breached_now, at_risk_now], techs => [{id, name, color, assigned, closed, open,
  * sla_missed}]]. $first_day 0 = weeks start on Sunday, 1 = Monday.
  */
-function mitDispatchWeekStats(array $tech_ids, $first_day = 0) {
+function mitDispatchWeekStats(array $tech_ids, $first_day = 0, $board = '') {
     global $mysqli;
     $offset = (intval(date('w')) - intval($first_day) + 7) % 7;
     $from = date('Y-m-d', strtotime("-$offset days"));
     $to = date('Y-m-d', strtotime("$from +6 days"));
     $start = "'$from 00:00:00'";
     $end = "'$to 23:59:59'";
-    $scope = "tickets.ticket_archived_at IS NULL" . clientScopeSql('tickets.ticket_client_id');
+    $scope = "tickets.ticket_archived_at IS NULL" . clientScopeSql('tickets.ticket_client_id') . mitDispatchBoardWhere($board);
     $one = function ($sql) use ($mysqli) {
         return intval(mysqli_fetch_row(mysqli_query($mysqli, $sql))[0] ?? 0);
     };

@@ -4,6 +4,13 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.82 - 2026-10-20
+- Service boards: tickets now sit on a board - Service Desk (where new tickets land), Tier 1, Tier 2, Sysadmin and Sales to start with - separate from their category. Admin > Settings > Boards adds, edits, orders and archives boards and picks each board's members (and who of them gets told about new and moved tickets).
+- Routing: new tickets go on a board by the address the email was sent to, then by client, then by category, else the default board - set under Admin > Settings > Boards > Routing. "Place open tickets by category" moves today's open tickets to their category's board once.
+- Tickets: a board switcher above the list (with open counts, remembered like your other list settings) and the board on each row. New Ticket has a Board choice (Automatic follows the routing rules).
+- Ticket page: a Board line (click to move it) and "Escalate to another board" in the ⋮ menu - a reason is required and kept as an internal note, the ticket is unassigned by default, and the board's members are told.
+- Dispatch: pick All boards, My boards (the default when you are on one) or a single board - the queue, Workload and This week follow it; queue cards show their board, the Schedule dialog can move a ticket to another board, and "Only the board's members" shows just that board's agents. The Dispatch count in the menu counts your own boards.
+
 ## 26.10.81 - 2026-10-20
 - Admin > Settings > Theme: the colour names now show properly even where the browser kept an old copy of ITFlow's stylesheet (no refresh needed with the modern look).
 

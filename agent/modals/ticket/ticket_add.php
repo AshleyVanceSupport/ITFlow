@@ -198,6 +198,8 @@ ob_start();
                         </div>
                     </div>
 
+                    <?= function_exists('mitBoardNewTicketField') ? mitBoardNewTicketField() : '' // Mountaineer IT: service boards ?>
+
                 </div>
 
                 <div class="row">

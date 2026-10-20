@@ -146,6 +146,7 @@ if (isset($_POST['add_ticket'])) {
 
     $ticket_id = mysqli_insert_id($mysqli);
     applyTicketSla($ticket_id);
+    if (function_exists('mitBoardAfterCreate')) { mitBoardAfterCreate($ticket_id, $_POST['mit_board'] ?? ''); } // Mountaineer IT: service boards
 
     // Tasks come from the editable rows in the modal, which the template pre-fills.
     // Fall back to copying the template directly for a form without that section.
@@ -972,6 +973,7 @@ if (isset($_POST['bulk_add_asset_ticket'])) {
             ticket_assigned_to = $assigned_to, ticket_url_key = '$url_key', ticket_client_id = $client_id, ticket_project_id = $project_id");
         $ticket_id = mysqli_insert_id($mysqli);
         applyTicketSla($ticket_id);
+        if (function_exists('mitBoardRoute')) { mitBoardRoute($ticket_id); } // Mountaineer IT: service boards
 
         // Tasks from the modal, then the template's
         foreach ((array) ($_POST['tasks'] ?? []) as $task) {

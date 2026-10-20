@@ -2,18 +2,18 @@
 
 /*
  * Mountaineer IT - Dispatch's requests (functions/mit_dispatch.php), JSON:
- *   GET  ?queue=unassigned|unbooked [&client_id &priority &q]     the queue and both tab counts
+ *   GET  ?queue=unassigned|unbooked [&client_id &priority &q &board]  the queue and both tab counts
  *   GET  ?items=1&from=Y-m-d&to=Y-m-d&techs=1,2                  the board's bookings
  *   GET  ?details=TICKET_ID                                      the ticket's client, contact, priority, category, SLA + choices
  *   GET  ?contacts=CLIENT_ID                                     a client's contacts
  *   GET  ?contact_tickets=CONTACT_ID&except=TICKET_ID            the contact's other open tickets
- *   GET  ?workload=1&techs=1,2&first_day=0|1                       each tech's open tickets, SLA and booked hours
- *   GET  ?week_stats=1&techs=1,2&first_day=0|1                     this week: in vs closed, SLA results, per agent
+ *   GET  ?workload=1&techs=1,2&first_day=0|1[&board]               each tech's open tickets, SLA and booked hours
+ *   GET  ?week_stats=1&techs=1,2&first_day=0|1[&board]             this week: in vs closed, SLA results, per agent
  *   POST assign=1 ticket_id tech_id                               give an unbooked ticket to another agent
  *   POST merge=1 child_id parent_id comment move_replies         merge one ticket into another (ITFlow's merge)
  *   POST book=1 ticket_id tech_id start minutes onsite contact    assign and book (+ detail_* - saved first)
  *   POST unbook=1 ticket_id                                       take the booking off
- *   POST state=1 view (day | week | workload) hidden weekends                             the board settings for this agent
+ *   POST state=1 view (day | week | workload) hidden weekends board board_techs   the board settings for this agent
  */
 
 require_once "../config.php";
@@ -67,12 +67,12 @@ if (isset($_GET['contact_tickets'])) {
 }
 
 if (isset($_GET['workload'])) {
-    echo json_encode(mitDispatchWorkload(explode(',', (string) ($_GET['techs'] ?? '')), intval($_GET['first_day'] ?? 0) === 1 ? 1 : 0));
+    echo json_encode(mitDispatchWorkload(explode(',', (string) ($_GET['techs'] ?? '')), intval($_GET['first_day'] ?? 0) === 1 ? 1 : 0, (string) ($_GET['board'] ?? '')));
     exit;
 }
 
 if (isset($_GET['week_stats'])) {
-    echo json_encode(mitDispatchWeekStats(explode(',', (string) ($_GET['techs'] ?? '')), intval($_GET['first_day'] ?? 0) === 1 ? 1 : 0));
+    echo json_encode(mitDispatchWeekStats(explode(',', (string) ($_GET['techs'] ?? '')), intval($_GET['first_day'] ?? 0) === 1 ? 1 : 0, (string) ($_GET['board'] ?? '')));
     exit;
 }
 
@@ -127,6 +127,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'view' => in_array($_POST['view'] ?? '', ['week', 'workload'], true) ? $_POST['view'] : 'day',
             'hidden' => array_slice($hidden, 0, 500),
             'weekends' => !empty($_POST['weekends']),
+            'board' => mitDispatchBoardChoice((string) ($_POST['board'] ?? '')),
+            'board_techs' => !empty($_POST['board_techs']),
         ]));
         echo json_encode(['ok' => true]);
         exit;

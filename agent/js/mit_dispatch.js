@@ -18,6 +18,8 @@
     const csrf = root.dataset.csrf;
     const techs = JSON.parse(root.dataset.techs || '[]');
     const saved = JSON.parse(root.dataset.state || '{}');
+    // Service boards (functions/mit_boards.php): [{id, name, color, members}] - not the calendar "board" below
+    const serviceBoards = JSON.parse(root.dataset.boards || '[]');
     const firstDay = Number(root.dataset.firstDay) || 0;
     const defaultMinutes = Number(root.dataset.defaultMinutes) || 60;
     const contactDefault = root.dataset.contactDefault === '1';
@@ -32,6 +34,8 @@
         view: ['week', 'workload'].indexOf(saved.view) !== -1 ? saved.view : 'day',
         hidden: Array.isArray(saved.hidden) ? saved.hidden.map(Number) : [],
         weekends: !!saved.weekends,
+        serviceBoard: saved.board || 'all',
+        boardTechs: !!saved.board_techs,
         date: parseYmd(root.dataset.initialDate) || new Date(),
         tab: 'unassigned',
         filters: {q: '', client_id: '', priority: ''}
@@ -80,9 +84,33 @@
         dot.style.background = color;
         return dot;
     }
+    // The service boards picked: all of them (null), "My boards", or one
+    function pickedBoards() {
+        if (state.serviceBoard === 'all' || !serviceBoards.length) {
+            return null;
+        }
+        const mine = serviceBoards.filter(function (b) {
+            return b.members.indexOf(Number(root.dataset.me)) !== -1;
+        });
+        const picked = state.serviceBoard === 'mine' ? mine : serviceBoards.filter(function (b) {
+            return String(b.id) === String(state.serviceBoard);
+        });
+        return picked.length ? picked : null;
+    }
+    function boardById(id) {
+        return serviceBoards.find(function (b) {
+            return b.id === Number(id);
+        });
+    }
     function shownTechs() {
+        const picked = state.boardTechs ? pickedBoards() : null;
+        let members = picked ? [].concat.apply([], picked.map(function (b) { return b.members; })) : null;
+        // A board nobody is on yet would leave the board empty - show everyone instead
+        if (members && !members.length) {
+            members = null;
+        }
         return techs.filter(function (t) {
-            return state.hidden.indexOf(t.id) === -1;
+            return state.hidden.indexOf(t.id) === -1 && (!members || members.indexOf(t.id) !== -1);
         });
     }
     function techById(id) {
@@ -128,7 +156,8 @@
     function saveState() {
         clearTimeout(saveTimer);
         saveTimer = setTimeout(function () {
-            request('POST', {state: 1, csrf_token: csrf, view: state.view, hidden: state.hidden.join(','), weekends: state.weekends ? 1 : 0});
+            request('POST', {state: 1, csrf_token: csrf, view: state.view, hidden: state.hidden.join(','), weekends: state.weekends ? 1 : 0,
+                board: state.serviceBoard, board_techs: state.boardTechs ? 1 : 0});
         }, 600);
     }
 
@@ -159,6 +188,8 @@
             + options(d.statuses, t.status_id) + '</select></div>'
             + '<div class="col-sm-4"><label class="form-label mb-0" for="mdCategory">Category</label><select class="form-select form-select-sm" id="mdCategory">'
             + options([{id: 0, name: 'No category'}].concat(d.categories), t.category_id) + '</select></div>'
+            + (d.boards && d.boards.length ? '<div class="col-12"><label class="form-label mb-0" for="mdBoard">Board</label><select class="form-select form-select-sm" id="mdBoard">'
+                + options(d.boards, d.board) + '</select></div>' : '')
             + '<div class="col-12"><label class="form-label mb-0" for="mdSla">SLA</label><select class="form-select form-select-sm" id="mdSla">'
             + '<option value="auto">Automatic - from the client and priority</option>'
             + options([{id: 0, name: 'None'}].concat(d.slas), t.sla_id) + '</select>'
@@ -362,6 +393,9 @@
                     post.detail_status = document.getElementById('mdStatus').value;
                     post.detail_category_id = document.getElementById('mdCategory').value;
                     post.detail_sla = document.getElementById('mdSla').value;
+                    if (document.getElementById('mdBoard')) {
+                        post.detail_board = document.getElementById('mdBoard').value;
+                    }
                 }
                 return request('POST', post).then(function (json) {
                     if (json.error) {
@@ -424,7 +458,7 @@
     // ---------- the queue ----------
 
     function loadQueue() {
-        const params = Object.assign({queue: state.tab}, state.filters);
+        const params = Object.assign({queue: state.tab, board: state.serviceBoard}, state.filters);
         request('GET', params).then(function (json) {
             if (json.error) {
                 queueEl.innerHTML = '<div class="text-danger small p-2">' + escapeText(json.error) + '</div>';
@@ -448,6 +482,7 @@
                         + '<div class="d-flex align-items-center gap-1"><strong>' + escapeText(t.reference) + '</strong>'
                         + (t.priority ? '<span class="badge text-bg-light border">' + escapeText(t.priority) + '</span>' : '')
                         + (t.onsite ? '<i class="fas fa-car text-muted" title="Onsite"></i>' : '')
+                        + boardTag(t.board)
                         + '<span class="ms-auto text-muted">' + escapeText(t.age) + '</span></div>'
                         + '<div class="text-truncate" title="' + escapeText(t.subject) + '">' + escapeText(t.subject) + '</div>'
                         + '<div class="text-muted text-truncate">' + escapeText(t.client) + (t.tech_name ? ' · <i class="fas fa-user"></i> ' + escapeText(t.tech_name) : '') + (t.status ? ' · ' + escapeText(t.status) : '') + '</div>'
@@ -457,6 +492,16 @@
         });
     }
 
+    // A queue card's board, when the queue shows more than one board
+    function boardTag(id) {
+        const b = boardById(id);
+        const picked = pickedBoards();
+        if (!b || (picked && picked.length === 1)) {
+            return '';
+        }
+        return '<span class="badge border fw-normal text-truncate" style="max-width:7rem;border-color:' + escapeText(b.color) + '!important;color:' + escapeText(b.color) + '" title="Board">'
+            + escapeText(b.name) + '</span>';
+    }
     queueEl.addEventListener('click', function (e) {
         const item = e.target.closest('.mit-dq-item');
         if (item) {
@@ -897,7 +942,7 @@
     let workloadData = null;
     function renderWorkload() {
         teardown();
-        request('GET', {workload: 1, first_day: firstDay, techs: shownTechs().map(function (t) {
+        request('GET', {workload: 1, first_day: firstDay, board: state.serviceBoard, techs: shownTechs().map(function (t) {
             return t.id;
         }).join(',')}).then(function (json) {
             if (json.error) {
@@ -1102,7 +1147,7 @@
         if (!statsEl) {
             return;
         }
-        request('GET', {week_stats: 1, first_day: firstDay, techs: shownTechs().map(function (t) {
+        request('GET', {week_stats: 1, first_day: firstDay, board: state.serviceBoard, techs: shownTechs().map(function (t) {
             return t.id;
         }).join(',')}).then(function (json) {
             if (json.error) {
@@ -1237,6 +1282,27 @@
             render();
         });
     });
+    const serviceBoardPick = root.querySelector('[data-md-service-board]');
+    if (serviceBoardPick) {
+        serviceBoardPick.addEventListener('change', function () {
+            state.serviceBoard = serviceBoardPick.value;
+            saveState();
+            render();
+            if (state.view !== 'day') {
+                loadQueue();
+            }
+            loadStats();
+        });
+    }
+    const boardTechsBox = root.querySelector('[data-md-board-techs]');
+    if (boardTechsBox) {
+        boardTechsBox.addEventListener('change', function () {
+            state.boardTechs = boardTechsBox.checked;
+            saveState();
+            render();
+            loadStats();
+        });
+    }
     root.querySelector('[data-md-weekends]').addEventListener('change', function (e) {
         state.weekends = e.target.checked;
         saveState();

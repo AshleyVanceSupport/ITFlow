@@ -20,6 +20,7 @@ if (!mitDispatchCan()) {
 
 $techs = mitDispatchTechs();
 $state = mitDispatchState();
+$service_boards = mitDispatchBoards(); // functions/mit_boards.php
 $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT user_config_calendar_first_day FROM user_settings WHERE user_id = $session_user_id"));
 $first_day = intval($row['user_config_calendar_first_day'] ?? 0);
 $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name FROM clients WHERE client_archived_at IS NULL" . clientScopeSql('client_id') . " ORDER BY client_name"), MYSQLI_ASSOC);
@@ -86,6 +87,8 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
     data-csrf="<?= $_SESSION['csrf_token'] ?>"
     data-techs="<?= escapeHtml(json_encode(array_values($techs))) ?>"
     data-state="<?= escapeHtml(json_encode($state)) ?>"
+    data-boards="<?= escapeHtml(json_encode($service_boards)) ?>"
+    data-me="<?= intval($session_user_id) ?>"
     data-first-day="<?= $first_day ?>"
     data-default-minutes="<?= CALENDAR_TICKET_MINUTES ?>"
     data-lengths="<?= escapeHtml(json_encode(MIT_DISPATCH_LENGTHS)) ?>"
@@ -107,6 +110,15 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
                 <button type="button" class="btn btn-light" data-md-nav="1" title="Forward"><i class="fas fa-chevron-right"></i></button>
             </div>
             <input type="date" class="form-control form-control-sm w-auto" data-md-date aria-label="Go to date">
+            <?php if ($service_boards) { ?>
+                <select class="form-select form-select-sm w-auto" data-md-service-board aria-label="Board" title="Which board's tickets the queue, Workload and This week show">
+                    <option value="all" <?= $state['board'] === 'all' ? 'selected' : '' ?>>All boards</option>
+                    <?php if (mitBoardsOfUser($session_user_id)) { ?><option value="mine" <?= $state['board'] === 'mine' ? 'selected' : '' ?>>My boards</option><?php } ?>
+                    <?php foreach ($service_boards as $service_board) { ?>
+                        <option value="<?= intval($service_board['id']) ?>" <?= $state['board'] === (string) $service_board['id'] ? 'selected' : '' ?>><?= escapeHtml($service_board['name']) ?></option>
+                    <?php } ?>
+                </select>
+            <?php } ?>
             <div class="dropdown">
                 <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside"><i class="fas fa-users me-2"></i>Agents <span data-md-tech-count></span></button>
                 <div class="dropdown-menu dropdown-menu-end p-2" style="max-height: 60vh; overflow-y: auto; min-width: 220px">
@@ -117,6 +129,12 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
                         </div>
                     <?php } ?>
                     <hr class="my-2">
+                    <?php if ($service_boards) { ?>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="mdBoardTechs" data-md-board-techs <?= $state['board_techs'] ? 'checked' : '' ?>>
+                            <label class="form-check-label" for="mdBoardTechs">Only the board's members</label>
+                        </div>
+                    <?php } ?>
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" id="mdWeekends" data-md-weekends <?= $state['weekends'] ? 'checked' : '' ?>>
                         <label class="form-check-label" for="mdWeekends">Show weekends (week view)</label>
