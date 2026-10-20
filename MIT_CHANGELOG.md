@@ -4,6 +4,12 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.71 - 2026-10-20
+- Timesheets: changing someone's time zone now counts from that moment - or, if they have a submitted or approved timesheet that ends later, from the day after it - so ticket time already on a timesheet stays where it was (it could be counted twice or dropped before). Every change is logged with who made it.
+- Timesheets (California rules): a block that starts and ends at the same time, or blocks typed out of order, are refused with a message instead of being saved as 24 hours or as the next morning. At most 12 blocks a day.
+- Timesheets: time put on the default code for "Not on a code" stops at that code's daily limit.
+- On a split-shift day the day row no longer says "no meal" when the time off between shifts counts as the meal break.
+
 ## 26.10.70 - 2026-10-20
 - Timesheets (California rules): Admin > Timesheets > Settings has "Time not on a code goes on" - pick a charge code (e.g. Admin) and the hours worked that are not on ticket time or a code count on it, instead of showing as "Not on a code". The day shows it as "<code> (not on a code)"; the payroll report counts it under that code. Approved timesheets keep the code they were approved with.
 

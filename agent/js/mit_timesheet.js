@@ -53,26 +53,35 @@
     }
 
     // ---------- the meal rules, as on the server ----------
-    // A day's blocks [{start, end, gap}] as minute pairs, next-day times rolled over; [] when a block is half filled in
-    function periods(blocks) {
-        const points = [], gaps = [];
-        for (const b of blocks) {
-            if (!b.start && !b.end) continue;
-            if (!b.start || !b.end) return [];
-            points.push(b.start, b.end);
-            gaps.push(b.gap === 'off' ? 'off' : 'meal');
-        }
-        const stamps = [];
-        let day = 0;
-        points.forEach(function (time, i) {
-            const [h, m] = time.split(':').map(Number);
-            let t = h * 60 + m + day * 1440;
-            if (i && t <= stamps[i - 1]) { day++; t += 1440; }
-            stamps.push(t);
-        });
+    // A day's blocks [{start, end, gap}] as minute pairs [start, end, gap] with times past midnight rolled over - the same
+    // rules as mitTsCaParseBlocks() on the server. {list, error}: an empty list with the reason when the blocks don't read.
+    const MAX_BLOCKS = 12;
+    function read(blocks) {
+        const rows = blocks.filter((b) => b.start || b.end);
+        if (rows.some((b) => !b.start || !b.end)) return { list: [], error: 'Each block needs a start and an end' };
+        if (rows.length > MAX_BLOCKS) return { list: [], error: 'At most ' + MAX_BLOCKS + ' blocks a day' };
+        const minutes = (time) => { const [h, m] = time.split(':').map(Number); return h * 60 + m; };
         const list = [];
-        for (let i = 0; i + 1 < stamps.length; i += 2) list.push([stamps[i], stamps[i + 1], gaps[i / 2]]);
-        return list;
+        let day = 0, first = null, lastEnd = null;
+        for (const b of rows) {
+            let start = minutes(b.start) + day * 1440;
+            if (lastEnd !== null && start < lastEnd) {
+                day++;
+                start += 1440;
+                if (start - lastEnd > 720) return { list: [], error: 'Blocks go in time order - ' + clock(b.start) + ' starts before the block above it ends' };
+            }
+            let end = minutes(b.end) + day * 1440;
+            if (end === start) return { list: [], error: 'A block cannot start and end at the same time' };
+            if (end < start) { day++; end += 1440; }
+            first = first === null ? start : first;
+            if (end - first > 1440 || day > 1) return { list: [], error: 'The day spans more than 24 hours' };
+            list.push([start, end, list.length ? (b.gap === 'off' ? 'off' : 'meal') : '']);
+            lastEnd = end;
+        }
+        return { list: list, error: '' };
+    }
+    function periods(blocks) {
+        return read(blocks).list;
     }
     function analyze(blocks) {
         let worked = 0, lastEnd = null;
@@ -120,7 +129,7 @@
             if (bl.length) {
                 const a = analyze(bl);
                 times = '<span class="mit-ts-times">' + clock(bl[0].start) + ' - ' + clock(bl[bl.length - 1].end) + '</span>'
-                    + '<span class="text-body-secondary"> · ' + (a.mealMinutes ? a.mealMinutes + ' min meal' : 'no meal') + '</span>'
+                    + (a.mealMinutes || !a.offMinutes ? '<span class="text-body-secondary"> · ' + (a.mealMinutes ? a.mealMinutes + ' min meal' : 'no meal') + '</span>' : '')
                     + (a.offMinutes ? '<span class="text-body-secondary"> · split shift, ' + hours(a.offMinutes) + ' h off</span>' : '');
             }
             [1, 2].forEach(function (n) {
@@ -320,7 +329,8 @@
         });
         if (note) return D.codes[note.dataset.code].name + ' needs a note';
         const bl = D.days[current].ca ? blocks() : [];
-        if (bl.some((b) => !!b.start !== !!b.end)) return 'Each block needs a start and an end';
+        const problem = read(bl).error;
+        if (problem) return problem;
         const reason = body.querySelector('[data-reason]');
         const filled = (list) => JSON.stringify(list.filter((b) => b.start || b.end).map((b, i) => [b.start, b.end, i ? (b.gap === 'off' ? 'off' : 'meal') : '']));
         if (reason && !reason.value.trim() && filled(bl) !== filled(D.days[current].ca.blocks || [])) return 'Say why you are changing their times';
@@ -468,6 +478,7 @@
         }
         if (e.target.closest('[data-add-block]')) {
             const list = body.querySelector('[data-blocks]');
+            if (list.children.length >= MAX_BLOCKS) return;
             list.insertAdjacentHTML('beforeend', blockRow({ start: '', end: '', gap: 'meal' }, list.children.length, ''));
             list.lastElementChild.querySelector('[data-block-start]').focus();
         }

@@ -82,7 +82,7 @@ ob_start();
                 <div class="col-12">
                     <label class="form-label">Time zone</label>
                     <?= mitTsZoneSelect('time_zone', mitTsOwnZone($user_id)) ?>
-                    <div class="form-text">For someone working remotely: their days, "today" and the day their ticket time falls on follow their clock. They can also set it in Account > Preferences.</div>
+                    <div class="form-text">For someone working remotely: their days, "today" and the day their ticket time falls on follow their clock. A change counts from now (or after their last submitted or approved timesheet) and is logged. They can also set it in Account > Preferences.</div>
                 </div>
             <?php } ?>
             <?php if (mitTsCaReady()) { ?>

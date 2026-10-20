@@ -288,14 +288,19 @@ function mitTsCaBlocks(array $periods) {
     }, array_values($periods));
 }
 
+/** Most blocks of work in one day (the page's "Add another block" stops there too). */
+const MIT_TS_CA_MAX_BLOCKS = 12;
+
 /**
  * Turn a day's blocks (start, end, and the gap before each one: meal | off) into work periods: [periods, error].
- * Empty rows are skipped; a time earlier than the one before it is the next day, and the day may span at most 24 hours.
+ * Empty rows are skipped. Blocks go in time order: a block whose end is earlier than its start runs past midnight, and
+ * a block that starts earlier than the one before it ended is taken as after midnight only when that leaves at most
+ * 12 hours between them - otherwise it is out of order and refused. A block cannot start and end at the same time,
+ * and the day may span at most 24 hours. Times are read in the request's (company) time zone.
  */
 function mitTsCaParseBlocks($date, array $blocks) {
-    $points = [];
-    $gaps = [];
-    foreach (array_slice(array_values($blocks), 0, 12) as $block) {
+    $rows = [];
+    foreach (array_values($blocks) as $block) {
         if (!is_array($block)) {
             continue;
         }
@@ -309,49 +314,44 @@ function mitTsCaParseBlocks($date, array $blocks) {
                 return [[], $time === '' ? 'each block needs a start and an end' : 'a time could not be read'];
             }
         }
-        $points[] = $start;
-        $points[] = $end;
-        $gaps[] = ($block['gap'] ?? '') === 'off' ? 'off' : 'meal';
+        $rows[] = [$start, $end, ($block['gap'] ?? '') === 'off' ? 'off' : 'meal'];
     }
-    if (!$points) {
+    if (!$rows) {
         return [[], ''];
     }
-    $stamps = [];
-    $day = 0;
-    foreach ($points as $i => $time) {
-        $t = strtotime("$date $time") + $day * 86400;
-        if ($i && $t <= $stamps[$i - 1]) {
-            $day++;
-            $t += 86400;
-        }
-        $stamps[] = $t;
-    }
-    if (end($stamps) - $stamps[0] > 86400 || $day > 1) {
-        return [[], 'spans more than 24 hours'];
+    if (count($rows) > MIT_TS_CA_MAX_BLOCKS) {
+        return [[], 'at most ' . MIT_TS_CA_MAX_BLOCKS . ' blocks a day'];
     }
     $periods = [];
-    for ($i = 0; $i + 1 < count($stamps); $i += 2) {
-        $periods[] = ['start' => date('Y-m-d H:i:s', $stamps[$i]), 'end' => date('Y-m-d H:i:s', $stamps[$i + 1]), 'gap' => $i ? $gaps[$i / 2] : ''];
+    $day = 0;
+    $first = null;
+    $last_end = null;
+    foreach ($rows as $i => [$start_time, $end_time, $gap]) {
+        $start = strtotime("$date $start_time") + $day * 86400;
+        if ($last_end !== null && $start < $last_end) {
+            // After midnight, or typed out of order
+            $day++;
+            $start += 86400;
+            if ($start - $last_end > 12 * 3600) {
+                return [[], 'blocks go in time order - ' . date('g:i A', $start) . ' starts before the block above it ends'];
+            }
+        }
+        $end = strtotime("$date $end_time") + $day * 86400;
+        if ($end === $start) {
+            return [[], 'a block cannot start and end at the same time'];
+        }
+        if ($end < $start) {
+            $day++;
+            $end += 86400;
+        }
+        $first = $first ?? $start;
+        if ($end - $first > 86400 || $day > 1) {
+            return [[], 'spans more than 24 hours'];
+        }
+        $periods[] = ['start' => date('Y-m-d H:i:s', $start), 'end' => date('Y-m-d H:i:s', $end), 'gap' => $i ? $gap : ''];
+        $last_end = $end;
     }
     return [$periods, ''];
-}
-
-/** The six boxes of a day from its periods: start, meal_out, meal_in, meal2_out, meal2_in, end ('H:i' or ''). */
-function mitTsCaBoxes(array $periods) {
-    $boxes = ['start' => '', 'meal_out' => '', 'meal_in' => '', 'meal2_out' => '', 'meal2_in' => '', 'end' => ''];
-    $times = [];
-    foreach ($periods as $p) {
-        $times[] = date('H:i', strtotime($p['start']));
-        $times[] = date('H:i', strtotime($p['end']));
-    }
-    if (count($times) >= 2) {
-        $boxes['start'] = array_shift($times);
-        $boxes['end'] = array_pop($times);
-        foreach (['meal_out', 'meal_in', 'meal2_out', 'meal2_in'] as $key) {
-            $boxes[$key] = (string) array_shift($times);
-        }
-    }
-    return $boxes;
 }
 
 /*
@@ -359,56 +359,8 @@ function mitTsCaBoxes(array $periods) {
  */
 
 /**
- * Turn a day's boxes into work periods: [periods, error]. Times are 'HH:MM'; a time earlier than the one
- * before it is the next day (a shift past midnight), and the day may span at most 24 hours.
- */
-function mitTsCaParseDay($date, array $boxes) {
-    $read = function ($key) use ($boxes) {
-        $value = trim((string) ($boxes[$key] ?? ''));
-        return preg_match('/^([01]?\d|2[0-3]):([0-5]\d)$/', $value, $m) ? sprintf('%02d:%02d', $m[1], $m[2]) : ($value === '' ? '' : null);
-    };
-    $v = [];
-    foreach (['start', 'meal_out', 'meal_in', 'meal2_out', 'meal2_in', 'end'] as $key) {
-        $v[$key] = $read($key);
-        if ($v[$key] === null) {
-            return [[], 'a time could not be read'];
-        }
-    }
-    if (implode('', $v) === '') {
-        return [[], ''];
-    }
-    if ($v['start'] === '' || $v['end'] === '') {
-        return [[], 'needs a start and an end'];
-    }
-    if (($v['meal_out'] === '') !== ($v['meal_in'] === '') || ($v['meal2_out'] === '') !== ($v['meal2_in'] === '')) {
-        return [[], 'a meal period needs both its out and back times'];
-    }
-    if ($v['meal2_out'] !== '' && $v['meal_out'] === '') {
-        return [[], 'put the first meal period in the first meal boxes'];
-    }
-    $points = array_values(array_filter([$v['start'], $v['meal_out'], $v['meal_in'], $v['meal2_out'], $v['meal2_in'], $v['end']], 'strlen'));
-    $stamps = [];
-    $day = 0;
-    foreach ($points as $i => $time) {
-        $t = strtotime("$date $time") + $day * 86400;
-        if ($i && $t <= $stamps[$i - 1]) {
-            $day++;
-            $t += 86400;
-        }
-        $stamps[] = $t;
-    }
-    if (end($stamps) - $stamps[0] > 86400 || $day > 1) {
-        return [[], 'spans more than 24 hours'];
-    }
-    $periods = [];
-    for ($i = 0; $i + 1 < count($stamps); $i += 2) {
-        $periods[] = ['start' => date('Y-m-d H:i:s', $stamps[$i]), 'end' => date('Y-m-d H:i:s', $stamps[$i + 1])];
-    }
-    return [$periods, ''];
-}
-
-/**
- * Save the times and answers from the timesheet form: $times[date][box] and $answers[date][meal1|meal2|rest_missed].
+ * Save the times and answers from the timesheet page: $times[date]['blocks'][i][start|end|gap] and
+ * $answers[date][meal1|meal2|rest_missed].
  * Only the person answers their own meal questions. Someone else changing the times must say why, and the
  * person is asked to acknowledge it. Returns [ok, message, changed days].
  */
@@ -425,8 +377,13 @@ function mitTsCaSave(array $sheet, array $period, array $times, array $answers, 
         if (!isset($dates[$date]) || !is_array($boxes)) {
             continue;
         }
-        // Blocks from the timesheet page (any number - split shifts); the older six boxes still read
-        [$periods, $error] = isset($boxes['blocks']) ? mitTsCaParseBlocks($date, (array) $boxes['blocks']) : mitTsCaParseDay($date, $boxes);
+        // Blocks from the timesheet page (any number - split shifts). Anything else is a page from before them: not
+        // read as "no times", which would clear the day
+        if (!isset($boxes['blocks'])) {
+            $problems[] = date('D M j', strtotime($date)) . ': reload the page and try again';
+            continue;
+        }
+        [$periods, $error] = mitTsCaParseBlocks($date, (array) $boxes['blocks']);
         if ($error !== '') {
             $problems[] = date('D M j', strtotime($date)) . ": $error";
             continue;

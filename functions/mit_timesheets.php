@@ -259,27 +259,99 @@ function mitTsToday($user_id) {
     return $zone ? (new DateTime('now', new DateTimeZone($zone)))->format('Y-m-d') : date('Y-m-d');
 }
 
-/** A date and time as ITFlow stores them (company time) -> the date it was where the person is. */
-function mitTsLocalDate($user_id, $datetime) {
-    $zone = mitTsOwnZone($user_id);
-    if (!$zone) {
-        return substr((string) $datetime, 0, 10);
+/** Has database update M024 added the record of time zone changes yet? */
+function mitTsZoneChangesReady() {
+    global $mysqli;
+    static $ready = null;
+    if ($ready === null) {
+        try {
+            $ready = mysqli_num_rows(mysqli_query($mysqli, "SHOW TABLES LIKE 'mit_ts_zone_changes'")) === 1;
+        } catch (Throwable $e) {
+            $ready = false;
+        }
     }
-    return (new DateTime((string) $datetime))->setTimezone(new DateTimeZone($zone))->format('Y-m-d');
+    return $ready;
 }
 
-/** The person's days $from to $to as company-time bounds for SQL: [start, end) as 'Y-m-d H:i:s'. */
-function mitTsCompanyRange($user_id, $from, $to) {
-    $zone = mitTsOwnZone($user_id);
-    $end = date('Y-m-d', strtotime($to . ' +1 day'));
-    if (!$zone) {
-        return ["$from 00:00:00", "$end 00:00:00"];
+/**
+ * A person's time zone changes, oldest first: [['at' => company-time 'Y-m-d H:i:s' it counts from, 'zone' => zone or ''
+ * for the company's]]. $forget = true drops what was read (after a change).
+ */
+function mitTsZoneChanges($user_id, $forget = false) {
+    global $mysqli;
+    static $cache = [];
+    $user_id = intval($user_id);
+    if ($forget) {
+        unset($cache[$user_id]);
+        return [];
     }
-    $company = new DateTimeZone(date_default_timezone_get());
-    $convert = function ($date) use ($zone, $company) {
-        return (new DateTime("$date 00:00:00", new DateTimeZone($zone)))->setTimezone($company)->format('Y-m-d H:i:s');
-    };
-    return [$convert($from), $convert($end)];
+    if (!isset($cache[$user_id])) {
+        $cache[$user_id] = [];
+        if (mitTsZoneChangesReady()) {
+            $result = mysqli_query($mysqli, "SELECT effective_at, time_zone FROM mit_ts_zone_changes WHERE user_id = $user_id ORDER BY effective_at, change_id");
+            while ($row = mysqli_fetch_assoc($result)) {
+                $zone = (string) $row['time_zone'];
+                $cache[$user_id][] = ['at' => $row['effective_at'], 'zone' => in_array($zone, timezone_identifiers_list(), true) ? $zone : ''];
+            }
+        }
+    }
+    return $cache[$user_id];
+}
+
+/**
+ * The zone that was in force for a person at a company-time moment: [zone or '' (the company's), first date it counts
+ * on there or null]. Ticket time logged before a change stays where it was; with no record of changes (before database
+ * update M024) it is their zone now.
+ */
+function mitTsZoneAt($user_id, $datetime) {
+    $changes = mitTsZoneChanges($user_id);
+    if (!$changes) {
+        return [mitTsOwnZone($user_id), null];
+    }
+    $found = ['', null];
+    foreach ($changes as $change) {
+        if ($change['at'] > $datetime) {
+            break;
+        }
+        $zone = $change['zone'] === date_default_timezone_get() ? '' : $change['zone'];
+        // The first day it counts on is the day the change came in where they were before - after the timesheets handed in
+        $from = (new DateTime($change['at']))->setTimezone(new DateTimeZone($found[0] ?: date_default_timezone_get()))->format('Y-m-d');
+        $found = [$zone, $from];
+    }
+    return $found;
+}
+
+/** Could this person's ticket time fall on a different day than the company's? (A zone of their own, now or before.) */
+function mitTsZoneAware($user_id) {
+    if (mitTsOwnZone($user_id) !== '') {
+        return true;
+    }
+    foreach (mitTsZoneChanges($user_id) as $change) {
+        if ($change['zone'] !== '' && $change['zone'] !== date_default_timezone_get()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * A date and time as ITFlow stores them (company time) -> the date it was where the person was then (the zone in force
+ * at that moment). Never earlier than the day a later zone started counting, so a change can't move time back into a
+ * period that was already submitted or approved.
+ */
+function mitTsLocalDate($user_id, $datetime) {
+    [$zone, $from] = mitTsZoneAt($user_id, (string) $datetime);
+    $date = $zone ? (new DateTime((string) $datetime))->setTimezone(new DateTimeZone($zone))->format('Y-m-d') : substr((string) $datetime, 0, 10);
+    return $from !== null && $date < $from ? $from : $date;
+}
+
+/**
+ * Company-time bounds for SQL that hold every reply which can fall on the person's days $from to $to: [start, end) as
+ * 'Y-m-d H:i:s' - exact for the company's zone, two days wider each side otherwise (sort them with mitTsLocalDate).
+ */
+function mitTsReplyRange($user_id, $from, $to) {
+    $wide = mitTsZoneAware($user_id) ? 2 : 0;
+    return [date('Y-m-d', strtotime("$from -$wide days")) . ' 00:00:00', date('Y-m-d', strtotime($to . ' +' . (1 + $wide) . ' days')) . ' 00:00:00'];
 }
 
 /** A zone for people to read, e.g. "America/Los Angeles (UTC-07)". */
@@ -299,15 +371,40 @@ function mitTsZoneSelect($name, $value, $id = '') {
     return $html . '</select>';
 }
 
-/** Save a person's time zone ('' or an unknown one = the company's). */
+/**
+ * Save a person's time zone ('' or an unknown one = the company's) and log it. The change counts from now - or, when
+ * they have a submitted or approved timesheet that ends later, from the day after it - so hours already handed in stay
+ * as they were. Returns the company-time moment it counts from, or null when nothing changed.
+ */
 function mitTsSaveZone($user_id, $zone) {
-    global $mysqli;
+    global $mysqli, $session_user_id;
     if (!mitTsZoneColumn()) {
-        return;
+        return null;
     }
+    $user_id = intval($user_id);
     $zone = (string) $zone;
-    $sql = in_array($zone, timezone_identifiers_list(), true) && $zone !== date_default_timezone_get() ? "'" . escapeSql($zone) . "'" : 'NULL';
-    mysqli_query($mysqli, "INSERT INTO mit_timesheet_people SET user_id = " . intval($user_id) . ", time_zone = $sql ON DUPLICATE KEY UPDATE time_zone = $sql");
+    $zone = in_array($zone, timezone_identifiers_list(), true) && $zone !== date_default_timezone_get() ? $zone : '';
+    $old = mitTsOwnZone($user_id);
+    if ($zone === $old) {
+        return null;
+    }
+    $company = new DateTimeZone(date_default_timezone_get());
+    $effective = date('Y-m-d H:i:s');
+    $locked = mysqli_fetch_row(mysqli_query($mysqli, "SELECT MAX(period_end) FROM mit_timesheets WHERE user_id = $user_id AND status IN ('submitted', 'approved')"))[0] ?? null;
+    if ($locked) {
+        $after = (new DateTime(date('Y-m-d', strtotime("$locked +1 day")) . ' 00:00:00', new DateTimeZone($old ?: date_default_timezone_get())))->setTimezone($company)->format('Y-m-d H:i:s');
+        $effective = max($effective, $after);
+    }
+    $sql = $zone === '' ? 'NULL' : "'" . escapeSql($zone) . "'";
+    if (mitTsZoneChangesReady()) {
+        mysqli_query($mysqli, "INSERT INTO mit_ts_zone_changes SET user_id = $user_id, time_zone = $sql, effective_at = '$effective',
+            changed_by = " . intval($session_user_id ?? 0) . ", changed_by_name = '" . escapeSql(mb_substr(mitTsWho(), 0, 200)) . "'");
+        mitTsZoneChanges($user_id, true);
+    }
+    mysqli_query($mysqli, "INSERT INTO mit_timesheet_people SET user_id = $user_id, time_zone = $sql ON DUPLICATE KEY UPDATE time_zone = $sql");
+    logAudit('Timesheet', 'Edit', escapeSql(mitTsWho() . ' changed the timesheet time zone of user ' . $user_id . ' from ' . ($old ?: 'the company\'s')
+        . ' to ' . ($zone ?: 'the company\'s') . ', counting from ' . $effective), 0, $user_id);
+    return $effective;
 }
 
 /** Does this person keep a timesheet? (People tab - on unless turned off; M015.) */
@@ -799,8 +896,9 @@ function mitTsTicketMinutesLive(array $user_ids, $from, $to) {
     }
     $billable = mitTsBillableSql($settings['billable']);
     $where = "ticket_reply_archived_at IS NULL AND ticket_reply_time_worked > '00:00:00'" . ($settings['ticket_internal'] ? '' : " AND ticket_reply_type <> 'Internal'");
-    // People in the company's time zone: added up by day in SQL; anyone in their own, reply by reply into their days
-    $own = array_values(array_filter($user_ids, 'mitTsOwnZone'));
+    // People in the company's time zone: added up by day in SQL; anyone with a zone of their own (now or before), reply by
+    // reply into the day it was where they were
+    $own = array_values(array_filter($user_ids, 'mitTsZoneAware'));
     $rest = array_diff($user_ids, $own);
     if ($rest) {
         $result = mysqli_query($mysqli, "SELECT ticket_reply_by AS u, DATE(ticket_reply_created_at) AS d,
@@ -815,7 +913,7 @@ function mitTsTicketMinutesLive(array $user_ids, $from, $to) {
         }
     }
     foreach ($own as $user_id) {
-        [$start, $end] = mitTsCompanyRange($user_id, $from, $to);
+        [$start, $end] = mitTsReplyRange($user_id, $from, $to);
         $result = mysqli_query($mysqli, "SELECT ticket_reply_created_at AS at, IF($billable, 1, 0) AS billable, TIME_TO_SEC(ticket_reply_time_worked) AS seconds
             FROM ticket_replies JOIN tickets ON ticket_id = ticket_reply_ticket_id
             WHERE $where AND ticket_reply_by = $user_id
@@ -823,6 +921,9 @@ function mitTsTicketMinutesLive(array $user_ids, $from, $to) {
         $seconds = [];
         while ($row = mysqli_fetch_assoc($result)) {
             $date = mitTsLocalDate($user_id, $row['at']);
+            if ($date < $from || $date > $to) {
+                continue;
+            }
             $seconds[$date][intval($row['billable']) ? 'b' : 'o'] = ($seconds[$date][intval($row['billable']) ? 'b' : 'o'] ?? 0) + intval($row['seconds']);
         }
         foreach ($seconds as $date => $sum) {
@@ -958,8 +1059,14 @@ function mitTsDays(array $user_ids, $from, $to) {
                 // Onto the default code: as stored on an approved day, else the code set now
                 $fills = !empty($tickets[$user_id][$date]['approved']) ? ($tickets[$user_id][$date]['unallocated'] ?? [])
                     : ($fill_code ? [intval($fill_code['code_id']) => $d['unallocated']] : []);
+                $approved_day = !empty($tickets[$user_id][$date]['approved']);
                 foreach ($fills as $code_id => $m) {
                     $m = min($m, $d['unallocated']);
+                    // Not past the code's daily limit (hours typed on it count) - the rest stays "Not on a code"
+                    $max = intval($codes[$code_id]['code_daily_max'] ?? 0);
+                    if ($max > 0 && !$approved_day) {
+                        $m = min($m, max(0, $max - ($d['codes'][$code_id] ?? 0)));
+                    }
                     if ($m <= 0) {
                         continue;
                     }
@@ -1079,20 +1186,32 @@ function mitTsDayTickets($user_id, $date) {
     global $mysqli;
     $settings = mitTsSettings();
     $billable = mitTsBillableSql($settings['billable']);
-    [$start, $end] = mitTsCompanyRange($user_id, $date, $date);
+    [$start, $end] = mitTsReplyRange($user_id, $date, $date);
+    // Reply by reply, kept when it falls on this day where the person was (mitTsLocalDate), then added up by ticket
     $result = mysqli_query($mysqli, "SELECT ticket_id, ticket_prefix, ticket_number, ticket_subject, IF($billable, 1, 0) AS ticket_billable, ticket_client_id, client_name,
-            SUM(TIME_TO_SEC(ticket_reply_time_worked)) AS seconds
+            ticket_reply_created_at, TIME_TO_SEC(ticket_reply_time_worked) AS seconds
         FROM ticket_replies JOIN tickets ON ticket_id = ticket_reply_ticket_id LEFT JOIN clients ON client_id = ticket_client_id
         WHERE ticket_reply_archived_at IS NULL AND ticket_reply_time_worked > '00:00:00' AND ticket_reply_by = " . intval($user_id) . "
         " . ($settings['ticket_internal'] ? '' : "AND ticket_reply_type <> 'Internal'") . "
-        AND ticket_reply_created_at >= '" . escapeSql($start) . "' AND ticket_reply_created_at < '" . escapeSql($end) . "'
-        GROUP BY ticket_id ORDER BY seconds DESC");
-    $rows = [];
+        AND ticket_reply_created_at >= '" . escapeSql($start) . "' AND ticket_reply_created_at < '" . escapeSql($end) . "'");
+    $tickets = [];
     while ($row = mysqli_fetch_assoc($result)) {
-        $row['minutes'] = (int) round($row['seconds'] / 60);
-        $rows[] = $row;
+        if (mitTsLocalDate($user_id, $row['ticket_reply_created_at']) !== $date) {
+            continue;
+        }
+        $id = intval($row['ticket_id']);
+        $seconds = intval($row['seconds']) + intval($tickets[$id]['seconds'] ?? 0);
+        unset($row['ticket_reply_created_at']);
+        $tickets[$id] = ['seconds' => $seconds] + $row;
     }
-    return $rows;
+    usort($tickets, function ($a, $b) {
+        return $b['seconds'] <=> $a['seconds'];
+    });
+    foreach ($tickets as &$row) {
+        $row['minutes'] = (int) round($row['seconds'] / 60);
+    }
+    unset($row);
+    return $tickets;
 }
 
 /*
@@ -1501,7 +1620,7 @@ function mitTsPreferenceFields($user_id) {
         . '<div class="col-md-4 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="mit_ts_reminders" value="1" id="mitTsReminders"'
         . (mitTsRemindersOn($user_id) ? ' checked' : '') . '><label class="form-check-label" for="mitTsReminders">Remind me to fill it in</label></div></div>'
         . (mitTsZoneColumn() ? '<div class="col-md-8"><label class="form-label" for="mitTsTimeZone">My time zone</label>' . mitTsZoneSelect('mit_ts_time_zone', mitTsOwnZone($user_id), 'mitTsTimeZone')
-            . '<div class="form-text">Working remotely? Your timesheet days and the day your ticket time falls on follow this.</div></div>' : '')
+            . '<div class="form-text">Working remotely? Your timesheet days and the day your ticket time falls on follow this. A change counts from now - after any timesheet you have already submitted - and is logged.</div></div>' : '')
         . '<div class="col-12"><label class="form-label">Charge codes I use</label><div class="d-flex flex-wrap gap-3">';
     foreach (mitTsCodesFor($user_id) as $code_id => $code) {
         $html .= '<div class="form-check"><input class="form-check-input" type="checkbox" name="mit_ts_codes[]" value="' . intval($code_id) . '" id="mitTsCode' . intval($code_id) . '"'

@@ -2,7 +2,7 @@
 
 /*
  * Mountaineer IT - the timesheet page's saves (agent/mit_timesheet.php, agent/js/mit_timesheet.js), JSON:
- *   POST save_day=1 user_id start date [times[box]] [answers[meal1|meal2|rest_missed]] cells[code_id] notes[code_id] [reason]
+ *   POST save_day=1 user_id start date [times[blocks][i][start|end|gap]] [answers[meal1|meal2|rest_missed]] cells[code_id] notes[code_id] [reason]
  *        saves one day as it is typed - the same checks as the timesheet form (mitTsCaSave, mitTsSaveCells) - and
  *        returns the day again, the summary, leave left and what still stops it being submitted.
  */

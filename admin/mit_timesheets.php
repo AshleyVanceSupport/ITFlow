@@ -245,7 +245,7 @@ $company_week = mitTsCompanySchedule();
                                 <option value="<?= intval($code_id) ?>" <?= intval($code_id) === $settings['unallocated_code'] ? 'selected' : '' ?>><?= escapeHtml($code['code_name']) ?></option>
                             <?php } ?>
                         </select>
-                        <div class="form-text">California rules: the hours worked (start to end) that are not on ticket time or a charge code. Paid work or lost-time codes. Approved timesheets keep the code they were approved with.</div>
+                        <div class="form-text">California rules: the hours worked (start to end) that are not on ticket time or a charge code. Paid work or lost-time codes. Up to the code's daily limit (the rest stays "Not on a code"); its "needs a note" and role settings don't apply. Approved timesheets keep the code they were approved with.</div>
                     </div>
                 </div>
 

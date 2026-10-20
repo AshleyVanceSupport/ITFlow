@@ -192,11 +192,10 @@ if (isset($_POST['mit_ts_person_save'])) {
         $set .= ", ca_rules = " . ($ca_rules === '1' ? 1 : ($ca_rules === '0' ? 0 : 'NULL'));
     }
     mysqli_query($mysqli, "INSERT INTO mit_timesheet_people SET user_id = $user_id, $set ON DUPLICATE KEY UPDATE $set");
-    if (isset($_POST['time_zone'])) {
-        mitTsSaveZone($user_id, $_POST['time_zone']);
-    }
+    $zone_from = isset($_POST['time_zone']) ? mitTsSaveZone($user_id, $_POST['time_zone']) : null;
     logAudit('Settings', 'Edit', "$session_name edited the timesheet details of user $user_id");
-    flashAlert('Saved');
+    // A zone change waits for timesheets already handed in
+    flashAlert($zone_from && strtotime($zone_from) > time() + 60 ? 'Saved - the new time zone counts from ' . date('M j', strtotime($zone_from)) . ', after the timesheets already submitted or approved' : 'Saved');
     redirect();
 }
 

@@ -293,17 +293,25 @@ model: see DEPLOYMENT.md.
   columns; detail "Work times" rows). No FKs on the M018 tables: records outlive deleted logins (keep 3 years).
   Split shifts (M022): `mit_ts_work_periods.gap_before` (NULL = meal break, 'off' = off between shifts). The day panel enters
   blocks (Start / End, any number - `blockRow` / `blocks()` in the script, posted as `times[blocks][i][start|end|gap]`, read by
-  `mitTsCaParseBlocks`; the old six boxes still parse through `mitTsCaParseDay`). An off gap of 30 min+ still counts as a meal
+  `mitTsCaParseBlocks` - same rules in the script's `read()`: in time order, a block ending before it starts runs past midnight,
+  a later block before the previous end only as after midnight within 12 h, start = end refused, 24 h max, MIT_TS_CA_MAX_BLOCKS 12;
+  a save without `blocks` is refused, not read as empty). An off gap of 30 min+ still counts as a meal
   period in `mitTsCaAnalyze` (off duty); `mitTsCaPeriodsText` writes " / off / " between split shifts (change history, snapshot).
   Default code for time not on a code: `mit_settings` ts_unallocated_code (`mitTsUnallocatedCode` - paid work / lost codes,
   `mitTsUnallocatedCodes`); mitTsDays moves a California day's `unallocated` onto it (`filled` code_id => minutes, also in
   `codes`, work / lost); stored on approval as source `unallocated` (code_id = the code) by `mitTsSnapshotTickets`, read back
   for approved days in `mitTsTicketMinutes`, removed with the other copies on reopen. Day row chip and payroll detail row.
+  Live fills stop at the code's daily max; its note / role settings don't apply.
   Time zones (M023): `mit_timesheet_people.time_zone` (NULL = the company's `config_timezone`, which ITFlow sets for the whole
-  request). `mitTsOwnZone` / `mitTsZone` / `mitTsToday` / `mitTsLocalDate` / `mitTsCompanyRange` in mit_timesheets.php: a person's
+  request). `mitTsOwnZone` / `mitTsZone` / `mitTsToday` / `mitTsLocalDate` / `mitTsReplyRange` in mit_timesheets.php: a person's
   today (mitTsDays auto lost, future block, closure fill, auto-lock, reminders, CA save, view, page, default period) and the day
-  their ticket replies fall on (`mitTsTicketMinutesLive` - own-zone people reply by reply, `mitTsDayTickets`, `mitTsReplyTimeGuard`).
-  Set in the People modal and Account > Preferences (`mitTsZoneSelect`, `mitTsSaveZone`). Typed times are stored as typed.
+  their ticket replies fall on (`mitTsTicketMinutesLive` - zone-aware people reply by reply over a range 2 days wider, `mitTsDayTickets`,
+  `mitTsReplyTimeGuard`). Set in the People modal and Account > Preferences (`mitTsZoneSelect`, `mitTsSaveZone`). Typed times are
+  stored as typed (parsed in the company zone - an overnight shift on a night only one zone changes clocks is an hour off).
+  Changes (M024 `mit_ts_zone_changes`, also the record of who changed it + logAudit): `mitTsSaveZone` makes a change count from now,
+  or from the day after their last submitted / approved period (in the old zone); `mitTsZoneAt` gives the zone in force when a reply
+  was logged, and `mitTsLocalDate` never dates a reply before the day its zone started counting (in the zone before it), so a change
+  can't move ticket time into or out of a period already handed in. M024 seeds existing zones from 1970.
   Behind on timesheets (team page `agent/mit_timesheets.php`): `mitTsBehind` (ended periods not submitted in the last
   MIT_TS_BEHIND_PERIODS, from the start date, approval on) with Remind / Remind all (`mit_ts_remind` -> `mitTsRemind`:
   notification + email, sets reminded_late_at, not again within an hour); Late badge and Send back on the rows. Send back emails too.

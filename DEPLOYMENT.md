@@ -343,7 +343,8 @@ wording (`mitTsCaStatement` in `functions/mit_ts_california.php`) and the rules 
 
 ITFlow has one company time zone (Admin > Settings > Localization). Someone working elsewhere can have their own for
 their timesheet - Admin > Timesheets > People, or Account > Preferences: their "today" and the day their ticket time
-falls on follow their clock. Everything else (tickets, the calendar, emails) stays in company time.
+falls on follow their clock. Everything else (tickets, the calendar, emails) stays in company time. A change counts from
+then on (after any timesheet already submitted or approved) and is logged, so hours already handed in don't move.
 
 ## Cron alerts
 
