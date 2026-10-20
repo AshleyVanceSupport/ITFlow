@@ -475,7 +475,8 @@
                 tab.classList.toggle('active', tab.dataset.mdTab === state.tab);
             });
             if (!queueTickets.length) {
-                queueEl.innerHTML = '<div class="text-center text-muted small py-4"><i class="fas fa-check-circle fa-2x text-success mb-2 d-block"></i>Nothing to dispatch here.</div>';
+                queueEl.innerHTML = '<div class="text-center text-muted small py-4"><i class="fas fa-check-circle fa-2x text-success mb-2 d-block"></i>'
+                    + (state.tab === 'left_behind' ? 'Nothing left behind - every open ticket booked before today has been moved on.' : 'Nothing to dispatch here.') + '</div>';
             } else {
                 queueEl.innerHTML = queueTickets.map(function (t) {
                     return '<div class="mit-dq-item border rounded p-2 mb-2 small" data-ticket="' + t.id + '" data-reference="' + escapeText(t.reference) + '" data-priority="' + escapeText(t.priority) + '">'
@@ -483,7 +484,9 @@
                         + (t.priority ? '<span class="badge text-bg-light border">' + escapeText(t.priority) + '</span>' : '')
                         + (t.onsite ? '<i class="fas fa-car text-muted" title="Onsite"></i>' : '')
                         + boardTag(t.board)
-                        + '<span class="ms-auto text-muted">' + escapeText(t.age) + '</span></div>'
+                        + (state.tab === 'left_behind' && t.booked
+                            ? '<span class="ms-auto text-danger text-nowrap" title="When it was booked">' + escapeText(t.booked) + '</span></div>'
+                            : '<span class="ms-auto text-muted">' + escapeText(t.age) + '</span></div>')
                         + '<div class="text-truncate" title="' + escapeText(t.subject) + '">' + escapeText(t.subject) + '</div>'
                         + '<div class="text-muted text-truncate">' + escapeText(t.client) + (t.tech_name ? ' · <i class="fas fa-user"></i> ' + escapeText(t.tech_name) : '') + (t.status ? ' · ' + escapeText(t.status) : '') + '</div>'
                         + '</div>';

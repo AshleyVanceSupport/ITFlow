@@ -110,7 +110,8 @@ function mitDispatchBoards() {
 
 /**
  * The queue: open tickets with no tech ($tab 'unassigned') or with a tech and nothing booked ('unbooked'),
- * most urgent and oldest first. $filters: client_id, priority, q. Also the count for each tab.
+ * most urgent and oldest first - or every agent's left behind ('left_behind': booked on a day that has gone and still open,
+ * functions/mit_left_behind.php), longest left first. $filters: client_id, priority, q. Also the count for each tab.
  */
 function mitDispatchQueue($tab, array $filters = []) {
     global $mysqli;
@@ -132,6 +133,7 @@ function mitDispatchQueue($tab, array $filters = []) {
     $tabs = [
         'unassigned' => "ticket_assigned_to = 0",
         'unbooked' => "ticket_assigned_to > 0 AND ticket_schedule IS NULL",
+        'left_behind' => mitLeftBehindSql(),
     ];
     $tab = isset($tabs[$tab]) ? $tab : 'unassigned';
     $counts = [];
@@ -146,7 +148,7 @@ function mitDispatchQueue($tab, array $filters = []) {
         LEFT JOIN users ON user_id = ticket_assigned_to
         LEFT JOIN ticket_statuses ON ticket_status_id = ticket_status
         WHERE $where AND {$tabs[$tab]}
-        ORDER BY FIELD(ticket_priority, 'Urgent', 'High', 'Medium', 'Low'), ticket_created_at ASC
+        ORDER BY " . ($tab === 'left_behind' ? 'ticket_schedule ASC, ' : '') . "FIELD(ticket_priority, 'Urgent', 'High', 'Medium', 'Low'), ticket_created_at ASC
         LIMIT 200");
     $tickets = [];
     while ($row = mysqli_fetch_assoc($result)) {
@@ -163,6 +165,7 @@ function mitDispatchQueue($tab, array $filters = []) {
             'age' => timeAgo($row['ticket_created_at']),
             'minutes' => mitTicketScheduleMinutes($row['ticket_schedule'], $row['ticket_schedule_end']),
             'board' => intval($row['mit_board_id']),
+            'booked' => $row['ticket_schedule'] ? date('D M j', strtotime($row['ticket_schedule'])) : '',
         ];
     }
     return ['tab' => $tab, 'counts' => $counts, 'tickets' => $tickets];

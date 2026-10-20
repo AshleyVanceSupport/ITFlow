@@ -28,6 +28,9 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
 ?>
 
 <style>
+    /* The queue's three tabs side by side - a narrow pane wraps the words inside each tab */
+    [data-md-tab] { padding: .25rem .3rem !important; line-height: 1.2; height: 100%; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: .15rem; }
+    [data-md-tab] .badge { margin-left: 0 !important; padding: .2em .4em; }
     .mit-dispatch-queue { max-height: calc(100vh - 17rem); overflow-y: auto; }
     .mit-dq-item { cursor: grab; border-left: 4px solid var(--bs-secondary-border-subtle); }
     .mit-dq-item[data-priority="Urgent"] { border-left-color: var(--bs-danger); }
@@ -148,9 +151,10 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
         <div class="col-lg-3">
             <div class="card mb-0 mit-dispatch-pane">
                 <div class="card-header p-2">
-                    <ul class="nav nav-pills nav-fill small" role="tablist">
+                    <ul class="nav nav-pills nav-fill small flex-nowrap" role="tablist">
                         <li class="nav-item"><a class="nav-link py-1" href="#" data-md-tab="unassigned">No agent <span class="badge text-bg-danger ms-1" data-md-count="unassigned"></span></a></li>
                         <li class="nav-item"><a class="nav-link py-1" href="#" data-md-tab="unbooked">Not scheduled <span class="badge text-bg-warning ms-1" data-md-count="unbooked"></span></a></li>
+                        <li class="nav-item"><a class="nav-link py-1" href="#" data-md-tab="left_behind" title="Open tickets booked on a day that has gone - drag one onto an agent and time to book it again">Left behind <span class="badge text-bg-danger ms-1" data-md-count="left_behind"></span></a></li>
                     </ul>
                     <div class="mt-2 d-flex flex-column gap-1">
                         <input type="search" class="form-control form-control-sm" placeholder="Search tickets" data-md-filter="q" aria-label="Search">

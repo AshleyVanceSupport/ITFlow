@@ -1,6 +1,6 @@
 // The calendar's sidebar lists: To schedule and Left behind (functions/mit_left_behind.php) follow the Whose picker -
-// Everyone = everyone's - and a ticket whose booked day has gone is left behind (and marked on the calendar) until it is
-// booked again. Makes its own client and ticket ("Smoke test ...") and deletes them, even when a step fails; the
+// Everyone = everyone's - and a ticket whose booked day has gone is left behind (marked on the calendar, and in Dispatch's
+// Left behind tab) until it is booked again. Makes its own client and ticket ("Smoke test ...") and deletes them, even when a step fails; the
 // calendar's Whose choice is put back.
 
 const { test, expect } = require('@playwright/test');
@@ -74,6 +74,15 @@ test('calendar: To schedule and Left behind follow Whose, and a passed booking i
     const items = await getJson(page, `ajax.php?calendar_items=1&from=${date}&to=${date}&sources=tickets`);
     const item = items.find((i) => i.id === `ticket-${made.ticketId}`);
     expect(item && item.className, 'its old booking is marked').toContain('mit-left-behind');
+    // and in Dispatch's Left behind tab (every agent's)
+    const dispatch = await page.evaluate(async () => {
+        const res = await fetch('mit_dispatch_ajax.php?queue=left_behind&board=all', { credentials: 'same-origin' });
+        return res.ok ? res.json() : null;
+    });
+    if (dispatch) { // Dispatch can be switched off
+        expect(dispatch.tickets.map((t) => t.id), 'in Dispatch\'s Left behind tab').toContain(made.ticketId);
+        expect(dispatch.counts.left_behind, 'counted on the tab').toBeGreaterThan(0);
+    }
 
     // Booked again for tomorrow: no longer left behind
     expect((await book(page, day(1))).ok, 'booked again').toBe(true);

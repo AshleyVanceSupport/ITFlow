@@ -126,6 +126,8 @@ model: see DEPLOYMENT.md.
   old bookings get class `mit-left-behind` (dashed red) and "Left behind" in the detail (`mitLeftBehindMark`). Hooks: one line in
   `agent/calendar.php` after the To schedule card (`mitLeftBehindCard`), `agent/ajax.php?mit_left_behind`, and
   `functions/calendar.php`'s tickets-source hook now calls `mitCalendarTicketItems` (left behind, then `mitProjectCalendarItems`).
+  Dispatch has it as a third queue tab, "Left behind" (`mitDispatchQueue` tab `left_behind` = `mitLeftBehindSql()`, oldest booking
+  first, the card shows the booked day; every agent's, following the board / client / priority filters).
   To schedule on Everyone lists every agent's unscheduled tickets with the agent named (`agent/ajax.php` calendar_unscheduled:
   user_id 0 = all assigned, `user_name`; `agent/js/calendar.js` loadUnscheduled sends `agentId()`), and `agent/calendar.php` loads
   calendar.js through `mitAsset` so browsers fetch our changes.
