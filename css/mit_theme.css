@@ -437,7 +437,8 @@ body .app-header.navbar > .container-fluid > .navbar-nav > .nav-item > .nav-link
     color: color-mix(in srgb, var(--mit-tone) 72%, var(--mit-tint-ink)) !important;
 }
 
-/* ---------- count tiles: ITFlow's dashboard / client overview strip, and ours (.mit-tiles) ---------- */
+/* ---------- count tiles: ITFlow's dashboard / client overview strip, and ours (.mit-tiles) ----------
+   Compact: icon | label (detail under it) | number on the right, in equal columns - the last row is not stretched. */
 .card.card:has(> .itflow-dash-rail) {
     background: transparent !important;
     border-radius: 0 !important;
@@ -445,26 +446,37 @@ body .app-header.navbar > .container-fluid > .navbar-nav > .nav-item > .nav-link
 }
 .itflow-dash-rail,
 .mit-tiles {
-    gap: 12px;
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    gap: 10px;
+    margin: 0;
 }
 .mit-tiles {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
     margin-bottom: 1rem;
 }
 .itflow-dash-rail-item,
 .mit-tile {
     display: grid !important;
-    grid-template-columns: 52px 1fr;
-    column-gap: 14px;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    grid-template-rows: auto;
+    column-gap: 10px;
     align-items: center;
+    min-width: 0;
     background: var(--mit-panel) !important;
     border: 0 !important;
-    border-radius: 14px;
-    padding: 12px !important;
+    border-radius: 12px;
+    padding: 9px 14px 9px 10px !important;
     box-shadow: none !important;
     color: var(--mit-text) !important;
     text-decoration: none;
+}
+.itflow-dash-rail-clear {
+    grid-column: 1 / -1;
+}
+/* A second row only for a detail line, so a plain label sits in the middle */
+.itflow-dash-rail-item:has(> .itflow-dash-rail-detail),
+.mit-tile:has(> .mit-tile-detail) {
+    grid-template-rows: auto auto;
 }
 a.itflow-dash-rail-item:hover,
 a.mit-tile:hover {
@@ -473,42 +485,51 @@ a.mit-tile:hover {
 .itflow-dash-rail-label {
     display: contents !important;
     color: var(--mit-text) !important;
+    font-size: .85rem;
     font-weight: 500;
+    line-height: 1.25;
 }
 .itflow-dash-rail-label > .fas,
 .mit-tile-icon {
     grid-column: 1;
-    grid-row: 1 / span 3;
-    width: 52px !important;
-    height: 52px;
+    grid-row: 1 / -1;
+    width: 34px !important;
+    height: 34px;
     margin: 0 !important;
-    border-radius: 12px;
+    border-radius: 9px;
     display: grid;
     place-items: center;
-    font-size: 1.25rem;
+    font-size: .9rem;
     background: color-mix(in srgb, var(--itflow-dash-tone, var(--mit-tone)) var(--mit-tint-amount), var(--mit-tint-base));
     color: color-mix(in srgb, var(--itflow-dash-tone, var(--mit-tone)) 80%, var(--mit-tint-ink)) !important;
 }
+.mit-tile-label {
+    grid-column: 2;
+    grid-row: 1;
+    font-size: .85rem;
+    font-weight: 500;
+    line-height: 1.25;
+}
 .itflow-dash-rail-count,
 .mit-tile-value {
-    grid-column: 2;
-    grid-row: 2;
-    font-size: 1.6rem;
+    grid-column: 3;
+    grid-row: 1 / -1;
+    font-size: 1.3rem;
     font-weight: 700;
     line-height: 1.1;
+    text-align: right;
     color: var(--mit-text) !important;
 }
 .itflow-dash-rail-detail,
 .mit-tile-detail {
     grid-column: 2;
-    grid-row: 3;
+    grid-row: 2;
     color: var(--mit-muted);
-    font-size: .8rem;
-}
-.mit-tile-label {
-    grid-column: 2;
-    grid-row: 1;
-    font-weight: 500;
+    font-size: .75rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* ---------- client header (agent/includes/inc_client_top_head.php + mitClientHeadMeta) ---------- */

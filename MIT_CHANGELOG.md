@@ -4,6 +4,9 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.76 - 2026-10-20
+- Modern look: the "Needs attention" boxes on the dashboard and client overview, and a client's count tiles, are now compact one-line tiles (icon, label, number on the right) in even columns - about a third of the height.
+
 ## 26.10.75 - 2026-10-20
 - Modern look, part 2: it now works in Dark mode too (dark navy panels, same blue).
 - A client's Assets, Licenses and Tickets pages open with count tiles - warranty expired or ending, devices over 5 years old, offline in NinjaOne, licenses expired or renewing, open / overdue / unassigned tickets, closed in the last 30 days and time logged this month. Click a tile to see the list it counts.
