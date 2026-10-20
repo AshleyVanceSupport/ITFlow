@@ -291,6 +291,10 @@ model: see DEPLOYMENT.md.
   mitTsWithdraw, mitTsDecide, mitTsReopen. UI: the day panel of `agent/js/mit_timesheet.js` (Work times section, same meal rules
   in JS), `agent/mit_timesheet.php` (sign window, changes box), decide modal (`mitTsCaApproverNote`), payroll report (Double time, Meal / Rest premium
   columns; detail "Work times" rows). No FKs on the M018 tables: records outlive deleted logins (keep 3 years).
+  Split shifts (M022): `mit_ts_work_periods.gap_before` (NULL = meal break, 'off' = off between shifts). The day panel enters
+  blocks (Start / End, any number - `blockRow` / `blocks()` in the script, posted as `times[blocks][i][start|end|gap]`, read by
+  `mitTsCaParseBlocks`; the old six boxes still parse through `mitTsCaParseDay`). An off gap of 30 min+ still counts as a meal
+  period in `mitTsCaAnalyze` (off duty); `mitTsCaPeriodsText` writes " / off / " between split shifts (change history, snapshot).
   Behind on timesheets (team page `agent/mit_timesheets.php`): `mitTsBehind` (ended periods not submitted in the last
   MIT_TS_BEHIND_PERIODS, from the start date, approval on) with Remind / Remind all (`mit_ts_remind` -> `mitTsRemind`:
   notification + email, sets reminded_late_at, not again within an hour); Late badge and Send back on the rows. Send back emails too.

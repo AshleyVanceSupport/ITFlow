@@ -1,7 +1,7 @@
 /*
  * Mountaineer IT - the timesheet page (agent/mit_timesheet.php, functions/mit_timesheet_view.php): draws the
- * week tabs and a row a day from #mitTsData, opens a day on the side to fill in - start, meal and end times on
- * California rules (the meal checks as mitTsCaAnalyze() does them on the server), ticket time, hours by charge
+ * week tabs and a row a day from #mitTsData, opens a day on the side to fill in - blocks of work (start - end, any number:
+ * a meal break or a split shift between them) on California rules (the meal checks as mitTsCaAnalyze() does them on the server), ticket time, hours by charge
  * code with notes - and saves it as it is typed (agent/mit_timesheet_ajax.php), taking back what the server
  * worked out. Submitting waits for the last save; on California rules it opens the signing window first.
  */
@@ -15,7 +15,6 @@
     const body = panelEl.querySelector('[data-mit-day-body]');
     const savedEl = document.getElementById('mitTsSaved');
     const readOnly = D.locked !== '';
-    const BOXES = [['start', 'Start'], ['meal_out', 'Meal out'], ['meal_in', 'Back'], ['meal2_out', '2nd meal out'], ['meal2_in', 'Back'], ['end', 'End']];
     const ISSUES = {
         1: { missing: 'No meal period - one is due for a day over 5 hours', late: 'Meal period started after the 5th hour', short: 'Meal period was under 30 minutes' },
         2: { missing: 'No 2nd meal period - one is due for a day over 10 hours', late: '2nd meal period started after the 10th hour', short: '2nd meal period was under 30 minutes' },
@@ -54,10 +53,15 @@
     }
 
     // ---------- the meal rules, as on the server ----------
-    function periods(b) {
-        if (!b.start || !b.end) return [];
-        const points = ['start', 'meal_out', 'meal_in', 'meal2_out', 'meal2_in', 'end'].map((k) => b[k]).filter(Boolean);
-        if (points.length % 2) return [];
+    // A day's blocks [{start, end, gap}] as minute pairs, next-day times rolled over; [] when a block is half filled in
+    function periods(blocks) {
+        const points = [], gaps = [];
+        for (const b of blocks) {
+            if (!b.start && !b.end) continue;
+            if (!b.start || !b.end) return [];
+            points.push(b.start, b.end);
+            gaps.push(b.gap === 'off' ? 'off' : 'meal');
+        }
         const stamps = [];
         let day = 0;
         points.forEach(function (time, i) {
@@ -67,14 +71,14 @@
             stamps.push(t);
         });
         const list = [];
-        for (let i = 0; i + 1 < stamps.length; i += 2) list.push([stamps[i], stamps[i + 1]]);
+        for (let i = 0; i + 1 < stamps.length; i += 2) list.push([stamps[i], stamps[i + 1], gaps[i / 2]]);
         return list;
     }
-    function analyze(b) {
+    function analyze(blocks) {
         let worked = 0, lastEnd = null;
         const gaps = [];
-        periods(b).forEach(function (p) {
-            if (lastEnd !== null) gaps.push({ before: worked, minutes: Math.max(0, p[0] - lastEnd) });
+        periods(blocks).forEach(function (p) {
+            if (lastEnd !== null) gaps.push({ before: worked, minutes: Math.max(0, p[0] - lastEnd), kind: p[2] });
             worked += Math.max(0, p[1] - p[0]);
             lastEnd = p[1];
         });
@@ -89,7 +93,8 @@
             if (status !== 'ok' && used + 1 < gaps.length) { used++; status = gaps[used].before <= by ? 'short' : 'late'; }
             meals[n] = status;
         });
-        return { worked: worked, meals: meals, mealMinutes: gaps.reduce((s, g) => s + g.minutes, 0) };
+        return { worked: worked, meals: meals, mealMinutes: gaps.reduce((s, g) => s + (g.kind === 'off' ? 0 : g.minutes), 0),
+            offMinutes: gaps.reduce((s, g) => s + (g.kind === 'off' ? g.minutes : 0), 0) };
     }
 
     // ---------- the week tabs and the day rows ----------
@@ -111,10 +116,12 @@
         let times = '';
         const flags = [];
         if (d.ca) {
-            const b = d.ca.boxes;
-            if (b.start && b.end) {
-                const meal = analyze(b).mealMinutes;
-                times = '<span class="mit-ts-times">' + clock(b.start) + ' - ' + clock(b.end) + '</span>' + (meal ? '<span class="text-body-secondary"> · ' + meal + ' min meal</span>' : '<span class="text-body-secondary"> · no meal</span>');
+            const bl = d.ca.blocks || [];
+            if (bl.length) {
+                const a = analyze(bl);
+                times = '<span class="mit-ts-times">' + clock(bl[0].start) + ' - ' + clock(bl[bl.length - 1].end) + '</span>'
+                    + '<span class="text-body-secondary"> · ' + (a.mealMinutes ? a.mealMinutes + ' min meal' : 'no meal') + '</span>'
+                    + (a.offMinutes ? '<span class="text-body-secondary"> · split shift, ' + hours(a.offMinutes) + ' h off</span>' : '');
             }
             [1, 2].forEach(function (n) {
                 const s = d.ca.meals[n];
@@ -197,17 +204,10 @@
         let html = '';
         const dis = readOnly ? ' disabled' : '';
         if (d.ca) {
-            const b = d.ca.boxes;
-            const second = !!(b.meal2_out || b.meal2_in);
-            const timeDis = readOnly || (d.future && !b.start) ? ' disabled' : '';
-            html += '<section class="mb-4"><h6 class="mit-ts-section">Work times</h6><div class="row g-2 mit-ts-time-grid">';
-            BOXES.forEach(function ([key, label]) {
-                const two = key.startsWith('meal2');
-                html += '<div class="col-6' + (two ? ' mit-ts-meal2' : '') + '"' + (two && !second ? ' hidden' : '') + '><label class="form-label small mb-1">' + label + '</label>'
-                    + '<input type="time" step="60" class="form-control" data-box="' + key + '" value="' + esc(b[key]) + '"' + timeDis + '></div>';
-            });
-            html += '</div>'
-                + (readOnly ? '' : '<button type="button" class="btn btn-sm btn-link px-0" data-meal2' + (second ? ' hidden' : '') + '><i class="fas fa-plus me-1"></i>Second meal period</button>')
+            const bl = (d.ca.blocks || []).length ? d.ca.blocks : [{ start: '', end: '', gap: '' }];
+            const timeDis = readOnly || (d.future && !(d.ca.blocks || []).length) ? ' disabled' : '';
+            html += '<section class="mb-4"><h6 class="mit-ts-section">Work times</h6><div data-blocks>' + bl.map((b, i) => blockRow(b, i, timeDis)).join('') + '</div>'
+                + (readOnly || timeDis ? '' : '<button type="button" class="btn btn-sm btn-link px-0" data-add-block><i class="fas fa-plus me-1"></i>Add another block <span class="text-body-secondary">(after a meal, or a split shift)</span></button>')
                 + '<div class="d-flex justify-content-between align-items-center mt-2 small"><span class="text-body-secondary">Hours worked</span><b data-worked></b></div>'
                 + '<div data-issues></div>'
                 + '<div class="form-check mt-2"><input class="form-check-input" type="checkbox" data-answer="rest_missed" id="mitTsRest"' + (d.ca.answers.rest_missed ? ' checked' : '') + (readOnly || !D.own ? ' disabled' : '') + '>'
@@ -255,8 +255,7 @@
         });
         let total;
         if (d.ca) {
-            const b = boxes();
-            const a = analyze(b);
+            const a = analyze(blocks());
             body.querySelector('[data-worked]').textContent = a.worked ? hours(a.worked, true) + ' h' : '-';
             const issues = body.querySelector('[data-issues]');
             issues.innerHTML = [1, 2].map(function (n) {
@@ -273,10 +272,23 @@
         }
         panelEl.querySelector('[data-mit-day-total]').textContent = hours(total, true) + ' h';
     }
-    function boxes() {
-        const b = {};
-        body.querySelectorAll('[data-box]').forEach((i) => { b[i.dataset.box] = i.value; });
-        return b;
+    // One block of work: Start - End, and before every block but the first, what the gap was
+    function blockRow(b, i, dis) {
+        return '<div class="mit-ts-block" data-block>'
+            + (i ? '<div class="d-flex align-items-center gap-2 my-2 small"><span class="text-body-secondary">Then</span>'
+                + '<select class="form-select form-select-sm w-auto" data-gap aria-label="The time before this block"' + dis + '>'
+                + '<option value="meal"' + (b.gap !== 'off' ? ' selected' : '') + '>a meal break</option>'
+                + '<option value="off"' + (b.gap === 'off' ? ' selected' : '') + '>off between shifts (split shift)</option></select></div>' : '')
+            + '<div class="row g-2 align-items-end"><div class="col"><label class="form-label small mb-1">Start</label><input type="time" step="60" class="form-control" data-block-start value="' + esc(b.start) + '"' + dis + '></div>'
+            + '<div class="col"><label class="form-label small mb-1">End</label><input type="time" step="60" class="form-control" data-block-end value="' + esc(b.end) + '"' + dis + '></div>'
+            + (dis ? '' : '<div class="col-auto"><button type="button" class="btn btn-link text-body-secondary px-1" data-remove-block title="Take this block off"><i class="fas fa-times"></i></button></div>')
+            + '</div></div>';
+    }
+    function blocks() {
+        return [...body.querySelectorAll('[data-block]')].map(function (row) {
+            const gap = row.querySelector('[data-gap]');
+            return { start: row.querySelector('[data-block-start]').value, end: row.querySelector('[data-block-end]').value, gap: gap ? gap.value : '' };
+        });
     }
     function status(html, tone) {
         const el = panelEl.querySelector('[data-mit-day-status]');
@@ -303,11 +315,11 @@
             return D.codes[row.dataset.code]?.note && parse(row.querySelector('[data-hours]').value) > 0 && !row.querySelector('[data-note]').value.trim();
         });
         if (note) return D.codes[note.dataset.code].name + ' needs a note';
-        const b = boxes();
-        if (D.days[current].ca && ((b.meal_out && !b.meal_in) || (!b.meal_out && b.meal_in) || (b.meal2_out && !b.meal2_in) || (!b.meal2_out && b.meal2_in))) return 'A meal period needs both its out and back times';
-        if (D.days[current].ca && (b.start || b.end) && !(b.start && b.end)) return 'Add both a start and an end';
+        const bl = D.days[current].ca ? blocks() : [];
+        if (bl.some((b) => !!b.start !== !!b.end)) return 'Each block needs a start and an end';
         const reason = body.querySelector('[data-reason]');
-        if (reason && !reason.value.trim() && JSON.stringify(b) !== JSON.stringify(D.days[current].ca.boxes)) return 'Say why you are changing their times';
+        const filled = (list) => JSON.stringify(list.filter((b) => b.start || b.end).map((b, i) => [b.start, b.end, i ? (b.gap === 'off' ? 'off' : 'meal') : '']));
+        if (reason && !reason.value.trim() && filled(bl) !== filled(D.days[current].ca.blocks || [])) return 'Say why you are changing their times';
         return '';
     }
     function save() {
@@ -329,7 +341,11 @@
         form.append('start', D.start);
         form.append('date', date);
         if (D.days[date].ca) {
-            Object.entries(boxes()).forEach(([k, v]) => form.append('times[' + k + ']', v));
+            blocks().forEach(function (b, i) {
+                form.append('times[blocks][' + i + '][start]', b.start);
+                form.append('times[blocks][' + i + '][end]', b.end);
+                form.append('times[blocks][' + i + '][gap]', b.gap);
+            });
             body.querySelectorAll('[data-answer]').forEach(function (el) {
                 form.append('answers[' + el.dataset.answer + ']', el.type === 'checkbox' ? (el.checked ? '1' : '') : el.value);
             });
@@ -414,9 +430,10 @@
         draw();
     });
     body.addEventListener('input', function (e) {
-        if (e.target.matches('[data-hours], [data-note], [data-box], [data-reason]')) changed();
+        if (e.target.matches('[data-hours], [data-note], [data-block-start], [data-block-end], [data-reason]')) changed();
     });
     body.addEventListener('change', function (e) {
+        if (e.target.matches('[data-gap]')) changed();
         if (e.target.matches('[data-answer]')) {
             if (e.target.dataset.answer !== 'rest_missed') {
                 D.days[current].ca.answers[e.target.dataset.answer] = e.target.value;
@@ -445,9 +462,23 @@
             note.hidden = false;
             note.focus();
         }
-        if (e.target.closest('[data-meal2]')) {
-            body.querySelectorAll('.mit-ts-meal2').forEach((c) => { c.hidden = false; });
-            e.target.closest('[data-meal2]').hidden = true;
+        if (e.target.closest('[data-add-block]')) {
+            const list = body.querySelector('[data-blocks]');
+            list.insertAdjacentHTML('beforeend', blockRow({ start: '', end: '', gap: 'meal' }, list.children.length, ''));
+            list.lastElementChild.querySelector('[data-block-start]').focus();
+        }
+        if (e.target.closest('[data-remove-block]')) {
+            const list = body.querySelector('[data-blocks]');
+            const row = e.target.closest('[data-block]');
+            if (list.children.length > 1) {
+                row.remove();
+                // The first block has no gap before it
+                const first = list.firstElementChild.querySelector('[data-gap]');
+                if (first) first.closest('.d-flex').remove();
+            } else {
+                row.querySelectorAll('input').forEach((input) => { input.value = ''; });
+            }
+            changed();
         }
     });
     window.addEventListener('beforeunload', function (e) {

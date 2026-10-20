@@ -53,7 +53,7 @@ function mitTsViewDays($user_id, array $period, array $only = []) {
         $ca = null;
         if (isset($ca_days[$date])) {
             $c = $ca_days[$date];
-            $ca = ['boxes' => mitTsCaBoxes($c['periods']), 'worked' => $c['clocked'], 'meals' => $c['meals'], 'answers' => $c['answers'],
+            $ca = ['blocks' => mitTsCaBlocks($c['periods']), 'worked' => $c['clocked'], 'meals' => $c['meals'], 'answers' => $c['answers'],
                 'meal_premium' => $c['meal_premium'], 'rest_premium' => $c['rest_premium']];
         }
         // What the day adds up to: hours worked (the typed times on California rules), leave, and paid breaks

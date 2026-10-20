@@ -72,19 +72,39 @@ function mitTsCaOn($user_id, $date = null) {
  * ---------- reading the records ----------
  */
 
-/** Work periods: [user_id][date] => [['start' => 'Y-m-d H:i:s', 'end' => ...], ...] in order. */
+/**
+ * Work periods: [user_id][date] => [['start' => 'Y-m-d H:i:s', 'end' => ..., 'gap' => 'meal' | 'off'], ...] in order -
+ * 'gap' is the time before the period (a meal break, or off between the shifts of a split shift; '' on the first).
+ */
 function mitTsCaPeriods(array $user_ids, $from, $to) {
     global $mysqli;
     $user_ids = array_filter(array_map('intval', $user_ids));
     $periods = [];
     if ($user_ids && mitTsCaReady()) {
-        $result = mysqli_query($mysqli, "SELECT user_id, work_date, start_at, end_at FROM mit_ts_work_periods WHERE user_id IN (" . implode(',', $user_ids) . ")
+        $gap = mitTsCaSplitReady() ? 'gap_before' : 'NULL AS gap_before';
+        $result = mysqli_query($mysqli, "SELECT user_id, work_date, start_at, end_at, $gap FROM mit_ts_work_periods WHERE user_id IN (" . implode(',', $user_ids) . ")
             AND work_date BETWEEN '" . escapeSql($from) . "' AND '" . escapeSql($to) . "' ORDER BY start_at");
         while ($row = mysqli_fetch_assoc($result)) {
-            $periods[intval($row['user_id'])][$row['work_date']][] = ['start' => $row['start_at'], 'end' => $row['end_at']];
+            $list = &$periods[intval($row['user_id'])][$row['work_date']];
+            $list[] = ['start' => $row['start_at'], 'end' => $row['end_at'], 'gap' => $list ? ($row['gap_before'] === 'off' ? 'off' : 'meal') : ''];
+            unset($list);
         }
     }
     return $periods;
+}
+
+/** Split shifts can be stored (database update M022). */
+function mitTsCaSplitReady() {
+    global $mysqli;
+    static $ready = null;
+    if ($ready === null) {
+        try {
+            $ready = mysqli_num_rows(mysqli_query($mysqli, "SHOW COLUMNS FROM mit_ts_work_periods LIKE 'gap_before'")) === 1;
+        } catch (Throwable $e) {
+            $ready = false;
+        }
+    }
+    return $ready;
 }
 
 /** The person's answers: [user_id][date] => ['meal1', 'meal2', 'rest_missed']. */
@@ -109,16 +129,17 @@ function mitTsCaAnswers(array $user_ids, $from, $to) {
 /**
  * A day's work periods against the meal rules: ['worked' => minutes, 'meals' => [1 => status, 2 => status]]
  * - status null when that meal is not due, else ok | missing | late | short; and 'gaps' (minutes between periods).
+ * Time off between the shifts of a split shift counts like a meal break here: 30 minutes or more off duty is a meal period.
  */
 function mitTsCaAnalyze(array $periods) {
     $worked = 0;
-    $gaps = [];  // [worked before it, minutes]
+    $gaps = [];  // [worked before it, minutes, meal | off]
     $last_end = null;
     foreach ($periods as $p) {
         $start = strtotime($p['start']);
         $end = strtotime($p['end']);
         if ($last_end !== null) {
-            $gaps[] = ['before' => $worked, 'minutes' => intdiv(max(0, $start - $last_end), 60)];
+            $gaps[] = ['before' => $worked, 'minutes' => intdiv(max(0, $start - $last_end), 60), 'kind' => ($p['gap'] ?? '') === 'off' ? 'off' : 'meal'];
         }
         $worked += intdiv(max(0, $end - $start), 60);
         $last_end = $end;
@@ -247,14 +268,72 @@ function mitTsCaOvertime(array $worked) {
  * ---------- showing times ----------
  */
 
-/** "8:00 AM - 12:00 PM, 12:30 PM - 5:00 PM" (or "no times"). */
+/** "8:00 AM - 12:00 PM, 12:30 PM - 5:00 PM", with "off" between the shifts of a split shift (or "no times"). */
 function mitTsCaPeriodsText(array $periods) {
     if (!$periods) {
         return 'no times';
     }
-    return implode(', ', array_map(function ($p) {
-        return date('g:i A', strtotime($p['start'])) . ' - ' . date('g:i A', strtotime($p['end'])) . (substr($p['end'], 0, 10) > substr($p['start'], 0, 10) ? ' (+1 day)' : '');
-    }, $periods));
+    $text = '';
+    foreach (array_values($periods) as $i => $p) {
+        $text .= ($i ? (($p['gap'] ?? '') === 'off' ? ' / off / ' : ', ') : '')
+            . date('g:i A', strtotime($p['start'])) . ' - ' . date('g:i A', strtotime($p['end'])) . (substr($p['end'], 0, 10) > substr($p['start'], 0, 10) ? ' (+1 day)' : '');
+    }
+    return $text;
+}
+
+/** The day's blocks for the timesheet page: [['start' => 'H:i', 'end' => 'H:i', 'gap' => '' | meal | off]]. */
+function mitTsCaBlocks(array $periods) {
+    return array_map(function ($p) {
+        return ['start' => date('H:i', strtotime($p['start'])), 'end' => date('H:i', strtotime($p['end'])), 'gap' => (string) ($p['gap'] ?? '')];
+    }, array_values($periods));
+}
+
+/**
+ * Turn a day's blocks (start, end, and the gap before each one: meal | off) into work periods: [periods, error].
+ * Empty rows are skipped; a time earlier than the one before it is the next day, and the day may span at most 24 hours.
+ */
+function mitTsCaParseBlocks($date, array $blocks) {
+    $points = [];
+    $gaps = [];
+    foreach (array_slice(array_values($blocks), 0, 12) as $block) {
+        if (!is_array($block)) {
+            continue;
+        }
+        $start = trim((string) ($block['start'] ?? ''));
+        $end = trim((string) ($block['end'] ?? ''));
+        if ($start === '' && $end === '') {
+            continue;
+        }
+        foreach ([$start, $end] as $time) {
+            if (!preg_match('/^([01]?\d|2[0-3]):([0-5]\d)$/', $time)) {
+                return [[], $time === '' ? 'each block needs a start and an end' : 'a time could not be read'];
+            }
+        }
+        $points[] = $start;
+        $points[] = $end;
+        $gaps[] = ($block['gap'] ?? '') === 'off' ? 'off' : 'meal';
+    }
+    if (!$points) {
+        return [[], ''];
+    }
+    $stamps = [];
+    $day = 0;
+    foreach ($points as $i => $time) {
+        $t = strtotime("$date $time") + $day * 86400;
+        if ($i && $t <= $stamps[$i - 1]) {
+            $day++;
+            $t += 86400;
+        }
+        $stamps[] = $t;
+    }
+    if (end($stamps) - $stamps[0] > 86400 || $day > 1) {
+        return [[], 'spans more than 24 hours'];
+    }
+    $periods = [];
+    for ($i = 0; $i + 1 < count($stamps); $i += 2) {
+        $periods[] = ['start' => date('Y-m-d H:i:s', $stamps[$i]), 'end' => date('Y-m-d H:i:s', $stamps[$i + 1]), 'gap' => $i ? $gaps[$i / 2] : ''];
+    }
+    return [$periods, ''];
 }
 
 /** The six boxes of a day from its periods: start, meal_out, meal_in, meal2_out, meal2_in, end ('H:i' or ''). */
@@ -346,7 +425,8 @@ function mitTsCaSave(array $sheet, array $period, array $times, array $answers, 
         if (!isset($dates[$date]) || !is_array($boxes)) {
             continue;
         }
-        [$periods, $error] = mitTsCaParseDay($date, $boxes);
+        // Blocks from the timesheet page (any number - split shifts); the older six boxes still read
+        [$periods, $error] = isset($boxes['blocks']) ? mitTsCaParseBlocks($date, (array) $boxes['blocks']) : mitTsCaParseDay($date, $boxes);
         if ($error !== '') {
             $problems[] = date('D M j', strtotime($date)) . ": $error";
             continue;
@@ -371,7 +451,8 @@ function mitTsCaSave(array $sheet, array $period, array $times, array $answers, 
         mysqli_query($mysqli, "DELETE FROM mit_ts_work_periods WHERE user_id = $user_id AND work_date = '$date_sql'");
         foreach ($periods as $p) {
             mysqli_query($mysqli, "INSERT INTO mit_ts_work_periods SET user_id = $user_id, work_date = '$date_sql', start_at = '" . escapeSql($p['start']) . "',
-                end_at = '" . escapeSql($p['end']) . "', updated_by = " . intval($session_user_id));
+                end_at = '" . escapeSql($p['end']) . "', updated_by = " . intval($session_user_id)
+                . (mitTsCaSplitReady() ? ", gap_before = " . (($p['gap'] ?? '') === 'off' ? "'off'" : 'NULL') : ''));
         }
         mysqli_query($mysqli, "INSERT INTO mit_ts_changes SET user_id = $user_id, work_date = '$date_sql', changed_by = " . intval($session_user_id) . ",
             changed_by_name = '" . escapeSql(mb_substr($who, 0, 200)) . "', before_text = '" . escapeSql(mitTsCaPeriodsText($current[$date] ?? [])) . "',

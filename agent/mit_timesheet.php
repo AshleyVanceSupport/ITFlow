@@ -125,7 +125,7 @@ $status_text = [
                 <div class="list-group list-group-flush mit-ts-days" id="mitTsDays"></div>
                 <div class="card-footer bg-transparent small text-body-secondary">
                     <?= $locked ? 'Click a day to see it.' : 'Click a day to fill it in - it saves as you type.' ?>
-                    <?= $ca ? 'Your hours worked are your start and end times, less the meal period between "meal out" and "back".' : '' ?>
+                    <?= $ca ? 'Your hours worked are your blocks of work, start to end - add another block after a meal, or for a split shift.' : '' ?>
                     <?= $settings['ticket_time'] ? 'Ticket time comes in on its own from the time logged on ticket replies.' : '' ?>
                 </div>
             </div>

@@ -4,6 +4,9 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.69 - 2026-10-19
+- Timesheets (California rules): work times are now blocks - Start and End - with "Add another block" for as many as a day needs. Between blocks, pick a meal break or "off between shifts" for a split shift; the day shows the meal and the time off separately. Weekends and holidays take times like any other day.
+
 ## 26.10.68 - 2026-10-19
 - Timesheets: a Holidays tab under Admin > Timesheets - add, edit (date and name) and remove holidays a year at a time, or add the US holidays for a year. They are the same closure days as Admin > SLA.
 - Changing a holiday puts open timesheets right straight away (hours move with it, renamed, or come off); submitted and approved timesheets are left as they are.
