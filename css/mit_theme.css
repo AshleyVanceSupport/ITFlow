@@ -798,3 +798,15 @@ img.mit-img-missing {
         box-shadow: none !important;
     }
 }
+
+/* Admin > Settings > Theme: each colour's card is a label.itflow-theme-swatch, and ITFlow's Preferences Light / Dark swatch
+   rule (1.75rem wide) used to match it too and squeezed the names to a letter or two per line. That is fixed in
+   itflow_custom.css, but browsers keep that file (it has no version in its address) - this file's address changes with
+   every update, so the cards are put right here as well */
+label.itflow-theme-swatch {
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    border: 0 !important;
+    background: none;
+}

@@ -4,6 +4,9 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.81 - 2026-10-20
+- Admin > Settings > Theme: the colour names now show properly even where the browser kept an old copy of ITFlow's stylesheet (no refresh needed with the modern look).
+
 ## 26.10.80 - 2026-10-20
 - Modern look follows the company theme colour again (Admin > Settings > Theme): the menu's current page, buttons, tabs, links and a line along the top bar take the colour - with dark text on yellow, and very dark colours lifted in dark mode so they still show.
 - Admin > Settings > Theme: the colour names under each preview were squeezed to a letter or two per line - fixed.
