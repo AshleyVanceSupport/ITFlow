@@ -385,7 +385,9 @@ test('modern look: on by default, light and dark, client tiles; Classic turns it
             if (await first.count()) {
                 documents++;
                 await visit(page, 'agent/' + (await first.getAttribute('href')));
-                await expect(page.locator('#items > thead > tr > th').nth(1)).toHaveCSS('background-color', 'rgb(238, 244, 253)');
+                // A soft tint of the theme colour (worked out by the browser, so not one fixed value)
+                const head = await page.locator('#items > thead > tr > th').nth(1).evaluate((th) => getComputedStyle(th).backgroundColor);
+                expect(head).not.toMatch(/^rgba\(0, 0, 0, 0\)$|^rgb\(255, 255, 255\)$|^transparent$/);
                 for (const logo of await page.locator('img[alt="Company logo"]').all()) {
                     if (!(await logo.evaluate((img) => img.naturalWidth))) {
                         await expect(logo).toBeHidden();
@@ -434,5 +436,32 @@ test('sign-in page: the dark backdrop with its network art loads, and the skip l
         expect(refused.filter((t) => /Content Security Policy|mit_login/.test(t))).toEqual([]);
     } finally {
         await context.close();
+    }
+});
+
+test('modern look follows the company theme colour (Admin > Settings > Theme), and the Theme page lays out', async ({ page }) => {
+    const pick = async (colour) => {
+        await visit(page, 'admin/settings_theme.php');
+        await Promise.all([page.waitForNavigation(), page.locator(`label[for="theme-${colour}"]`).click()]);
+    };
+    await visit(page, 'admin/settings_theme.php');
+    const before = await page.locator('input[name="edit_theme_settings"]:checked').getAttribute('value');
+    test.skip(await page.locator('link[href*="/css/mit_theme.css"]').count() === 0, 'the modern look is off for this login');
+    try {
+        // Each colour's name sits under its preview on one line (ITFlow's Preferences swatch rule no longer shrinks them)
+        const name = page.locator('label[for="theme-lightblue"] .itflow-theme-name');
+        expect((await name.boundingBox()).width).toBeGreaterThan(50);
+
+        await pick('red');
+        await visit(page, 'agent/tickets.php');
+        await expect(page.locator('.app-sidebar .nav-link.active').first()).toHaveCSS('background-color', 'rgb(220, 53, 69)');
+        await expect(page.locator('.app-header.navbar')).toHaveCSS('border-top-color', 'rgb(220, 53, 69)');
+
+        await pick('yellow');
+        await visit(page, 'agent/tickets.php');
+        // Dark text on the yellow pill
+        await expect(page.locator('.app-sidebar .nav-link.active').first()).toHaveCSS('color', 'rgb(31, 41, 55)');
+    } finally {
+        await pick(before || 'blue');
     }
 });

@@ -96,7 +96,8 @@ model: see DEPLOYMENT.md.
   `uploads/.htaccess` nosniff + `script-src 'none'` (same in `backupAssertUploadsGuards`, which also removes sub-folder
   .htaccess / .user.ini after a restore and rewrites backups / tmp / mit_receipts guards); portal add_ticket keeps only the
   client's asset and a Ticket category, portal document upload takes the MIME type from finfo; root `.htaccess` 404s top-level
-  `*.pdf`. Not changed (noted): logout by GET, the unlinked `admin/settings_custom_fields.php`, setup's telemetry step,
+  `*.pdf`. `css/itflow_custom.css`: the Preferences Light / Dark swatch rules are scoped to `.itflow-theme-pick` (they also
+  shrank Admin > Settings > Theme's colour cards, `label.itflow-theme-swatch`). Not changed (noted): logout by GET, the unlinked `admin/settings_custom_fields.php`, setup's telemetry step,
   tag / category creation rights, `Auto-Submitted` on queued mail, installer passwords in `ps`.
   These fixes carry no "Mountaineer IT" marker (they are plain bug fixes, meant to match upstream's
   eventual fix) - find them with `git log`.
@@ -468,7 +469,11 @@ model: see DEPLOYMENT.md.
   table headings, tinted badges (inline-coloured statuses / tags get `--mit-tone` + `.mit-tone` from the script), charts redrawn
   in Inter. Agent / admin / account / report pages only (not the portal, guest pages or login), light and dark (every colour
   is a `--mit-*` variable, set again under `[data-bs-theme="dark"]`; ITFlow's `--itflow-accent` / `--bs-success` ... are set
-  from them, which is also how its charts - js/dashboard.js, client_overview.js, reports.js - get the palette). Per agent:
+  from them, which is also how its charts - js/dashboard.js, client_overview.js, reports.js - get the palette). The accent
+  follows the company theme (`config_theme` -> ITFlow's `body.theme-<colour>`): one generated line per colour (and per colour in
+  dark mode) sets `--mit-accent`, `--mit-on-accent` (dark on yellow), `--mit-link` + `--bs-link-color-rgb` / `--bs-primary-rgb`
+  (Bootstrap colours links from the -rgb triple); blue keeps #2f6fde. Keep that list in step with ITFlow's theme colours
+  (`admin/settings_theme.php`). Per agent:
   `mit_user_preferences` ui.look (modern - the default - | classic). Hooks: one line in `includes/header.php` after
   itflow_custom.css (`mitThemeHead()`), `mitThemePreferenceField` in `agent/user/user_preferences.php`, `mitThemeSavePreference`
   in `agent/user/post/profile.php`, `functions.php` (require). Selectors to re-check after an upstream restyle: `.app-header`,

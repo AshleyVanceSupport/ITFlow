@@ -5423,17 +5423,17 @@ img.itflow-contact-avatar {
     gap: .5rem;
     padding: .5rem .9rem;
 }
-.itflow-theme-swatch {
+.itflow-theme-pick .itflow-theme-swatch {
     display: inline-block;
     width: 1.75rem;
     height: 1.25rem;
     border: 1px solid var(--bs-border-color);
     border-radius: var(--bs-border-radius-sm);
 }
-.itflow-theme-swatch.is-light {
+.itflow-theme-pick .itflow-theme-swatch.is-light {
     background: linear-gradient(90deg, #343a40 0 30%, #f8f9fa 30%);
 }
-.itflow-theme-swatch.is-dark {
+.itflow-theme-pick .itflow-theme-swatch.is-dark {
     background: linear-gradient(90deg, #343a40 0 30%, #212529 30%);
 }
 
