@@ -25,6 +25,18 @@
 
     tone(document);
 
+    // ITFlow checks for the logo folder rather than the file, so an install without a logo shows a broken picture
+    // ("Company logo") on quotes and invoices - hide one that failed to load
+    document.querySelectorAll('img[alt="Company logo"]').forEach(function (img) {
+        function check() {
+            if (img.complete && !img.naturalWidth) {
+                img.classList.add('mit-img-missing');
+            }
+        }
+        img.addEventListener('error', check);
+        check();
+    });
+
     // Charts on the page were drawn before this ran (inline footer scripts) - redraw them in the same font
     if (window.Chart && Chart.defaults) {
         Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;

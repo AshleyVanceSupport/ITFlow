@@ -478,6 +478,10 @@ model: see DEPLOYMENT.md.
   `Content-Security-Policy: default-src 'self'`, which refuses data: images), loaded by `mitLoginHead()` - one line after
   itflow_custom.css in `login.php` and `client/login_reset.php`. Only `.login-box` / the "Powered by" line are lifted over the
   backdrop - AdminLTE's `.skip-links` must stay as they are (hidden until tabbed to).
+  Quotes / invoices / recurring invoices as a document: CSS only, keyed on the card around ITFlow's `table#items`
+  (`.card:has(> .card-body table#items)`, `#items`, the `.row.bg-light` To / Bill To block, the totals `.table:has(tr.h5)`) -
+  re-check if upstream reworks those pages (upstream develop rebuilds them as one shared page). `js/mit_theme.js` hides an
+  `img[alt="Company logo"]` that failed to load (ITFlow's `file_exists` there is true for the folder when no logo is set).
   Client tiles and header line (`functions/mit_client_tiles.php`, modern look only): `mitClientTiles('assets'|'licenses'|'tickets',
   $client_id)` - one line each before the main card in `agent/assets.php`, `agent/software.php`, `agent/tickets.php` (only with
   `$client_url`); tiles link to ITFlow's own filters (expire_days, show=overdue / unassigned / closed). `mitClientHeadMeta()` -

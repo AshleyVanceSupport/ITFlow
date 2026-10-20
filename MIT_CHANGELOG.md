@@ -4,6 +4,10 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.78 - 2026-10-20
+- Quotes, invoices and recurring invoices look like a document: a white sheet with the buttons in a strip above it, a bold blue QUOTE / INVOICE title, the number and dates in a neat box, the customer in a card with a blue edge, line items with a tinted heading, the add-a-line row set apart, a softer "Our cost" column and the Total in a blue band.
+- The broken "Company logo" picture on quotes and invoices is hidden when no logo is uploaded.
+
 ## 26.10.77 - 2026-10-20
 - New sign-in screen: a dark navy background with soft blue glows, a faint grid and network lines, and a white rounded sign-in box (also the client portal's password reset). An uploaded company logo sits on a white plate so it still shows.
 

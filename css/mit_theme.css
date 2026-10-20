@@ -574,3 +574,170 @@ a.mit-tile:hover {
     background-color: var(--mit-box) !important;
     color: var(--mit-text) !important;
 }
+
+/* ---------- quotes, invoices, recurring invoices: the document (agent/quote.php, invoice.php, recurring_invoice.php -
+   the card around table#items) reads as a sheet of paper, with the actions in a toolbar above it ---------- */
+.card:has(> .card-body table#items) {
+    background: var(--mit-box) !important;
+    border: 1px solid var(--mit-line) !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 12px 32px -16px rgba(15, 23, 42, .18) !important;
+    overflow: hidden;
+}
+.card:has(> .card-body table#items) > .card-header {
+    background: var(--mit-panel) !important;
+    border-bottom: 1px solid var(--mit-line) !important;
+    padding: .75rem 1.25rem !important;
+}
+.card:has(> .card-body table#items) > .card-body {
+    padding: 2rem 2.25rem 1.5rem;
+}
+/* Company: name strong, details muted */
+.card:has(> .card-body table#items) > .card-body > .row:first-child h4 {
+    font-size: 1.35rem;
+    margin-bottom: .35rem;
+    color: var(--mit-text);
+}
+/* Without a logo the company column takes the room, so QUOTE / INVOICE sits at the right edge */
+.card:has(> .card-body table#items) > .card-body > .row:first-child > .col-sm-6 {
+    flex: 1 1 0;
+}
+/* Our staff-only boxes on the document (profit) in the same quiet amber as the cost column */
+.card:has(> .card-body table#items) .bg-warning-subtle.border {
+    background: color-mix(in srgb, #f0ad2e 9%, var(--mit-box)) !important;
+    border-color: color-mix(in srgb, #f0ad2e 45%, transparent) !important;
+    border-radius: 12px !important;
+}
+.card:has(> .card-body table#items) > .card-body > .row:first-child .list-unstyled {
+    color: var(--mit-muted);
+    line-height: 1.6;
+}
+/* QUOTE / INVOICE title, status, and the number / dates box */
+.card:has(> .card-body table#items) > .card-body > .row:first-child h3 {
+    color: var(--mit-accent);
+    font-size: 1.75rem;
+    font-weight: 800;
+    letter-spacing: .12em;
+    margin-bottom: .5rem;
+}
+.card:has(> .card-body table#items) > .card-body > .row:first-child h5.badge {
+    font-size: .8rem !important;
+    padding: .35em .8em !important;
+    margin-bottom: .75rem;
+}
+.card:has(> .card-body table#items) .table-borderless {
+    clear: both;
+    background: var(--mit-panel);
+    border-radius: 12px;
+    overflow: hidden;
+    --bs-table-bg: transparent;
+}
+.card:has(> .card-body table#items) .table-borderless > :not(caption) > * > * {
+    background: transparent !important;
+    padding: .45rem .9rem;
+    border: 0;
+}
+.card:has(> .card-body table#items) .table-borderless th {
+    color: var(--mit-muted);
+    font-weight: 500;
+}
+.card:has(> .card-body table#items) .table-borderless td {
+    font-weight: 600;
+}
+/* To / Bill To */
+.card:has(> .card-body table#items) > .card-body > .row.bg-light {
+    margin-left: 0;
+    margin-right: 0;
+    background: var(--mit-panel) !important;
+    border-radius: 12px;
+    border-left: 4px solid var(--mit-accent);
+    padding: 1rem 1.25rem !important;
+    line-height: 1.6;
+}
+.card:has(> .card-body table#items) > .card-body > .row.bg-light h6 {
+    color: var(--mit-muted);
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    margin-bottom: .35rem;
+}
+.card:has(> .card-body table#items) > .card-body > .row.bg-light li:first-child {
+    font-weight: 700;
+    font-size: 1.05rem;
+}
+/* Line items: tinted heading, lined rows (a document, not a zebra list) */
+.card:has(> .table-responsive > table#items) {
+    border: 1px solid var(--mit-line) !important;
+    border-radius: 12px !important;
+    overflow: hidden;
+}
+#items > thead > tr > th {
+    background: var(--mit-accent-soft) !important;
+    color: var(--mit-accent-dark) !important;
+    border-bottom: 0 !important;
+    padding-top: .7rem;
+    padding-bottom: .7rem;
+}
+#items > tbody > tr > * {
+    background: var(--mit-box) !important;
+    border-bottom: 1px solid var(--mit-line) !important;
+    padding-top: .75rem;
+    padding-bottom: .75rem;
+}
+#items > tbody > tr:hover > * {
+    background: var(--mit-accent-soft) !important;
+}
+/* The add-a-line row: a dashed strip set apart from the lines above */
+#items > tbody > tr:has(input[name="name"]) > * {
+    background: var(--mit-panel) !important;
+    border-top: 2px dashed var(--mit-field-line) !important;
+    border-bottom: 0 !important;
+}
+#items > tbody > tr:has(input[name="name"]) .form-control,
+#items > tbody > tr:has(input[name="name"]) .form-select {
+    background-color: var(--mit-box);
+}
+/* Our cost (staff only) - a quiet amber, not a yellow block */
+#items .bg-warning-subtle {
+    background: color-mix(in srgb, #f0ad2e 9%, var(--mit-box)) !important;
+    box-shadow: inset 2px 0 0 color-mix(in srgb, #f0ad2e 55%, transparent), inset -2px 0 0 color-mix(in srgb, #f0ad2e 55%, transparent);
+}
+#items > thead .bg-warning-subtle {
+    color: #a16207 !important;
+}
+/* Totals: a box, the Total in a blue band */
+.card:has(> .card-body table#items) .table:has(tr.h5) {
+    border: 1px solid var(--mit-line);
+    border-radius: 12px;
+    overflow: hidden;
+}
+.card:has(> .card-body table#items) .table:has(tr.h5) td {
+    background: var(--mit-box) !important;
+    border-bottom: 1px solid var(--mit-line) !important;
+    padding: .6rem .9rem;
+}
+.card:has(> .card-body table#items) .table:has(tr.h5) tr.h5 > td {
+    background: var(--mit-accent-soft) !important;
+    color: var(--mit-accent-dark) !important;
+    font-weight: 800;
+    border-bottom: 0 !important;
+}
+/* Notes */
+.card:has(> .card-body table#items) .card .card-header.text-bold {
+    color: var(--mit-muted) !important;
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+}
+/* A logo picture that is missing (js/mit_theme.js marks it) */
+img.mit-img-missing {
+    display: none !important;
+}
+[class*="col-"]:has(> img.mit-img-missing) {
+    display: none !important;
+}
+@media print {
+    .card:has(> .card-body table#items) {
+        border: 0 !important;
+        box-shadow: none !important;
+    }
+}

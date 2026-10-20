@@ -370,6 +370,24 @@ test('modern look: on by default, light and dark, client tiles; Classic turns it
         await expect(page.locator('.mit-tiles a.mit-tile[href*="show=overdue"]')).toHaveCount(1);
         await expect(page.locator('.itflow-client-head .mit-client-meta')).toHaveCount(1);
 
+        // Quotes and invoices read as a document: tinted item headings, a broken logo picture hidden
+        let documents = 0;
+        for (const kind of ['quote', 'invoice']) {
+            await visit(page, `agent/${kind}s.php`);
+            const first = page.locator(`table a[href^="${kind}.php?"][href*="${kind}_id="]`).first();
+            if (await first.count()) {
+                documents++;
+                await visit(page, 'agent/' + (await first.getAttribute('href')));
+                await expect(page.locator('#items > thead > tr > th').nth(1)).toHaveCSS('background-color', 'rgb(238, 244, 253)');
+                for (const logo of await page.locator('img[alt="Company logo"]').all()) {
+                    if (!(await logo.evaluate((img) => img.naturalWidth))) {
+                        await expect(logo).toBeHidden();
+                    }
+                }
+            }
+        }
+        expect(documents, 'a quote or an invoice to look at').toBeGreaterThan(0);
+
         // Dark: same look on dark panels, the top bar stays dark
         await set({ dark_mode: '1' });
         await visit(page, 'agent/assets.php?client_id=1');
