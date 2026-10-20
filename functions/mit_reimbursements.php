@@ -54,7 +54,11 @@ function mitReimbSettings() {
 /** A money value posted from a form ("1,234.50", "$12"), or null when it cannot be read. */
 function mitReimbAmount($text) {
     $text = trim(str_replace([',', '$'], '', (string) $text));
-    return $text !== '' && is_numeric($text) ? round((float) $text, 2) : null;
+    // Plain money only: no 1e20 (which overflowed the column), and nothing past a million
+    if (!preg_match('/^-?\d{1,7}(\.\d{0,2})?$/', $text) || abs((float) $text) > 1000000) {
+        return null;
+    }
+    return round((float) $text, 2);
 }
 
 /*
@@ -225,10 +229,17 @@ function mitReimbSave(array $ticket, ?array $row, array $post, array $files) {
         // A receipt - an image or a PDF, kept under an unguessable name
         $file = $files['receipt'] ?? null;
         if (is_array($file) && ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+            if (intval($file['size'] ?? 0) > 20 * 1024 * 1024) {
+                return [false, 'That receipt is over 20 MB - use a smaller picture or PDF.'];
+            }
             $stored = checkFileUpload($file, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'heic']);
             $dir = dirname(__DIR__) . '/' . MIT_REIMB_RECEIPT_DIR;
-            if (!is_dir($dir) && @mkdir($dir, 0750, true)) {
-                // Receipts are only handed out by agent/mit_receipt.php, which checks who is asking
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0750, true);
+            }
+            // Receipts are only handed out by agent/mit_receipt.php, which checks who is asking - kept so even when the
+            // folder came from elsewhere (a copy or a restore without its dotfiles)
+            if (is_dir($dir) && !is_file("$dir/.htaccess")) {
                 @file_put_contents("$dir/.htaccess", "Require all denied\n");
             }
             if (!$stored || !is_dir($dir) || !move_uploaded_file($file['tmp_name'], "$dir/$stored")) {

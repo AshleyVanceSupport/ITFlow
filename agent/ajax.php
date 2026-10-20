@@ -1549,6 +1549,7 @@ if (isset($_POST['update_quote_items_order'])) {
 
     $positions = $_POST['positions'];
     $quote_id = intval($_POST['quote_id']);
+    enforceClientAccess(intval(getFieldById('quotes', $quote_id, 'quote_client_id'))); // the quote's own client
 
     foreach ($positions as $position) {
         $id = intval($position['id']);
@@ -1571,6 +1572,7 @@ if (isset($_POST['update_invoice_items_order'])) {
 
     $positions = $_POST['positions'];
     $invoice_id = intval($_POST['invoice_id']);
+    enforceClientAccess(intval(getFieldById('invoices', $invoice_id, 'invoice_client_id'))); // the invoice's own client
 
     foreach ($positions as $position) {
         $id = intval($position['id']);
@@ -1593,6 +1595,7 @@ if (isset($_POST['update_recurring_invoice_items_order'])) {
 
     $positions = $_POST['positions'];
     $recurring_invoice_id = intval($_POST['recurring_invoice_id']);
+    enforceClientAccess(intval(getFieldById('recurring_invoices', $recurring_invoice_id, 'recurring_invoice_client_id'))); // its own client
 
     foreach ($positions as $position) {
         $id = intval($position['id']);
@@ -1614,9 +1617,11 @@ if (isset($_GET['client_duplicate_check'])) {
     $response['message'] = ""; // default
 
     if (strlen($name) >= 5) {
+        // Only clients this agent may see, and the typed text matched as text (% and _ are not wildcards)
+        $name_like = addcslashes($name, '%_');
         $sql_clients = mysqli_query($mysqli, "SELECT client_name FROM clients
         WHERE client_archived_at IS NULL
-        AND client_name LIKE '%$name%'
+        AND client_name LIKE '%$name_like%'" . clientScopeSql('client_id') . "
         ORDER BY client_id DESC LIMIT 1"
         );
 

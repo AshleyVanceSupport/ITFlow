@@ -909,9 +909,31 @@ function mitM365RenewCertificate() {
     if ($added['status'] !== 200) {
         throw new RuntimeException(mitM365Error($added, 'Adding the new certificate'));
     }
+    $old_keys = [[$app['object_id'], (string) mitSetting('m365_cert_key_id', ''), $response['json']['access_token']]];
+    if (!empty($cal_added)) {
+        $old_keys[] = [$calendar['object_id'], (string) mitSetting('m365_cal_cert_key_id', ''), $cal_token['json']['access_token']];
+    }
     mitM365StoreCertificate($cert);
     mitSetSetting('m365_renewed_at', date('Y-m-d H:i:s'));
     mitDeleteSetting('m365_renew_error');
+    mitSetSetting('m365_cert_key_id', (string) ($added['json']['keyId'] ?? ''));
+    if (!empty($cal_added)) {
+        mitSetSetting('m365_cal_cert_key_id', (string) ($cal_added['json']['keyId'] ?? ''));
+    }
+    // The old certificate comes off the apps (proven with the new one), so expired keys don't pile up there. Best effort:
+    // a key left behind does no harm, it just runs out.
+    foreach ($old_keys as [$object_id, $key_id, $token]) {
+        if ($key_id === '') {
+            continue;  // made before ITFlow kept key ids - left to run out
+        }
+        $removed = mitGraph('POST', '/applications/' . rawurlencode($object_id) . '/removeKey', $token, [
+            'keyId' => $key_id,
+            'proof' => mitM365SignedJwt(['aud' => '00000002-0000-0000-c000-000000000000', 'iss' => $object_id, 'nbf' => time() - 60, 'exp' => time() + 600]),
+        ]);
+        if ($removed['status'] !== 204 && $removed['status'] !== 200) {
+            error_log('Mountaineer IT: could not take the old certificate off the Microsoft 365 app - ' . mitM365Error($removed, 'removeKey'));
+        }
+    }
 }
 
 /**

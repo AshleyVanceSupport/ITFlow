@@ -128,6 +128,9 @@ if (isset($api_key)) {
         } else {
             $offset = 0;
         }
+        // A negative or huge limit / offset was an SQL error
+        $limit = max(1, min(1000, $limit));
+        $offset = max(0, $offset);
 
         // When the key is tied to a user, enforce that user's RBAC (module + operation + client scope)
         require __DIR__ . '/enforce_api_rbac.php';

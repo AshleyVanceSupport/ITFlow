@@ -340,7 +340,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['login']) || isset($_
                     $user_encryption_ciphertext = $selectedRow['user_specific_encryption_ciphertext'];
 
                     $current_code = 0;
-                    if (isset($_POST['current_code'])) {
+                    // Whether a code was typed at all - 000000 is a real code, but intval() makes it 0 ("no code")
+                    $code_given = isset($_POST['current_code']) && trim((string) $_POST['current_code']) !== '';
+                    if ($code_given) {
                         $current_code = intval($_POST['current_code']);
                     }
 
@@ -351,7 +353,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['login']) || isset($_
                     // Only a request that passed the password check can add to this
                     // counter, so it cannot be used to lock another user out.
                     $mfa_locked = false;
-                    if (!empty($current_code)) {
+                    if ($code_given) {
 
                         // This counter needs its own lock. The IP lock above does not
                         // serialize a burst spread across hosts, and a burst spread
@@ -401,7 +403,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['login']) || isset($_
                     }
 
                     // Validate MFA code
-                    if (!$mfa_locked && !empty($current_code) && TokenAuth6238::verify($token, $current_code, 1)) {
+                    if (!$mfa_locked && $code_given && TokenAuth6238::verify($token, $current_code, 1)) {
                         $mfa_is_complete = true;
                         $extended_log    = 'with MFA';
                     }
@@ -571,7 +573,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['login']) || isset($_
                                     Too many incorrect 2FA codes. Please wait 10 minutes and sign in again.
                                   </div>";
 
-                        } elseif ($current_code !== 0) {
+                        } elseif ($code_given) {
 
                             // Option B: set session_user_id BEFORE logAudit()
                             $session_user_id = $user_id;

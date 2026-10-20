@@ -62,6 +62,20 @@ if (!empty($ticket_id) && !empty($reply)) {
         $ticket_row = null;
     }
 
+    // A closed ticket takes no replies (as on the ticket page), and the status must be one a reply may set: an active
+    // working status or Resolved - not New or Closed, which the system sets, and not an id that does not exist
+    $api_refuse = function ($message) {
+        header("HTTP/1.1 400 Bad Request");
+        echo json_encode(['success' => 'False', 'message' => $message]);
+        exit();
+    };
+    if ($ticket_row && ($ticket_row['ticket_closed_at'] !== null || intval($ticket_row['ticket_status']) === 5)) {
+        $api_refuse('That ticket is closed - it takes no replies.');
+    }
+    if ($ticket_row && $reply_ticket_status && !in_array($reply_ticket_status, ticketReplyStatuses($ticket_row['ticket_status']), true)) {
+        $api_refuse('ticket_status must be the id of an active status a reply may set (not New or Closed).');
+    }
+
     if ($ticket_row) {
 
         $ticket_prefix = escapeSql($ticket_row['ticket_prefix']);
@@ -86,7 +100,13 @@ if (!empty($ticket_id) && !empty($reply)) {
 
             // Optional status change alongside the reply
             if (!empty($reply_ticket_status)) {
-                mysqli_query($mysqli, "UPDATE tickets SET ticket_status = $reply_ticket_status WHERE ticket_id = $ticket_id LIMIT 1");
+                // Out of Resolved into a working status is a reopen - otherwise the ticket keeps its resolved time and drops
+                // off every open list without the nightly close ever closing it
+                $reopen_sql = ($original_ticket_status === 4 && $reply_ticket_status !== 4) ? ', ticket_resolved_at = NULL' : '';
+                mysqli_query($mysqli, "UPDATE tickets SET ticket_status = $reply_ticket_status $reopen_sql WHERE ticket_id = $ticket_id LIMIT 1");
+                if ($reopen_sql !== '') {
+                    resetTicketResolutionSla($ticket_id);
+                }
 
                 // Only record a status change when the status actually changed -
                 // Resolved is left out because the resolve block below logs it

@@ -65,7 +65,7 @@ if (isset($_GET['accept_quote'], $_GET['url_key'])) {
 
         if ((!empty($config_smtp_host) || !empty($config_smtp_provider)) && !empty($config_quote_notification_email)) {
             $subject = "Quote Accepted - $client_name - Quote $quote_prefix$quote_number";
-            $body = "Hello, <br><br>This is a notification that a quote has been accepted in ITFlow. <br><br>Client: $client_name<br>Quote: <a href=\'https://$config_base_url/quote.php?quote_id=$quote_id\'>$quote_prefix$quote_number</a><br><br>~<br>$company_name - Billing<br>$config_quote_from_email";
+            $body = "Hello, <br><br>This is a notification that a quote has been accepted in ITFlow. <br><br>Client: $client_name<br>Quote: <a href=\'https://$config_base_url/agent/quote.php?quote_id=$quote_id\'>$quote_prefix$quote_number</a><br><br>~<br>$company_name - Billing<br>$config_quote_from_email";
 
             $data[] = [
                 'from' => $config_quote_from_email,
@@ -141,7 +141,7 @@ if (isset($_GET['decline_quote'], $_GET['url_key'])) {
 
         if ((!empty($config_smtp_host) || !empty($config_smtp_provider)) && !empty($config_quote_notification_email)) {
             $subject = "Quote Declined - $client_name - Quote $quote_prefix$quote_number";
-            $body = "Hello, <br><br>This is a notification that a quote has been declined in ITFlow. <br><br>Client: $client_name<br>Quote: <a href=\'https://$config_base_url/quote.php?quote_id=$quote_id\'>$quote_prefix$quote_number</a><br><br>~<br>$company_name - Billing<br>$config_quote_from_email";
+            $body = "Hello, <br><br>This is a notification that a quote has been declined in ITFlow. <br><br>Client: $client_name<br>Quote: <a href=\'https://$config_base_url/agent/quote.php?quote_id=$quote_id\'>$quote_prefix$quote_number</a><br><br>~<br>$company_name - Billing<br>$config_quote_from_email";
 
             $data[] = [
                 'from' => $config_quote_from_email,
@@ -223,7 +223,12 @@ if (isset($_GET['add_ticket_feedback'], $_GET['url_key'])) {
 
     $ticket_id = intval($_GET['ticket_id']);
     $url_key = escapeSql($_GET['url_key']);
-    $feedback = escapeSql($_GET['feedback']);
+    // Good or Bad only, as the portal takes it
+    $feedback = in_array($_GET['feedback'] ?? '', ['Good', 'Bad'], true) ? $_GET['feedback'] : '';
+    if ($feedback === '') {
+        echo "Invalid!!";
+        exit();
+    }
 
     // Select only the necessary fields
     $sql = mysqli_query($mysqli, "SELECT ticket_id FROM tickets WHERE ticket_id = $ticket_id AND ticket_url_key = '$url_key' AND ticket_closed_at IS NOT NULL");
@@ -243,9 +248,10 @@ if (isset($_GET['add_ticket_feedback'], $_GET['url_key'])) {
 
         flashAlert("Feedback recorded - thank you");
 
-        redirect();
-
+        // Before the redirect, which ends the request (after it, this never ran)
         triggerCustomAction('ticket_feedback', $ticket_id);
+
+        redirect();
 
     } else {
         echo "Invalid!!";

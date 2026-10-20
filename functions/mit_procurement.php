@@ -647,7 +647,7 @@ function mitPoAwaitingLines() {
         LEFT JOIN vendors ON vendors.vendor_id = po.vendor_id
         LEFT JOIN clients ON clients.client_id = l.client_id
         LEFT JOIN projects ON projects.project_id = l.project_id
-        WHERE po.status IN ('ordered', 'partial') AND l.received_qty < l.quantity" . clientScopeSql('l.client_id') . "
+        WHERE po.status IN ('ordered', 'partial') AND l.received_qty < l.quantity" . mitPoScopeSql('po.po_id') . "
         ORDER BY po.order_date, po.po_id, l.sort, l.line_id");
     $by_po = [];
     while ($row = mysqli_fetch_assoc($result)) {

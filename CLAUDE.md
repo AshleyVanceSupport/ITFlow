@@ -87,6 +87,17 @@ model: see DEPLOYMENT.md.
   `cron/ticket_email_parser.php` addReply: strangers (not contact / watcher / agent) give an internal note only - no reopen,
   no attachments, text-only tech mail - and the tech mail is escaped once; `functions/security.php`
   `user_encryption_session_ciphertext ?? ''`.
+  Audit C/D (26.10.73): no "ticket closed" auto-reply to a bounce (parser); `api/v1/ticket_replies/create.php` refuses closed
+  tickets and statuses outside `ticketReplyStatuses`, and Resolved -> working clears ticket_resolved_at; `index.php` sends a
+  portal session to /client first; `includes/filter_header.php` page >= 1 and `sort` only when the column exists
+  (information_schema); API limit 1-1000 / offset >= 0, `software/read.php` ORDER BY software_id; `agent/ajax.php`
+  client_duplicate_check scoped + LIKE-escaped, item reorders check the record's client; guest feedback Good/Bad only and its
+  custom action before the redirect, quote notice links `/agent/quote.php`; `login.php` `$code_given` (000000 is a code);
+  `uploads/.htaccess` nosniff + `script-src 'none'` (same in `backupAssertUploadsGuards`, which also removes sub-folder
+  .htaccess / .user.ini after a restore and rewrites backups / tmp / mit_receipts guards); portal add_ticket keeps only the
+  client's asset and a Ticket category, portal document upload takes the MIME type from finfo; root `.htaccess` 404s top-level
+  `*.pdf`. Not changed (noted): logout by GET, the unlinked `admin/settings_custom_fields.php`, setup's telemetry step,
+  tag / category creation rights, `Auto-Submitted` on queued mail, installer passwords in `ps`.
   These fixes carry no "Mountaineer IT" marker (they are plain bug fixes, meant to match upstream's
   eventual fix) - find them with `git log`.
   When an upstream release fixes the same thing, resolve conflicts in favour of upstream.
@@ -481,6 +492,11 @@ model: see DEPLOYMENT.md.
   not agents or the new client's contacts go). Schedule conflicts show "Another booking (a client you can't see)"
   (`mitConflictWhat`); the schedule modal lists only agents who can see the client. `mitReimbTripLocked` stops trips made by
   reimbursements being changed in Trips.
+  Audit D (26.10.73), ours: reimbursement amounts are plain money up to 1,000,000 and receipts up to 20 MB, the receipts
+  folder's deny file is written whenever missing; Receiving lists only POs whose every client the agent can see
+  (`mitPoScopeSql`); the list-view Reset link has its own token (`mitListViewResetToken`); Outlook busy copy keeps the old
+  copy when there are more than 20 pages; certificate renewal removes the old key from both apps (`m365_cert_key_id` /
+  `m365_cal_cert_key_id`, best effort). Smoke: the Remind step needs `ITFLOW_SMOKE_REMIND=1`.
 - Review fixes (Oct 2026): `functions/mit_common.php` (ours, required first in `functions.php`) - shared
   helpers: `mitMailBody` / `mitSqlHtml` (HTML for SQL without escapeSql's strip_tags), `mitProductIsTangible`,
   module switches (`mitModuleOn`, `mitModuleRequire` for pages/modals, `mitModuleGuard` for handler files,

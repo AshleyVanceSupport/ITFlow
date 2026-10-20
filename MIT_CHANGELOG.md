@@ -4,6 +4,20 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.73 - 2026-10-20
+- Security: changing a password (yourself, an admin, or the "reset all passwords" button) or turning MFA on or off now signs that person out everywhere else on their next click - also client portal logins.
+- API: send the key in an `X-API-Key` header (or `Authorization: Bearer`); keys in the address (`?api_key=`) are refused, since they end up in server logs. Update n8n and any scripts that used the address.
+- Security headers on every page (no MIME sniffing, a same-site referrer, no framing by other sites, HTTPS remembered), and files opened straight from uploads can't run scripts.
+- Outlook calendars can get their own calendar-only Microsoft app (Admin > Settings > Mail, one Global Admin sign-in): staff Outlook sign-ins then can't reach their mail. Everyone who connected Outlook reconnects once. You're warned when the Outlook account isn't your ITFlow email.
+- Client portal: sign-ins end when the client or contact is archived or the portal is switched off; Microsoft sign-in only from the client's own Microsoft 365 organization; paying with a saved card can't charge twice.
+- Emails from someone who isn't a contact, watcher or agent but quote a ticket number are kept as an internal note without reopening the ticket or adding their attachments; bounces no longer get an automatic "ticket closed" reply.
+- Moving a ticket to another client takes off the old client's watchers and remembered email recipients.
+- Schedule clashes for clients you can't see show as "Another booking"; the Schedule window only offers agents who can see the client.
+- Trips need Financial edit access, and trips made by reimbursements are changed on the ticket; moving expenses to another client checks their current client too.
+- The last admin role can't lose admin; the AI summary is cleaned before it's shown; the API keeps an asset's or contact's links within its own client.
+- Fixes: the API reply endpoint (closed tickets, bad statuses), API limits and the software lookup; lists no longer error on page 0 or an unknown sort; a code of 000000 now works for MFA; guest feedback; quote accept / decline email links; opening the site address while signed in to the portal; tickets with your client's asset only from the portal.
+- Reimbursements: amounts are checked properly and receipts are limited to 20 MB; the old Microsoft certificate is taken off the apps after a renewal.
+
 ## 26.10.72 - 2026-10-20
 - Security: a link in an emailed ticket could load another website's page into ITFlow and run it as the agent who clicked it - pop-ups now only open ITFlow's own pages, and ticket text can't carry the pop-up marker.
 - With Microsoft 365 (or Google) mail, portal "Forgot password?", payment receipts, quote accept / decline emails, new-user emails, share-link emails and the "your account was changed" security emails were silently skipped - they are sent again.

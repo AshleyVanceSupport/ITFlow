@@ -117,7 +117,11 @@ the `itflow` database and user and delete `/var/www/itflow` first).
    list of N domains takes N days to refresh and expiry dates go stale.
 
 6. If you use **nginx** instead of Apache, the `.htaccess` files are ignored – deny web access
-   to `/.git`, `/config.php`, `/cron/`, `/scripts/` and `/uploads/backups/` in the nginx config.
+   to `/.git`, `/config.php`, `/cron/`, `/scripts/`, `/setup/` (once installed), `/tests/`, `/uploads/backups/`,
+   `/uploads/tmp/`, `/uploads/mit_receipts/`, the top-level `*.md` and `*.pdf` files, and PHP anywhere under `/uploads/`;
+   and send the same headers the `.htaccess` files set: `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`,
+   `Content-Security-Policy: frame-ancestors 'self'` (plus `script-src 'none'` under `/uploads/`) and, over HTTPS,
+   `Strict-Transport-Security: max-age=31536000`.
 
 ## Moving an existing install over from itflow-org
 

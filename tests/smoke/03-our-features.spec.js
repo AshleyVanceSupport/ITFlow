@@ -66,6 +66,8 @@ test('timesheets: who is behind, and reminding them', async ({ page }) => {
     expect(answer, 'the Remind handler').toContain('Nobody to remind');
     const box = page.locator('[data-mit-ts-behind]');
     test.skip(await box.count() === 0, 'nobody is behind on their timesheets');
+    // Pressing Remind sends a real notification and email to that person - only where they are test logins
+    test.skip(!process.env.ITFLOW_SMOKE_REMIND, 'set ITFLOW_SMOKE_REMIND=1 when everyone on this install is a test login (Remind emails them)');
     // Remind the first person: sent, or already reminded within the hour (a second run)
     await Promise.all([page.waitForNavigation(), box.locator('button[name=mit_ts_remind]:not([value=all])').first().click()]);
     await expect(page.locator('body')).toContainText(/Reminder sent to|reminded in the last hour/);

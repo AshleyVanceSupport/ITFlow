@@ -283,7 +283,10 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
                 ]
             ];
 
-            addToMailQueue($data);
+            // Never to a mail server's bounce (mailer-daemon, postmaster ...): that answer bounces too, and so on
+            if (!preg_match("/daemon|postmaster|bounce|mta/i", $from_email)) {
+                addToMailQueue($data);
+            }
             return true;
         }
 

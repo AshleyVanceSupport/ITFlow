@@ -18,6 +18,11 @@ if (isset($_POST['add_ticket'])) {
     $details = mysqli_real_escape_string($mysqli, ($_POST['details']));
     $category = intval($_POST['category']);
     $asset = intval($_POST['asset']);
+    // Only this client's own asset, and a ticket category - not ids from another client or another list
+    $asset = ticketClientOwnedId('asset', $asset, $session_client_id);
+    if ($category && !mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM categories WHERE category_id = $category AND category_type = 'Ticket' AND category_archived_at IS NULL"))) {
+        $category = 0;
+    }
 
     // Get settings from load_global_settings.php
     $config_ticket_prefix = escapeSql($config_ticket_prefix);
@@ -1548,13 +1553,15 @@ if (isset($_POST['client_upload_document'])) {
             $file_name = escapeSql($_FILES['document_file']['name']);
             $extParts = explode('.', $file_name);
             $file_extension = strtolower(end($extParts));
-            $file_mime_type = escapeSql($_FILES['document_file']['type']);
             $file_size = intval($_FILES['document_file']['size']);
 
             // Define destination path and move the uploaded file
             $dest_path = $client_dir . "/" . $file_reference_name;
 
             if (move_uploaded_file($file_tmp_path, $dest_path)) {
+
+                // The type from the file itself, as agent uploads do - not what the browser said it was
+                $file_mime_type = escapeSql(function_exists('finfo_open') ? (string) finfo_file(finfo_open(FILEINFO_MIME_TYPE), $dest_path) : 'application/octet-stream');
 
                 // Create document entry
                 $document_content = "<p>Uploaded file: <strong>$file_name</strong></p><p>$document_description</p>";

@@ -511,6 +511,10 @@ function mitOutlookRefreshBusy($token, $user_id) {
             throw new RuntimeException('Outlook sent an unexpected paging address.');
         }
     }
+    // More pages than we read: a partial copy would drop busy times - keep the old one instead
+    if (!empty($url)) {
+        throw new RuntimeException('More Outlook appointments than ITFlow reads at once (20 pages) - busy times were left as they were.');
+    }
 
     // Swap the old copy for the new one in one go; on any failure keep the old copy and pass the error on
     mysqli_begin_transaction($mysqli);

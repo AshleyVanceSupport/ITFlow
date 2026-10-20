@@ -28,30 +28,34 @@ test('a day: times, meal check, saves as you type', async ({ page }) => {
     await page.click(`.mit-ts-day[data-date="${date}"]`);
     const panel = page.locator('#mitTsDay');
     const block = (n) => panel.locator('[data-block]').nth(n);
-    await block(0).locator('[data-block-start]').fill('08:00');
-    await block(0).locator('[data-block-end]').fill('14:00');
-    await expect(panel.locator('[data-worked]')).toHaveText(/^6(:00)? h$/);
-    await expect(panel.locator('[data-issues]')).toContainText('No meal period');
-    await expect(panel.locator('[data-mit-day-status]')).toContainText('Saved', { timeout: 10000 });
-    await expect(page.locator(`.mit-ts-day[data-date="${date}"]`)).toContainText('8:00 AM - 2:00 PM');
+    try {
+        await block(0).locator('[data-block-start]').fill('08:00');
+        await block(0).locator('[data-block-end]').fill('14:00');
+        await expect(panel.locator('[data-worked]')).toHaveText(/^6(:00)? h$/);
+        await expect(panel.locator('[data-issues]')).toContainText('No meal period');
+        await expect(panel.locator('[data-mit-day-status]')).toContainText('Saved', { timeout: 10000 });
+        await expect(page.locator(`.mit-ts-day[data-date="${date}"]`)).toContainText('8:00 AM - 2:00 PM');
 
-    // A split shift: a second block after time off - the hours add up, the day says so
-    await panel.locator('[data-add-block]').click();
-    await block(1).locator('[data-gap]').selectOption('off');
-    await block(1).locator('[data-block-start]').fill('17:00');
-    await block(1).locator('[data-block-end]').fill('20:00');
-    await expect(panel.locator('[data-worked]')).toHaveText(/^9(:00)? h$/);
-    await expect(panel.locator('[data-mit-day-status]')).toContainText('Saved', { timeout: 10000 });
-    await expect(page.locator(`.mit-ts-day[data-date="${date}"]`)).toContainText('8:00 AM - 8:00 PM');
-    await expect(page.locator(`.mit-ts-day[data-date="${date}"]`)).toContainText('split shift, 3 h off');
-
-    // Clear it again
-    await block(1).locator('[data-remove-block]').click();
-    await block(0).locator('[data-block-start]').fill('');
-    await block(0).locator('[data-block-end]').fill('');
-    await expect(panel.locator('[data-mit-day-status]')).toContainText('Saved', { timeout: 10000 });
-    await page.waitForTimeout(300);
-    await expect(page.locator(`.mit-ts-day[data-date="${date}"]`)).not.toContainText('8:00 AM');
+        // A split shift: a second block after time off - the hours add up, the day says so
+        await panel.locator('[data-add-block]').click();
+        await block(1).locator('[data-gap]').selectOption('off');
+        await block(1).locator('[data-block-start]').fill('17:00');
+        await block(1).locator('[data-block-end]').fill('20:00');
+        await expect(panel.locator('[data-worked]')).toHaveText(/^9(:00)? h$/);
+        await expect(panel.locator('[data-mit-day-status]')).toContainText('Saved', { timeout: 10000 });
+        await expect(page.locator(`.mit-ts-day[data-date="${date}"]`)).toContainText('8:00 AM - 8:00 PM');
+        await expect(page.locator(`.mit-ts-day[data-date="${date}"]`)).toContainText('split shift, 3 h off');
+    } finally {
+        // Clear it again - also when a step above failed, so the technician's timesheet is left as it was
+        while (await panel.locator('[data-block]').count() > 1) {
+            await panel.locator('[data-remove-block]').last().click();
+        }
+        await block(0).locator('[data-block-start]').fill('');
+        await block(0).locator('[data-block-end]').fill('');
+        await expect(panel.locator('[data-mit-day-status]')).toContainText('Saved', { timeout: 10000 });
+        await page.waitForTimeout(300);
+        await expect(page.locator(`.mit-ts-day[data-date="${date}"]`)).not.toContainText('8:00 AM');
+    }
     await expectClean(page, errors);
 });
 
