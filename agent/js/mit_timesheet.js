@@ -145,6 +145,10 @@
             const spent = d.tickets.billable + d.tickets.other + Object.entries(d.codes).reduce((s, [id, e]) => s + ((D.codes[id] || {}).kind === 'leave' ? 0 : e.m), 0);
             if (spent > d.ca.worked) flags.push(chip('', 'Codes over hours worked', null, 'warning'));
         }
+        Object.entries(d.filled || {}).forEach(function ([id, m]) {
+            const c = D.codes[id] || { name: 'Code ' + id, color: '#6c757d' };
+            if (m) parts.push(chip(c.color, c.name + ' (not on a code)', m));
+        });
         if (d.unallocated && (parts.length || d.ca)) parts.push(chip('', 'Not on a code', d.unallocated, 'muted'));
         if (d.auto_lost) flags.push(chip('', 'Unaccounted', d.auto_lost, 'warning'));
         if (d.under && !d.auto_lost) flags.push(chip('', 'Under ' + hours(d.expected) + ' h', null, 'warning'));

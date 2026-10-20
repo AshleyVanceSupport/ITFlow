@@ -101,14 +101,15 @@ function mitTsReportEntry() {
  *   notes' time counts); billable all | flag | client (what timesheets count as billable); schedule '' (from Admin > SLA) or minutes Mon..Sun;
  *   ot_day / ot_week minutes (0 = off); auto_lost 1/0; auto_lost_paid 1/0 (unaccounted time is
  *   unpaid unless this is on); break_minutes / break_per - paid breaks, break_minutes for every break_per
- *   minutes worked (0 = off; a person can have their own - mitTsBreakRule).
+ *   minutes worked (0 = off; a person can have their own - mitTsBreakRule); unallocated_code - the charge code that
+ *   time worked but not on a code goes on (California days, mitTsUnallocatedCode; 0 = left as "Not on a code").
  */
 function mitTsSettings() {
     static $settings = null;
     if ($settings === null) {
         $defaults = ['week_start' => 1, 'approval' => 1, 'future' => 'all', 'autolock_days' => 0, 'remind_due' => 0, 'remind_late_days' => 0,
             'format' => 'decimal', 'rounding' => 0, 'ticket_time' => 1, 'ticket_internal' => 1, 'billable' => 'all', 'schedule' => '',
-            'ot_day' => 0, 'ot_week' => 0, 'auto_lost' => 0, 'auto_lost_paid' => 0, 'break_minutes' => 0, 'break_per' => 240];
+            'ot_day' => 0, 'ot_week' => 0, 'auto_lost' => 0, 'auto_lost_paid' => 0, 'break_minutes' => 0, 'break_per' => 240, 'unallocated_code' => 0];
         $settings = [];
         foreach ($defaults as $key => $default) {
             $value = mitSetting("ts_$key", $default);
@@ -541,6 +542,18 @@ function mitTsCodes($with_archived = false) {
     return $cache[$key];
 }
 
+/** Codes that can take time worked but not on a code: active, paid, work or lost time. */
+function mitTsUnallocatedCodes() {
+    return array_filter(mitTsCodes(), function ($code) {
+        return in_array($code['code_kind'], ['work', 'lost'], true) && intval($code['code_paid']);
+    });
+}
+
+/** The code that time worked but not on a code goes on (Admin > Timesheets), or null. */
+function mitTsUnallocatedCode() {
+    return mitTsUnallocatedCodes()[mitTsSettings()['unallocated_code']] ?? null;
+}
+
 /** The active codes a person may use - all, or those given to their role. */
 function mitTsCodesFor($user_id) {
     global $mysqli;
@@ -850,10 +863,15 @@ function mitTsTicketMinutes(array $user_ids, $from, $to) {
             // Paid breaks: as stored on approval - none for periods approved before they existed
             $minutes[$u][$date] = ['billable' => 0, 'other' => 0, 'break_paid' => 0, 'approved' => true] + ($lost_stored ? ['auto_lost' => 0] : []);
         }
-        $stored = mysqli_query($mysqli, "SELECT entry_date, source, minutes FROM mit_time_entries WHERE user_id = $u AND source IN ('ticket_billable', 'ticket_other', 'auto_lost', 'break_paid')
+        $stored = mysqli_query($mysqli, "SELECT entry_date, source, code_id, minutes FROM mit_time_entries WHERE user_id = $u AND source IN ('ticket_billable', 'ticket_other', 'auto_lost', 'break_paid', 'unallocated')
             AND entry_date BETWEEN '" . escapeSql(max($from, $sheet['period_start'])) . "' AND '" . escapeSql(min($to, $sheet['period_end'])) . "'");
         $keys = ['ticket_billable' => 'billable', 'ticket_other' => 'other', 'auto_lost' => 'auto_lost', 'break_paid' => 'break_paid'];
         while ($row = mysqli_fetch_assoc($stored)) {
+            if ($row['source'] === 'unallocated') {
+                // Time not on a code that went on the default code: [code_id => minutes]
+                $minutes[$u][$row['entry_date']]['unallocated'][intval($row['code_id'])] = intval($row['minutes']);
+                continue;
+            }
             $minutes[$u][$row['entry_date']][$keys[$row['source']]] = intval($row['minutes']);
         }
     }
@@ -875,7 +893,10 @@ function mitTsDays(array $user_ids, $from, $to) {
     $blank = ['billable' => 0, 'other' => 0, 'work' => 0, 'lost' => 0, 'auto_lost' => 0, 'leave_paid' => 0, 'leave_unpaid' => 0, 'unpaid_work' => 0,
         'break' => 0, 'break_code_paid' => 0, 'break_paid' => 0, 'codes' => [],
         // California non-exempt (functions/mit_ts_california.php): the typed start / end times are the hours worked
-        'ca' => false, 'clocked' => 0, 'unallocated' => 0, 'meal_premium' => 0, 'rest_premium' => 0];
+        'ca' => false, 'clocked' => 0, 'unallocated' => 0, 'meal_premium' => 0, 'rest_premium' => 0,
+        // Of the time not on a code, what went on the default code (Admin > Timesheets): code_id => minutes
+        'filled' => []];
+    $fill_code = mitTsUnallocatedCode();
     $ca_days = mitTsCaDays($user_ids, $from, $to);
     $days = [];
     foreach ($user_ids as $user_id) {
@@ -934,6 +955,20 @@ function mitTsDays(array $user_ids, $from, $to) {
                 $d['ca'] = true;
                 $d['clocked'] = $c['clocked'];
                 $d['unallocated'] = max(0, $c['clocked'] - ($d['billable'] + $d['other'] + $d['work'] + $d['lost']));
+                // Onto the default code: as stored on an approved day, else the code set now
+                $fills = !empty($tickets[$user_id][$date]['approved']) ? ($tickets[$user_id][$date]['unallocated'] ?? [])
+                    : ($fill_code ? [intval($fill_code['code_id']) => $d['unallocated']] : []);
+                foreach ($fills as $code_id => $m) {
+                    $m = min($m, $d['unallocated']);
+                    if ($m <= 0) {
+                        continue;
+                    }
+                    $kind = ($codes[$code_id]['code_kind'] ?? 'work') === 'lost' ? 'lost' : 'work';
+                    $d[$kind] += $m;
+                    $d['codes'][$code_id] = ($d['codes'][$code_id] ?? 0) + $m;
+                    $d['filled'][$code_id] = $m;
+                    $d['unallocated'] -= $m;
+                }
                 $d['meal_premium'] = $c['meal_premium'];
                 $d['rest_premium'] = $c['rest_premium'];
             }
@@ -1321,16 +1356,20 @@ function mitTsWithdraw(array $sheet) {
 }
 
 /**
- * Copy the period's ticket time, unaccounted time and paid breaks in as entries (on approval, before the
+ * Copy the period's ticket time, unaccounted time, paid breaks and time not on a code put on the default code in as entries (on approval, before the
  * status changes - so they are still worked out live), replacing any copied before.
  */
 function mitTsSnapshotTickets($user_id, array $period) {
     global $mysqli, $session_user_id;
     $user_id = intval($user_id);
     $days = mitTsDays([$user_id], $period['start'], $period['end'])[$user_id] ?? [];
-    mysqli_query($mysqli, "DELETE FROM mit_time_entries WHERE user_id = $user_id AND source IN ('ticket_billable', 'ticket_other', 'auto_lost', 'break_paid')
+    mysqli_query($mysqli, "DELETE FROM mit_time_entries WHERE user_id = $user_id AND source IN ('ticket_billable', 'ticket_other', 'auto_lost', 'break_paid', 'unallocated')
         AND entry_date BETWEEN '" . escapeSql($period['start']) . "' AND '" . escapeSql($period['end']) . "'");
     foreach ($days as $date => $d) {
+        foreach ($d['filled'] as $code_id => $m) {
+            mysqli_query($mysqli, "INSERT INTO mit_time_entries SET user_id = $user_id, entry_date = '" . escapeSql($date) . "', code_id = " . intval($code_id) . ", source = 'unallocated',
+                minutes = " . intval($m) . ", updated_by = " . intval($session_user_id));
+        }
         if ($d['break_paid'] > 0) {
             mysqli_query($mysqli, "INSERT INTO mit_time_entries SET user_id = $user_id, entry_date = '" . escapeSql($date) . "', code_id = 0, source = 'break_paid',
                 minutes = " . intval($d['break_paid']) . ", updated_by = " . intval($session_user_id));
@@ -1398,7 +1437,7 @@ function mitTsReopen(array $sheet, array $period) {
     if ($sheet['status'] !== 'approved') {
         return [false, 'Only an approved timesheet can be reopened.'];
     }
-    mysqli_query($mysqli, "DELETE FROM mit_time_entries WHERE user_id = " . intval($sheet['user_id']) . " AND source IN ('ticket_billable', 'ticket_other', 'auto_lost', 'break_paid')
+    mysqli_query($mysqli, "DELETE FROM mit_time_entries WHERE user_id = " . intval($sheet['user_id']) . " AND source IN ('ticket_billable', 'ticket_other', 'auto_lost', 'break_paid', 'unallocated')
         AND entry_date BETWEEN '" . escapeSql($period['start']) . "' AND '" . escapeSql($period['end']) . "'");
     mysqli_query($mysqli, "UPDATE mit_timesheets SET status = 'open', submitted_at = NULL, decided_by = 0, decided_at = NULL, decision_note = NULL WHERE sheet_id = " . intval($sheet['sheet_id']));
     mitTsCaSupersede($sheet['sheet_id']);

@@ -237,6 +237,16 @@ $company_week = mitTsCompanySchedule();
                         <label class="form-label">Lunch</label>
                         <div class="form-text mt-0">People log lunch on a charge code of the kind <em>Break / lunch</em> (Charge codes tab) - it counts as accounted for, not as lost time, and is unpaid unless the code is set to paid.</div>
                     </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="mitTsUnallocatedCode">Time not on a code goes on</label>
+                        <select class="form-select" name="unallocated_code" id="mitTsUnallocatedCode">
+                            <option value="0">Nothing - leave it as "Not on a code"</option>
+                            <?php foreach (mitTsUnallocatedCodes() as $code_id => $code) { ?>
+                                <option value="<?= intval($code_id) ?>" <?= intval($code_id) === $settings['unallocated_code'] ? 'selected' : '' ?>><?= escapeHtml($code['code_name']) ?></option>
+                            <?php } ?>
+                        </select>
+                        <div class="form-text">California rules: the hours worked (start to end) that are not on ticket time or a charge code. Paid work or lost-time codes. Approved timesheets keep the code they were approved with.</div>
+                    </div>
                 </div>
 
                 <?php if (mitReimbReady()) {

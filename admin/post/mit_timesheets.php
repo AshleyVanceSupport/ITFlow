@@ -132,6 +132,7 @@ if (isset($_POST['mit_ts_settings_save'])) {
         'auto_lost_paid' => empty($_POST['auto_lost_paid']) ? 0 : 1,
         'break_minutes' => $break_minutes,
         'break_per' => $break_per,
+        'unallocated_code' => isset(mitTsUnallocatedCodes()[intval($_POST['unallocated_code'] ?? 0)]) ? intval($_POST['unallocated_code']) : 0,
     ];
     foreach ($values as $key => $value) {
         mitSetSetting("ts_$key", $value);

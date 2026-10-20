@@ -71,6 +71,8 @@ function mitTsViewDays($user_id, array $period, array $only = []) {
             'break_paid' => intval($d['break_paid']),
             'auto_lost' => intval($d['auto_lost']),
             'unallocated' => intval($d['unallocated']),
+            // Time not on a code that went on the default code (Admin > Timesheets): code_id => minutes
+            'filled' => (object) $d['filled'],
             'total' => $total,
             'under' => !$d['ca'] && $expected > 0 && $date <= $today && $total < $expected,
             'ca' => $ca,

@@ -295,6 +295,10 @@ model: see DEPLOYMENT.md.
   blocks (Start / End, any number - `blockRow` / `blocks()` in the script, posted as `times[blocks][i][start|end|gap]`, read by
   `mitTsCaParseBlocks`; the old six boxes still parse through `mitTsCaParseDay`). An off gap of 30 min+ still counts as a meal
   period in `mitTsCaAnalyze` (off duty); `mitTsCaPeriodsText` writes " / off / " between split shifts (change history, snapshot).
+  Default code for time not on a code: `mit_settings` ts_unallocated_code (`mitTsUnallocatedCode` - paid work / lost codes,
+  `mitTsUnallocatedCodes`); mitTsDays moves a California day's `unallocated` onto it (`filled` code_id => minutes, also in
+  `codes`, work / lost); stored on approval as source `unallocated` (code_id = the code) by `mitTsSnapshotTickets`, read back
+  for approved days in `mitTsTicketMinutes`, removed with the other copies on reopen. Day row chip and payroll detail row.
   Time zones (M023): `mit_timesheet_people.time_zone` (NULL = the company's `config_timezone`, which ITFlow sets for the whole
   request). `mitTsOwnZone` / `mitTsZone` / `mitTsToday` / `mitTsLocalDate` / `mitTsCompanyRange` in mit_timesheets.php: a person's
   today (mitTsDays auto lost, future block, closure fill, auto-lock, reminders, CA save, view, page, default period) and the day

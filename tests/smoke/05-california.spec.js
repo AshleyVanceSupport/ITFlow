@@ -90,3 +90,47 @@ test('a remote person\'s own time zone sets their timesheet\'s today', async ({ 
     await visit(page, 'agent/mit_timesheet.php');
     await expect(page.locator('#mitTsZone')).toHaveCount(0);
 });
+
+test('time not on a code goes on the default charge code (Admin > Timesheets)', async ({ page, browser }, testInfo) => {
+    const use = testInfo.project.use;
+    const admin = await browser.newContext({ storageState: path.join(__dirname, '.auth', 'admin.json'), baseURL: use.baseURL, ignoreHTTPSErrors: use.ignoreHTTPSErrors });
+    const adminPage = await admin.newPage();
+    const setCode = async (pick) => {
+        await visit(adminPage, 'admin/mit_timesheets.php');
+        const select = adminPage.locator('select[name="unallocated_code"]');
+        await expect(select).toHaveCount(1);
+        const value = pick ? await select.locator('option:not([value="0"])').first().getAttribute('value') : '0';
+        const form = adminPage.locator('form:has(select[name="unallocated_code"])');
+        await fillForm(form, { unallocated_code: value });
+        await submit(form, 'mit_ts_settings_save');
+        return value;
+    };
+    const codeId = await setCode(true);
+    let date;
+    const panel = page.locator('#mitTsDay');
+    const block = (n) => panel.locator('[data-block]').nth(n);
+    try {
+        await visit(page, 'agent/mit_timesheet.php');
+        const data = JSON.parse(await page.locator('#mitTsData').textContent());
+        test.skip(!data.ca || data.locked !== '', 'the technician is not on California rules, or the period is locked');
+        date = Object.keys(data.days).find((d) => !data.days[d].future && data.days[d].ca && !(data.days[d].ca.blocks || []).length
+            && !Object.keys(data.days[d].codes).length && !(data.days[d].tickets.billable + data.days[d].tickets.other));
+        test.skip(!date, 'no past day without times, codes or ticket time in this period');
+        await page.click(`#mitTsWeeks [data-week="${data.weeks.findIndex((w) => w.includes(date))}"]`);
+        await page.click(`.mit-ts-day[data-date="${date}"]`);
+        await block(0).locator('[data-block-start]').fill('08:00');
+        await block(0).locator('[data-block-end]').fill('10:00');
+        await expect(panel.locator('[data-mit-day-status]')).toContainText('Saved', { timeout: 10000 });
+        const row = page.locator(`.mit-ts-day[data-date="${date}"]`);
+        await expect(row).toContainText(data.codes[codeId].name + ' (not on a code)');
+        await expect(row.locator('.mit-ts-chips')).not.toContainText(/(^|[^(])Not on a code/);
+    } finally {
+        if (date) {
+            await block(0).locator('[data-block-start]').fill('');
+            await block(0).locator('[data-block-end]').fill('');
+            await expect(panel.locator('[data-mit-day-status]')).toContainText('Saved', { timeout: 10000 });
+        }
+        await setCode(false);
+        await admin.close();
+    }
+});

@@ -181,6 +181,11 @@ if (reportExporting('detail')) {
                 'note' => mitTsHours($c['clocked'], false, 'decimal') . ' h worked: ' . implode('; ', $notes)];
         }
         foreach ($all_days[$user_id] ?? [] as $date => $d) {
+            foreach ($d['filled'] ?? [] as $code_id => $m) {
+                $code = $codes[$code_id] ?? ['code_name' => "Code $code_id", 'code_kind' => 'work', 'code_paid' => 1];
+                $days[] = ['date' => $date, 'code' => $code['code_name'], 'kind' => MIT_TS_KINDS[$code['code_kind']] ?? $code['code_kind'],
+                    'paid' => 'Yes', 'hours' => $m * 60, 'note' => 'Time not on a code (default code)'];
+            }
             if (!empty($d['unallocated'])) {
                 $days[] = ['date' => $date, 'code' => 'Work - not on a code', 'kind' => 'Work', 'paid' => 'Yes', 'hours' => $d['unallocated'] * 60];
             }

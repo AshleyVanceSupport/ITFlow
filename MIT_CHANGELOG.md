@@ -4,6 +4,9 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.70 - 2026-10-20
+- Timesheets (California rules): Admin > Timesheets > Settings has "Time not on a code goes on" - pick a charge code (e.g. Admin) and the hours worked that are not on ticket time or a code count on it, instead of showing as "Not on a code". The day shows it as "<code> (not on a code)"; the payroll report counts it under that code. Approved timesheets keep the code they were approved with.
+
 ## 26.10.69 - 2026-10-19
 - Timesheets (California rules): work times are now blocks - Start and End - with "Add another block" for as many as a day needs. Between blocks, pick a meal break or "off between shifts" for a split shift; the day shows the meal and the time off separately. Weekends and holidays take times like any other day.
 - Timesheets: time zones for remote people - set one on Admin > Timesheets > People, or yourself under Account > Preferences. Their timesheet's "today", days still to come and the day their ticket time falls on follow their own clock; the timesheet shows the zone.
