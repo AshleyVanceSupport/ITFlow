@@ -282,6 +282,18 @@ body .app-header.navbar > .container-fluid > .navbar-nav > .nav-item > .nav-link
     border-bottom: 0 !important;
     padding-top: 1rem;
 }
+/* Light outline buttons made for the dark header (the reports' Export) - the header is light here */
+.card-header.bg-dark .btn-outline-light {
+    color: var(--mit-text) !important;
+    border-color: var(--mit-line) !important;
+    background: var(--mit-box) !important;
+}
+.card-header.bg-dark .btn-outline-light:hover,
+.card-header.bg-dark .btn-outline-light:focus-visible,
+.card-header.bg-dark .btn-outline-light.show {
+    border-color: var(--mit-accent) !important;
+    color: var(--mit-accent) !important;
+}
 .card-header.bg-dark .card-title,
 .card-header.bg-dark h3,
 .card-header.bg-dark h5,

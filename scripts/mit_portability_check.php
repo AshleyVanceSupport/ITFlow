@@ -231,6 +231,9 @@ if ($n = $count("SELECT COUNT(*) FROM mit_ticket_techs tt JOIN tickets t ON t.ti
 if ($n = $count("SELECT COUNT(*) FROM mit_ticket_boards b JOIN tickets t ON t.ticket_id = b.ticket_id WHERE t.ticket_resolved_at IS NULL AND t.ticket_closed_at IS NULL")) {
     $after[] = "Service boards: $n open ticket" . ($n === 1 ? ' is' : 's are') . " on a board - stock ITFlow has no boards, so they are all in one Tickets list again (filter by category instead); routing rules and board notifications stop. Categories are ITFlow's and stay.";
 }
+if ($n = $count("SELECT COUNT(*) FROM mit_boards WHERE board_assign = 'round_robin' AND board_archived_at IS NULL")) {
+    $after[] = "Board auto-assign: $n board" . ($n === 1 ? ' hands' : 's hand') . " new tickets out round-robin - in stock ITFlow new tickets stay unassigned until someone takes them. The Board Performance report and the dashboard's board filter go too.";
+}
 $n = $count("SELECT COUNT(*) FROM quote_items WHERE item_cost IS NOT NULL OR item_image IS NOT NULL") + $count("SELECT COUNT(*) FROM products WHERE product_cost IS NOT NULL OR product_image IS NOT NULL");
 if ($n) {
     $after[] = "Quote pricing and images: $n quote lines / products have our cost or an image - stock ITFlow shows the customer prices only, without the images (the files stay in uploads/mit_images).";

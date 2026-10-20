@@ -25,7 +25,7 @@ while ($row = mysqli_fetch_row($sql)) {
     $open[intval($row[0])] = intval($row[1]);
 }
 $members = [];
-$sql = mysqli_query($mysqli, "SELECT m.board_id, m.member_notify, u.user_name FROM mit_board_members m JOIN users u ON u.user_id = m.user_id
+$sql = mysqli_query($mysqli, "SELECT m.board_id, m.member_notify, " . (mitBoardsPart2Ready() ? 'm.member_rotation' : '1 AS member_rotation') . ", u.user_name FROM mit_board_members m JOIN users u ON u.user_id = m.user_id
     WHERE u.user_archived_at IS NULL ORDER BY u.user_name");
 while ($row = mysqli_fetch_assoc($sql)) {
     $members[intval($row['board_id'])][] = $row;
@@ -72,8 +72,11 @@ echo mitBoardStyle();
                                 <?php if (empty($members[$id])) { ?>
                                     <span class="text-body-secondary">Nobody yet</span>
                                 <?php } else { foreach ($members[$id] as $i => $member) { ?>
-                                    <?= $i ? ', ' : '' ?><?= escapeHtml($member['user_name']) ?><?php if (intval($member['member_notify'])) { ?> <i class="fas fa-bell text-body-secondary" title="Told about new and moved tickets"></i><?php } ?>
+                                    <?= $i ? ', ' : '' ?><?= escapeHtml($member['user_name']) ?><?php if (intval($member['member_notify'])) { ?> <i class="fas fa-bell text-body-secondary" title="Told about new and moved tickets"></i><?php } ?><?php if (($board['board_assign'] ?? 'off') === 'round_robin' && !intval($member['member_rotation'])) { ?> <span class="text-body-secondary" title="Left out of the turn">(not handed tickets)</span><?php } ?>
                                 <?php } } ?>
+                                <?php if (($board['board_assign'] ?? 'off') === 'round_robin') { ?>
+                                    <div class="mt-1"><span class="badge text-bg-info" title="New tickets are handed to the members in turn"><i class="fas fa-sync-alt me-1"></i>Round-robin<?= $board['board_assign_max'] !== null ? ' - up to ' . intval($board['board_assign_max']) . ' each' : '' ?><?= intval($board['board_assign_hours']) ? ', working hours' : '' ?></span></div>
+                                <?php } ?>
                             </td>
                             <td class="text-end">
                                 <?php if (!$archived) { ?><a href="/agent/tickets.php?board=<?= $id ?>"><?= number_format($open[$id] ?? 0) ?></a><?php } ?>

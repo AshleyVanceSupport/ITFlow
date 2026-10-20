@@ -223,7 +223,7 @@ function dashboardDuration($seconds) {
  */
 function dashboardAttention($access) {
     $items = [];
-    $ticket_scope = clientScopeSql('ticket_client_id') . (function_exists('mitServiceTicketsAnd') ? mitServiceTicketsAnd() : ''); // Mountaineer IT: service tickets, like the Tickets page
+    $ticket_scope = clientScopeSql('ticket_client_id') . (function_exists('mitServiceTicketsAnd') ? mitServiceTicketsAnd() : '') . (function_exists('mitBoardDashAnd') ? mitBoardDashAnd() : ''); // Mountaineer IT: service tickets, like the Tickets page; the dashboard's board
 
     if ($access['tickets']) {
         // Same rule as tickets.php?sla=breached, on open tickets
@@ -525,7 +525,7 @@ function dashboardTimeThisWeek() {
 function dashboardTeamWorkload($limit = 8) {
     global $mysqli;
 
-    $scope = clientScopeSql('ticket_client_id');
+    $scope = clientScopeSql('ticket_client_id') . (function_exists('mitBoardDashAnd') ? mitBoardDashAnd() : ''); // Mountaineer IT: the dashboard's board
     $sql = mysqli_query($mysqli, "
         SELECT user_id, user_name, COUNT(ticket_id) AS open, SUM(" . dashboardSlaBreachedSql() . ") AS breached
         FROM tickets
@@ -551,7 +551,7 @@ function dashboardTeamWorkload($limit = 8) {
 function dashboardTicketTrend() {
     global $mysqli;
 
-    $scope = clientScopeSql('ticket_client_id');
+    $scope = clientScopeSql('ticket_client_id') . (function_exists('mitBoardDashAnd') ? mitBoardDashAnd() : ''); // Mountaineer IT: the dashboard's board
     $this_monday = new DateTime('monday this week');
     $first_monday = (clone $this_monday)->modify('-11 weeks')->format('Y-m-d');
 

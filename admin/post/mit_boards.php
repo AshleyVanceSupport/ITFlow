@@ -25,6 +25,7 @@ if (isset($_POST['mit_board_save'])) {
     if ($board_id && !isset(mitBoards(true)[$board_id])) {
         redirect();
     }
+    $was_dealing = $board_id && (mitBoards(true)[$board_id]['board_assign'] ?? 'off') === 'round_robin';
     if ($board_id) {
         mysqli_query($mysqli, "UPDATE mit_boards SET board_name = '$name_sql', board_description = '$description', board_color = '$color', board_icon = '$icon',
             board_order = $order WHERE board_id = $board_id");
@@ -34,13 +35,26 @@ if (isset($_POST['mit_board_save'])) {
         $board_id = mysqli_insert_id($mysqli);
     }
 
+    // Auto-assign (M027): handing out starts with tickets placed from now on, never the backlog
+    $part2 = mitBoardsPart2Ready();
+    if ($part2) {
+        $assign = ($_POST['assign'] ?? '') === 'round_robin' ? 'round_robin' : 'off';
+        $assign_max = intval($_POST['assign_max'] ?? 0);
+        $assign_max = $assign_max >= 1 ? min($assign_max, 999) : 'NULL';
+        $assign_hours = empty($_POST['assign_hours']) ? 0 : 1;
+        $since = $assign === 'round_robin' && !$was_dealing ? ', board_assign_since = NOW()' : '';
+        mysqli_query($mysqli, "UPDATE mit_boards SET board_assign = '$assign', board_assign_max = $assign_max, board_assign_hours = $assign_hours$since WHERE board_id = $board_id");
+    }
+
     // Members (anyone picked to be told is a member too); only agents
     $notify = array_map('intval', (array) ($_POST['notify'] ?? []));
-    $wanted = array_unique(array_merge(array_map('intval', (array) ($_POST['members'] ?? [])), $notify));
+    $no_rotation = array_map('intval', (array) ($_POST['no_rotation'] ?? []));
+    $wanted = array_unique(array_merge(array_map('intval', (array) ($_POST['members'] ?? [])), $notify, $no_rotation));
     mysqli_query($mysqli, "DELETE FROM mit_board_members WHERE board_id = $board_id");
     foreach ($wanted as $user_id) {
         if ($user_id && mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM users WHERE user_id = $user_id AND user_type = 1 AND user_archived_at IS NULL"))) {
-            mysqli_query($mysqli, "INSERT INTO mit_board_members SET board_id = $board_id, user_id = $user_id, member_notify = " . (in_array($user_id, $notify, true) ? 1 : 0));
+            mysqli_query($mysqli, "INSERT INTO mit_board_members SET board_id = $board_id, user_id = $user_id, member_notify = " . (in_array($user_id, $notify, true) ? 1 : 0)
+                . ($part2 ? ', member_rotation = ' . (in_array($user_id, $no_rotation, true) ? 0 : 1) : ''));
         }
     }
 
@@ -83,6 +97,10 @@ if (isset($_GET['mit_board_archive'])) {
         while ($row = mysqli_fetch_row($sql)) {
             logTicketHistory(intval($row[0]), escapeSql("Moved to the " . (mitBoards()[$default]['board_name'] ?? 'default') . " board - the " . $board['board_name'] . " board was archived"));
             $moved++;
+        }
+        if (mitBoardsPart2Ready()) {
+            mysqli_query($mysqli, "INSERT INTO mit_board_moves (ticket_id, from_board_id, to_board_id, move_how, moved_by)
+                SELECT ticket_id, $board_id, $default, 'archived', " . intval($session_user_id) . " FROM mit_ticket_boards WHERE board_id = $board_id");
         }
         mysqli_query($mysqli, "UPDATE mit_ticket_boards SET board_id = $default, board_set_at = NOW(), board_set_by = " . intval($session_user_id) . ", board_set_how = 'moved' WHERE board_id = $board_id");
         mysqli_query($mysqli, "DELETE FROM mit_board_rules WHERE board_id = $board_id");

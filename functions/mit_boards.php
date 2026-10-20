@@ -13,6 +13,10 @@
  * board. The New Ticket form can pick one, the email parser passes the addresses (mitBoardRoute), and the cron job
  * mit_boards (mitBoardSweep) places tickets made the other ways (portal, API, recurring, projects) within a minute.
  * Moving and escalating: mitBoardMove (ticket history, optional internal note, members told).
+ * Part 2 (M027): every landing / move is logged in mit_board_moves (mitBoardLogMove) for the Board Performance report
+ * (agent/reports/mit_boards.php); boards can hand new tickets out round-robin (mitBoardAutoAssign - right after a ticket is
+ * placed or moved unassigned, and by the cron job for tickets that waited for working hours); the dashboard has a board
+ * filter and a My boards card (mitBoardDash*).
  * Pages: Admin > Settings > Boards (admin/mit_boards.php), the Tickets switcher, the ticket's Board line and Escalate,
  * Dispatch's board picker (functions/mit_dispatch.php).
  */
@@ -229,8 +233,10 @@ function mitBoardRoute($ticket_id, array $addresses = []) {
         return mitBoardOf($ticket_id);
     }
     $name = mitBoards()[$board_id]['board_name'] ?? '';
+    mitBoardLogMove($ticket_id, null, $board_id, 'routed', 0);
     logTicketHistory($ticket_id, escapeSql("Placed on the $name board ($why)"));
     mitBoardNotify($ticket_id, $board_id, 'new', '', 0);
+    mitBoardAutoAssign($ticket_id);
     return $board_id;
 }
 
@@ -256,6 +262,7 @@ function mitBoardMove($ticket_id, $board_id, $reason = '', $unassign = false, $h
     $how_sql = escapeSql(in_array($how, ['moved', 'escalated', 'created'], true) ? $how : 'moved');
     mysqli_query($mysqli, "INSERT INTO mit_ticket_boards SET ticket_id = $ticket_id, board_id = $board_id, board_set_by = $by, board_set_how = '$how_sql'
         ON DUPLICATE KEY UPDATE board_id = $board_id, board_set_at = NOW(), board_set_by = $by, board_set_how = '$how_sql'");
+    mitBoardLogMove($ticket_id, $how === 'created' ? null : $from, $board_id, $how, $by);
 
     $from_name = $boards[$from]['board_name'] ?? mitBoards(true)[$from]['board_name'] ?? 'no board';
     $verb = $how === 'escalated' ? 'escalated the ticket' : ($how === 'created' ? 'opened the ticket' : 'moved the ticket');
@@ -277,7 +284,9 @@ function mitBoardMove($ticket_id, $board_id, $reason = '', $unassign = false, $h
     $ticket = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT ticket_prefix, ticket_number, ticket_client_id FROM tickets WHERE ticket_id = $ticket_id"));
     logAudit('Ticket', 'Edit', "$session_name $verb " . ticketReference($ticket ?: []) . " to the $to_name board", intval($ticket['ticket_client_id'] ?? 0), $ticket_id);
     $told = mitBoardNotify($ticket_id, $board_id, $how === 'created' ? 'new' : $how, $reason, $by);
-    return [true, ($how === 'escalated' ? 'Escalated' : 'Moved') . " to $to_name" . ($told ? ' - ' . implode(', ', $told) . ' told' : '') . '.'];
+    $given = mitBoardAutoAssign($ticket_id);
+    return [true, ($how === 'escalated' ? 'Escalated' : 'Moved') . " to $to_name" . ($told ? ' - ' . implode(', ', $told) . ' told' : '')
+        . ($given ? ' - handed to ' . (mitBoardMembers($board_id)[$given]['user_name'] ?? 'the next member') : '') . '.'];
 }
 
 /**
@@ -358,6 +367,196 @@ function mitBoardSweep() {
     return $placed;
 }
 
+/*
+ * ---------- part 2: the move log and auto-assign (M027) ----------
+ */
+
+/** Has database update M027 run (move log, auto-assign columns)? */
+function mitBoardsPart2Ready() {
+    global $mysqli;
+    static $ready = null;
+    if ($ready === null) {
+        try {
+            $ready = mitBoardsReady() && mysqli_num_rows(mysqli_query($mysqli, "SHOW TABLES LIKE 'mit_board_moves'")) === 1
+                && mysqli_num_rows(mysqli_query($mysqli, "SHOW COLUMNS FROM mit_board_members LIKE 'member_rotation'")) === 1;
+        } catch (Throwable $e) {
+            $ready = false;
+        }
+    }
+    return $ready;
+}
+
+/** Record a ticket landing on / moving to a board ($from null = it had none: new, routed). How: routed, created, moved, escalated, placed, archived. */
+function mitBoardLogMove($ticket_id, $from, $to, $how, $by) {
+    global $mysqli;
+    if (!mitBoardsPart2Ready()) {
+        return;
+    }
+    $how = in_array($how, ['routed', 'created', 'moved', 'escalated', 'placed', 'archived'], true) ? $how : 'moved';
+    mysqli_query($mysqli, "INSERT INTO mit_board_moves SET ticket_id = " . intval($ticket_id) . ", from_board_id = " . ($from === null ? 'NULL' : intval($from)) . ",
+        to_board_id = " . intval($to) . ", move_how = '$how', moved_by = " . intval($by));
+}
+
+/** Is it working time now - Admin > SLA's business days and hours, not a closure day? With no hours set, always. */
+function mitBoardWorkingNow() {
+    $sla = getSlaSettings();
+    $start = $sla['business_hours_start'] ?? '';
+    $end = $sla['business_hours_end'] ?? '';
+    if (empty($sla['business_days']) || empty($start) || empty($end) || $start >= $end) {
+        return true;
+    }
+    $now = new DateTime();
+    $today = $now->format('Y-m-d');
+    if (!in_array(intval($now->format('N')), $sla['business_days']) || isset(getBusinessHolidays()[$today])) {
+        return false;
+    }
+    return $now >= new DateTime("$today $start") && $now < new DateTime("$today $end");
+}
+
+/** Leave (PTO, sick ...) on the person's timesheet for their today. */
+function mitBoardOnLeaveToday($user_id) {
+    global $mysqli;
+    if (!function_exists('mitTsReady') || !mitTsReady()) {
+        return false;
+    }
+    $today = function_exists('mitTsToday') ? mitTsToday($user_id) : date('Y-m-d');
+    return mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM mit_time_entries e JOIN mit_charge_codes c ON c.code_id = e.code_id
+        WHERE e.user_id = " . intval($user_id) . " AND e.entry_date = '$today' AND e.minutes > 0 AND c.code_kind = 'leave' LIMIT 1")) > 0;
+}
+
+/** Out of office in their synced Outlook calendar right now. */
+function mitBoardOutOfOffice($user_id) {
+    global $mysqli;
+    try {
+        return mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM mit_outlook_busy WHERE user_id = " . intval($user_id) . "
+            AND show_as = 'oof' AND starts_at <= NOW() AND ends_at > NOW() LIMIT 1")) > 0;
+    } catch (Throwable $e) {
+        return false; // Outlook sync not set up
+    }
+}
+
+/**
+ * Who would get a ticket on this board next, in turn after the last one: members in the rotation who are active agents,
+ * can see the client, are not on leave today or Out of office now, and hold fewer than the board's limit of its open
+ * tickets. Returns [user id or 0, [user id => why skipped]].
+ */
+function mitBoardNextMember(array $board, $client_id) {
+    global $mysqli;
+    $board_id = intval($board['board_id']);
+    $max = $board['board_assign_max'] === null ? 0 : intval($board['board_assign_max']);
+    $held = [];
+    if ($max) {
+        $sql = mysqli_query($mysqli, "SELECT ticket_assigned_to, COUNT(*) FROM tickets WHERE " . TICKET_OPEN_SQL . " AND ticket_assigned_to > 0
+            AND " . mitBoardSql() . " = $board_id GROUP BY ticket_assigned_to");
+        while ($row = mysqli_fetch_row($sql)) {
+            $held[intval($row[0])] = intval($row[1]);
+        }
+    }
+    $members = [];
+    $sql = mysqli_query($mysqli, "SELECT u.user_id FROM mit_board_members m JOIN users u ON u.user_id = m.user_id
+        WHERE m.board_id = $board_id AND m.member_rotation = 1 AND u.user_type = 1 AND u.user_status = 1 AND u.user_archived_at IS NULL ORDER BY u.user_id");
+    while ($row = mysqli_fetch_row($sql)) {
+        $members[] = intval($row[0]);
+    }
+    // In turn: those after the last one, then from the start
+    $last = intval($board['board_assign_last']);
+    $after = array_values(array_filter($members, function ($id) use ($last) { return $id > $last; }));
+    $order = array_merge($after, array_values(array_diff($members, $after)));
+    $skipped = [];
+    foreach ($order as $user_id) {
+        if (!mitAgentCanSeeClient($user_id, $client_id)) {
+            $skipped[$user_id] = 'cannot see the client';
+        } elseif ($max && ($held[$user_id] ?? 0) >= $max) {
+            $skipped[$user_id] = "holds $max open tickets here";
+        } elseif (mitBoardOnLeaveToday($user_id)) {
+            $skipped[$user_id] = 'on leave today';
+        } elseif (mitBoardOutOfOffice($user_id)) {
+            $skipped[$user_id] = 'out of office';
+        } else {
+            return [$user_id, $skipped];
+        }
+    }
+    return [0, $skipped];
+}
+
+/**
+ * Hand an unassigned open ticket to the next member of its board, when the board deals tickets out (round-robin) - in
+ * working hours only if the board says so (the cron job deals out the ones that waited). Returns the agent's id, or 0.
+ */
+function mitBoardAutoAssign($ticket_id) {
+    global $mysqli, $session_name, $session_user_id;
+    $ticket_id = intval($ticket_id);
+    if (!mitBoardsPart2Ready() || !$ticket_id) {
+        return 0;
+    }
+    $board_id = mitBoardOf($ticket_id);
+    // Read afresh, not from mitBoards() - a cron run lasts, and settings or who got the last one change meanwhile
+    $dealing = function () use ($mysqli, $board_id) {
+        $board = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT * FROM mit_boards WHERE board_id = $board_id AND board_archived_at IS NULL"));
+        return $board && $board['board_assign'] === 'round_robin' && (!intval($board['board_assign_hours']) || mitBoardWorkingNow()) ? $board : null;
+    };
+    if (!$dealing()) {
+        return 0;
+    }
+    $lock = "mit_board_assign_$board_id";
+    if (!mitLock($lock)) {
+        return 0;
+    }
+    $given = 0;
+    try {
+        $ticket = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT ticket_client_id FROM tickets WHERE ticket_id = $ticket_id AND ticket_assigned_to = 0
+            AND " . TICKET_OPEN_SQL . (function_exists('mitServiceTicketsAnd') ? mitServiceTicketsAnd() : '')));
+        $board = $ticket ? $dealing() : null;
+        if ($board) {
+            [$user_id] = mitBoardNextMember($board, intval($ticket['ticket_client_id']));
+            if ($user_id) {
+                // ITFlow's own reassign (history, internal note, the agent's notification and email), signed by the board
+                [$old_name, $old_id] = [$session_name ?? '', $session_user_id ?? 0];
+                $session_name = escapeSql("Auto-assign ($board[board_name])");
+                $session_user_id = 0;
+                [$ok] = ticketChangeAssignee($ticket_id, $user_id);
+                [$session_name, $session_user_id] = [$old_name, $old_id];
+                if ($ok) {
+                    mysqli_query($mysqli, "UPDATE mit_boards SET board_assign_last = $user_id WHERE board_id = $board_id");
+                    $given = $user_id;
+                }
+            }
+        }
+    } finally {
+        mitUnlock($lock);
+    }
+    return $given;
+}
+
+/**
+ * The cron job: unassigned open tickets on round-robin boards, placed there since it was turned on (so the backlog is not
+ * dealt out), get the next member - tickets that came in after hours, or when everyone was skipped. Returns how many.
+ */
+function mitBoardAssignSweep() {
+    global $mysqli;
+    if (!mitBoardsPart2Ready()) {
+        return 0;
+    }
+    $ids = implode(',', array_map('intval', array_column(mysqli_fetch_all(mysqli_query($mysqli, "SELECT board_id FROM mit_boards
+        WHERE board_assign = 'round_robin' AND board_archived_at IS NULL")), 0)));
+    if ($ids === '') {
+        return 0;
+    }
+    $default = intval(mitBoardDefaultId());
+    $sql = mysqli_query($mysqli, "SELECT tickets.ticket_id FROM tickets LEFT JOIN mit_ticket_boards b ON b.ticket_id = tickets.ticket_id
+        JOIN mit_boards mb ON mb.board_id = COALESCE(b.board_id, $default)
+        WHERE mb.board_id IN ($ids) AND tickets.ticket_assigned_to = 0 AND " . TICKET_OPEN_SQL . "
+        AND mb.board_assign_since IS NOT NULL AND COALESCE(b.board_set_at, tickets.ticket_created_at) >= mb.board_assign_since
+        ORDER BY tickets.ticket_id LIMIT 100");
+    $given = 0;
+    while ($row = mysqli_fetch_row($sql)) {
+        if (mitBoardAutoAssign(intval($row[0]))) {
+            $given++;
+        }
+    }
+    return $given;
+}
+
 /**
  * Admin's "Place open tickets by category": open tickets still on the default board (never moved by hand) go to their
  * category's board. Nobody is notified. Returns how many moved.
@@ -379,6 +578,7 @@ function mitBoardPlaceByCategory() {
             $ticket_id = intval($row[0]);
             mysqli_query($mysqli, "INSERT INTO mit_ticket_boards SET ticket_id = $ticket_id, board_id = " . intval($board_id) . ", board_set_by = 0, board_set_how = 'routed'
                 ON DUPLICATE KEY UPDATE board_id = " . intval($board_id) . ", board_set_at = NOW()");
+            mitBoardLogMove($ticket_id, $default, $board_id, 'placed', 0);
             logTicketHistory($ticket_id, escapeSql('Placed on the ' . (mitBoards()[$board_id]['board_name'] ?? '') . ' board by its category'));
             $moved++;
         }
@@ -532,4 +732,130 @@ function mitBoardMessageAddresses($message) {
         }
     }
     return array_values(array_unique($clean));
+}
+
+/*
+ * ---------- part 2: the dashboard (agent/dashboard.php, functions/dashboard.php) ----------
+ */
+
+/**
+ * The dashboard's board choice: ?board= (all / mine / an id) when picked there, else the one saved for the agent
+ * (mit_user_preferences dashboard.board). '' = every board.
+ */
+function mitBoardDashChoice() {
+    global $session_user_id;
+    static $choice = null;
+    if ($choice !== null) {
+        return $choice;
+    }
+    if (!mitBoardsReady() || count(mitBoards()) < 2) {
+        return $choice = '';
+    }
+    $picked = isset($_GET['board']);
+    $value = (string) ($picked ? $_GET['board'] : mitUserPreference($session_user_id, 'dashboard.board', ''));
+    if ($value === 'mine') {
+        $value = mitBoardsOfUser($session_user_id) ? 'mine' : '';
+    } elseif (!isset(mitBoards()[intval($value)]) || $value === '') {
+        $value = '';
+    } else {
+        $value = (string) intval($value);
+    }
+    if ($picked) {
+        mitSetUserPreference($session_user_id, 'dashboard.board', $value);
+    }
+    return $choice = $value;
+}
+
+/** " AND <ticket's board> IN (...)" for the dashboard's ticket figures, or ''. */
+function mitBoardDashAnd($alias = 'tickets') {
+    global $session_user_id;
+    $choice = mitBoardDashChoice();
+    return $choice === '' ? '' : mitBoardWhere($choice, $session_user_id, $alias);
+}
+
+/** Needs attention: the ticket items open the Tickets list on the same board. */
+function mitBoardDashLinks(array $items) {
+    $choice = mitBoardDashChoice();
+    if ($choice === '') {
+        return $items;
+    }
+    foreach ($items as &$item) {
+        if (strpos($item['url'] ?? '', '/agent/tickets.php') === 0) {
+            $item['url'] .= (strpos($item['url'], '?') === false ? '?' : '&') . 'board=' . urlencode($choice);
+        }
+    }
+    return $items;
+}
+
+/** The board picker beside the greeting (ticket figures on the dashboard follow it). */
+function mitBoardDashPicker() {
+    global $session_user_id;
+    if (!mitBoardsReady() || count(mitBoards()) < 2) {
+        return '';
+    }
+    $choice = mitBoardDashChoice();
+    $options = ['' => 'All boards'] + (mitBoardsOfUser($session_user_id) ? ['mine' => 'My boards'] : []);
+    foreach (mitBoards() as $id => $board) {
+        $options[(string) $id] = $board['board_name'];
+    }
+    $html = '<form class="d-flex align-items-center gap-2" data-mit-dash-board>'
+        . (isset($_GET['period']) ? '<input type="hidden" name="period" value="' . escapeHtml((string) $_GET['period']) . '">' : '')
+        . '<label for="mitDashBoard" class="small text-body-secondary mb-0">Board</label>'
+        . '<select id="mitDashBoard" name="board" class="form-select form-select-sm w-auto" onchange="this.form.submit()" title="Ticket figures on this page follow the board">';
+    foreach ($options as $value => $label) {
+        $html .= '<option value="' . escapeHtml($value === '' ? 'all' : $value) . '"' . ((string) $value === $choice ? ' selected' : '') . '>' . escapeHtml($label) . '</option>';
+    }
+    return $html . '</select></form>';
+}
+
+/** "Your boards": each board the agent is on - open, unassigned and past-SLA tickets, linking to the Tickets list. */
+function mitBoardDashCard() {
+    global $mysqli, $session_user_id;
+    $mine = mitBoardsOfUser($session_user_id);
+    if (!$mine) {
+        return '';
+    }
+    $figures = [];
+    $sql = mysqli_query($mysqli, "SELECT " . mitBoardSql() . " AS b, COUNT(*) AS open, SUM(ticket_assigned_to = 0) AS unassigned,
+        SUM(" . dashboardSlaBreachedSql() . ") AS breached FROM tickets WHERE " . TICKET_OPEN_SQL . clientScopeSql('ticket_client_id')
+        . (function_exists('mitServiceTicketsAnd') ? mitServiceTicketsAnd() : '') . " GROUP BY b");
+    while ($row = mysqli_fetch_assoc($sql)) {
+        $figures[intval($row['b'])] = $row;
+    }
+    $boards = mitBoards();
+    $html = mitBoardStyle() . '<section class="mb-4" data-mit-dash-boards><h2 class="itflow-dash-section mb-2">Your boards</h2>'
+        . '<div class="card mb-0 overflow-hidden"><div class="itflow-dash-rail">';
+    foreach (array_keys($mine) as $id) {
+        if (!isset($boards[$id])) {
+            continue;
+        }
+        $board = $boards[$id];
+        $open = intval($figures[$id]['open'] ?? 0);
+        $unassigned = intval($figures[$id]['unassigned'] ?? 0);
+        $breached = intval($figures[$id]['breached'] ?? 0);
+        $detail = [];
+        if ($unassigned) {
+            $detail[] = "$unassigned unassigned";
+        }
+        if ($breached) {
+            $detail[] = "$breached past SLA";
+        }
+        if (($board['board_assign'] ?? '') === 'round_robin') {
+            $detail[] = 'round-robin';
+        }
+        $html .= '<a href="/agent/tickets.php?board=' . $id . '" class="itflow-dash-rail-item" data-mit-board="' . $id . '" style="--itflow-dash-tone: ' . escapeHtml($board['board_color']) . '">'
+            . '<span class="itflow-dash-rail-count' . ($breached ? ' text-danger-emphasis' : '') . '">' . number_format($open) . '</span>'
+            . '<span class="itflow-dash-rail-label"><i class="fas fa-fw fa-' . escapeHtml($board['board_icon']) . '" style="color:' . escapeHtml($board['board_color']) . '" aria-hidden="true"></i>'
+            . escapeHtml($board['board_name']) . '</span>'
+            . '<span class="itflow-dash-rail-detail">' . escapeHtml($detail ? implode(' · ', $detail) : ($open ? 'All assigned' : 'Nothing open')) . '</span></a>';
+    }
+    return $html . '</div></div></section>';
+}
+
+/** functions/reports.php reportCatalog: the Board Performance report (agent/reports/mit_boards.php) - once M027 has run. */
+function mitBoardReportEntry() {
+    return [
+        'title' => 'Board Performance', 'icon' => 'fa-columns', 'module' => 'module_support', 'feature' => mitBoardsPart2Ready() ? ['ticketing'] : ['mit_boards'],
+        'description' => 'Each service board: tickets in, escalated on and resolved, the typical first reply and time to resolve, SLAs met and what is open now - and where escalations go.',
+    ];
 }

@@ -135,6 +135,7 @@ function reportCatalog() {
                     'title' => 'SLA Performance', 'icon' => 'fa-tachometer-alt', 'module' => 'module_support', 'feature' => ['ticketing'],
                     'description' => 'Response and resolution targets met, by month, priority and agent.',
                 ],
+                'mit_boards' => mitBoardReportEntry(), // Mountaineer IT - functions/mit_boards.php
                 'sla_by_client' => [
                     'title' => 'SLA by Client', 'icon' => 'fa-handshake', 'module' => 'module_support', 'feature' => ['ticketing'],
                     'description' => 'Response and resolution targets met for each client.',

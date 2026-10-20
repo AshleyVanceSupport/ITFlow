@@ -4,6 +4,12 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.83 - 2026-10-20
+- Service boards, part 2 - round-robin: a board can hand its new tickets to its members in turn (Admin > Settings > Boards > Edit > Auto-assign). It skips anyone left out of the turn, on leave today (timesheets), Out of office in Outlook right now, who can't see the client, or who already holds the board's limit of open tickets. Tickets that arrive after working hours wait for the day to start. Only tickets placed on the board after it is turned on are handed out - never the ones already waiting.
+- Dashboard: a Board picker beside the greeting (remembered) - Needs attention, Open tickets by tech and the Opened and resolved chart follow it - and a "Your boards" strip with each of your boards' open, unassigned and past-SLA tickets.
+- New report, Board Performance (Reports > Service Desk): for each board, new tickets, moved in, escalated on, resolved, the typical first reply and time to resolve, SLAs met and what is open now; where escalations go; and each agent on one board. Exports to CSV.
+- Reports: the Export button is visible again with the modern look.
+
 ## 26.10.82 - 2026-10-20
 - Service boards: tickets now sit on a board - Service Desk (where new tickets land), Tier 1, Tier 2, Sysadmin and Sales to start with - separate from their category. Admin > Settings > Boards adds, edits, orders and archives boards and picks each board's members (and who of them gets told about new and moved tickets).
 - Routing: new tickets go on a board by the address the email was sent to, then by client, then by category, else the default board - set under Admin > Settings > Boards > Routing. "Place open tickets by category" moves today's open tickets to their category's board once.

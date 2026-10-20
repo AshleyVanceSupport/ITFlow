@@ -25,6 +25,7 @@ if (!isset($period_options[$period_key])) {
 $period = dashboardPeriod($period_key);
 
 $attention = ($access['tickets'] || $access['sales'] || $access['support']) ? dashboardAttention($access) : null;
+if ($attention && function_exists('mitBoardDashLinks')) { $attention = mitBoardDashLinks($attention); } // Mountaineer IT: service boards
 $my_tickets = $access['tickets'] ? dashboardMyTickets(8) : null;
 $money_cards = $show_money ? dashboardMoneyCards($access, $period) : [];
 $schedule = $access['tickets'] ? dashboardSchedule() : null;
@@ -79,6 +80,7 @@ $tone_text = ['danger' => 'text-danger-emphasis', 'warning' => 'text-warning-emp
         <h1 class="itflow-dash-greeting mb-1"><?= escapeHtml("$greeting, $first_name") ?></h1>
         <p class="text-body-secondary mb-0"><?= escapeHtml($summary) ?></p>
     </div>
+    <?php if ($access['tickets'] && function_exists('mitBoardDashPicker')) { echo mitBoardDashPicker(); } // Mountaineer IT: service boards ?>
     <?php if ($access['financial']) { ?>
         <form class="d-flex align-items-center gap-2">
             <label for="dashboardPeriod" class="small text-body-secondary mb-0">Period</label>
@@ -125,6 +127,8 @@ $tone_text = ['danger' => 'text-danger-emphasis', 'warning' => 'text-warning-emp
 <?php } ?>
 
 <?php if ($my_tickets !== null) { ?>
+
+    <?php if (function_exists('mitBoardDashCard')) { echo mitBoardDashCard(); } // Mountaineer IT: service boards ?>
 
     <h2 class="itflow-dash-section mb-2">Your day</h2>
 

@@ -484,7 +484,22 @@ model: see DEPLOYMENT.md.
   boards - the default when the agent is on one - / each; `mitDispatchBoardChoice`, saved in dispatch.state with `board_techs`),
   queue / Workload / This week filtered (`mitDispatchBoardWhere`), board tag on queue cards, Board field in the Schedule dialog
   (`detail_board` -> `mitBoardMove`), "Only the board's members" in the Agents list (a board with nobody on it shows everyone),
-  side-menu count on the agent's own boards. Part 2 (later): dashboard filter, board report, round-robin.
+  side-menu count on the agent's own boards.
+  Part 2 (M027): `mit_board_moves` (every landing / move - routed, created, moved, escalated, placed, archived - by
+  `mitBoardLogMove`; seeded from mit_ticket_boards). Round-robin per board (`mit_boards.board_assign` / `_max` / `_hours` /
+  `_last` / `_since`, `mit_board_members.member_rotation`; Auto-assign section of the board modal): `mitBoardAutoAssign` after
+  `mitBoardRoute` / `mitBoardMove` when the ticket is unassigned, and `mitBoardAssignSweep` in cron `mit_boards` (tickets placed
+  since it was turned on - never the backlog; ones that waited for Admin > SLA working hours). Next member in turn after
+  `board_assign_last`, skipping: out of the turn, can't see the client, holding the max open on the board, leave today
+  (`mit_time_entries` code_kind leave), Outlook `oof` now (`mit_outlook_busy`); board read fresh under `mitLock`. Uses ITFlow's
+  `ticketChangeAssignee` with `$session_name` = "Auto-assign (<board>)" and `$session_user_id` 0 for the call (cron loads
+  `load_global_settings.php` for its email). Dashboard: `mitBoardDashChoice` (?board=, saved as `mit_user_preferences`
+  dashboard.board), hooks - one line each - in `agent/dashboard.php` (`mitBoardDashLinks` after $attention, `mitBoardDashPicker`
+  before Period, `mitBoardDashCard` "Your boards" before Your day) and `functions/dashboard.php` (`mitBoardDashAnd()` on
+  dashboardAttention's $ticket_scope, dashboardTeamWorkload and dashboardTicketTrend's $scope). Report Board Performance
+  `agent/reports/mit_boards.php` (catalog line `'mit_boards' => mitBoardReportEntry()` in `functions/reports.php` reportCatalog
+  before sla_by_client): per board new / moved in / escalated on / resolved / median first reply and resolve / SLA / open now;
+  escalation flows; agents for one board; CSV.
 - Modern look (Oct 2026): `functions/mit_theme.php`, `css/mit_theme.css`, `js/mit_theme.js`, `css/fonts/inter/` (Inter,
   OFL - from @fontsource-variable/inter, latin + latin-ext) - ours. Colours, type and spacing over ITFlow's own styles, no markup
   changes: slate sidebar with a blue active pill, white top bar (the script switches ITFlow's `.app-header` `data-bs-theme="dark"`

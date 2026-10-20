@@ -9,14 +9,19 @@ require_once '../../includes/modal_header.php';
 $board_id = intval($_GET['board_id'] ?? 0);
 $board = mitBoards(true)[$board_id] ?? null;
 $board_id = $board ? $board_id : 0;
+$part2 = mitBoardsPart2Ready();
 $member_ids = [];
 $notify_ids = [];
+$off_rotation_ids = [];
 if ($board_id) {
-    $sql = mysqli_query($mysqli, "SELECT user_id, member_notify FROM mit_board_members WHERE board_id = $board_id");
+    $sql = mysqli_query($mysqli, "SELECT user_id, member_notify, " . ($part2 ? 'member_rotation' : '1') . " FROM mit_board_members WHERE board_id = $board_id");
     while ($row = mysqli_fetch_row($sql)) {
         $member_ids[] = intval($row[0]);
         if (intval($row[1])) {
             $notify_ids[] = intval($row[0]);
+        }
+        if (!intval($row[2])) {
+            $off_rotation_ids[] = intval($row[0]);
         }
     }
 }
@@ -82,6 +87,39 @@ ob_start();
                 </select>
                 <div class="form-text">Anyone picked here is also made a member. Only tickets of clients they can see.</div>
             </div>
+            <?php if ($part2) { $dealing = ($board['board_assign'] ?? 'off') === 'round_robin'; ?>
+                <div class="col-12"><hr class="my-1"><h6 class="mb-0"><i class="fas fa-sync-alt me-2"></i>Auto-assign</h6></div>
+                <div class="col-md-7">
+                    <label class="form-label">New tickets on this board</label>
+                    <select class="form-select" name="assign">
+                        <option value="off" <?= $dealing ? '' : 'selected' ?>>Off - members pick them up</option>
+                        <option value="round_robin" <?= $dealing ? 'selected' : '' ?>>Round-robin - hand out in turn</option>
+                    </select>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label">Skip a member holding</label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" name="assign_max" min="1" max="999" placeholder="Any" value="<?= $board && $board['board_assign_max'] !== null ? intval($board['board_assign_max']) : '' ?>">
+                        <span class="input-group-text" title="open tickets on this board">open here</span>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="assign_hours" value="1" id="mitBoardAssignHours" <?= !$board || intval($board['board_assign_hours']) ? 'checked' : '' ?>>
+                        <label class="form-check-label" for="mitBoardAssignHours">Only in working hours (Admin &gt; SLA) - tickets that come in after hours are handed out when the day starts</label>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Leave out of the turn</label>
+                    <select class="form-select select2" name="no_rotation[]" multiple data-placeholder="Members who are never handed tickets">
+                        <?php foreach ($agent_list as $user_id => $name) { ?>
+                            <option value="<?= $user_id ?>" <?= in_array($user_id, $off_rotation_ids, true) ? 'selected' : '' ?>><?= escapeHtml($name) ?></option>
+                        <?php } ?>
+                    </select>
+                    <div class="form-text">Only unassigned tickets placed on the board from when this is turned on (or moved here unassigned) are handed out - not the tickets already waiting.
+                        Also skipped: anyone on leave today (timesheets), Out of office in Outlook right now, or who can't see the ticket's client. The agent gets ITFlow's usual "assigned to you" notification.</div>
+                </div>
+            <?php } ?>
         </div>
     </div>
     <div class="modal-footer">
