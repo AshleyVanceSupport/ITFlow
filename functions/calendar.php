@@ -615,7 +615,7 @@ function calendarSourceItems($key, $from, $to, array $opts = []) {
         }
         // Mountaineer IT: agents helping on a ticket, at their own time or the lead's
         $items = array_merge($items, mitTicketTechCalendarItems($from, $to, $client_id, $user_id, $can_move));
-        $items = function_exists('mitProjectCalendarItems') ? mitProjectCalendarItems($items, $opts) : $items; // Mountaineer IT: project bookings in their color
+        $items = function_exists('mitCalendarTicketItems') ? mitCalendarTicketItems($items, $opts) : $items; // Mountaineer IT: left behind, project bookings in their color
     } elseif ($key === 'projects') {
         $sql = mysqli_query($mysqli, "SELECT project_id, project_prefix, project_number, project_name, project_start, project_due, project_client_id, client_name
             FROM projects LEFT JOIN clients ON client_id = project_client_id

@@ -4,6 +4,10 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.85 - 2026-10-20
+- Calendar: a "Left behind" list under To schedule - open tickets booked on a day that has gone without being done or moved on. Drag one onto the calendar to book it again (it keeps its length), or click it for a quick look; its old booking is outlined in red on the calendar.
+- Calendar: To schedule and Left behind both follow whose calendar you are viewing - on "Everyone", To schedule now lists everyone's unbooked tickets (with each agent's name) instead of only yours.
+
 ## 26.10.84 - 2026-10-20
 - Tickets: the List / Board buttons are now List / Kanban, and the kanban view's first tab is "Active" (was "On the board") - so "board" on the Tickets page only means a service board (Service Desk, Tier 1 ...).
 

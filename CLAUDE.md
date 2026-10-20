@@ -119,6 +119,16 @@ model: see DEPLOYMENT.md.
   (`admin/modals/user/user_form.php` + `admin/post/users.php` edit_user) - one-line hooks,
   `mitCalendarColorField()` / `mitSaveAgentColor()`, saved as the `calendar.color` preference;
   `mitAgentColor()` falls back to the automatic color.
+  Left behind (Oct 2026): `functions/mit_left_behind.php` + `agent/js/mit_left_behind.js` (ours, required from mit_calendar.php) -
+  a sidebar list under To schedule of open tickets whose booking ended before today (`mitLeftBehindSql`), following the Whose
+  picker (Everyone = everyone's) and the client; drag a row onto the calendar to book it again (calendar.js's own `drop` /
+  `booked()` - rows carry the To schedule data attributes; the move keeps the booking's length), click for the quick look. Their
+  old bookings get class `mit-left-behind` (dashed red) and "Left behind" in the detail (`mitLeftBehindMark`). Hooks: one line in
+  `agent/calendar.php` after the To schedule card (`mitLeftBehindCard`), `agent/ajax.php?mit_left_behind`, and
+  `functions/calendar.php`'s tickets-source hook now calls `mitCalendarTicketItems` (left behind, then `mitProjectCalendarItems`).
+  To schedule on Everyone lists every agent's unscheduled tickets with the agent named (`agent/ajax.php` calendar_unscheduled:
+  user_id 0 = all assigned, `user_name`; `agent/js/calendar.js` loadUnscheduled sends `agentId()`), and `agent/calendar.php` loads
+  calendar.js through `mitAsset` so browsers fetch our changes.
 - Microsoft 365 app (Oct 2026): `functions/mit_m365.php` (ours) creates ITFlow's own app in the
   tenant (device-code sign-in as Global Admin, Graph CLI client) or takes a hand-made one, with a
   certificate instead of a secret, renewed 30 days before expiry via Graph `addKey`. Settings in

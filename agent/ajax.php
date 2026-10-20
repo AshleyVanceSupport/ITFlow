@@ -2357,6 +2357,7 @@ if (isset($_GET['mit_timer_tickets'])) {
 /*
  * The calendar's To schedule list: an agent's open tickets with no work booked
  * (most urgent first), to drag onto the calendar - in one client, or all.
+ * Mountaineer IT: user_id 0 (the calendar's Everyone) = every agent's.
  */
 if (isset($_GET['calendar_unscheduled'])) {
 
@@ -2366,22 +2367,23 @@ if (isset($_GET['calendar_unscheduled'])) {
         echo json_encode(['tickets' => []]);
         exit;
     }
-    $user_id = intval($_GET['user_id'] ?? 0) ?: $session_user_id;
+    $user_id = intval($_GET['user_id'] ?? $session_user_id); // Mountaineer IT: 0 = everyone's
     $client_id = intval($_GET['client_id'] ?? 0);
     if ($client_id && !hasClientAccess($client_id)) {
         echo json_encode(['tickets' => []]);
         exit;
     }
 
-    $sql = mysqli_query($mysqli, "SELECT tickets.ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_priority, ticket_onsite, ticket_client_id, client_name
+    $sql = mysqli_query($mysqli, "SELECT tickets.ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_priority, ticket_onsite, ticket_client_id, client_name, user_name
         FROM tickets
         LEFT JOIN clients ON client_id = ticket_client_id
+        LEFT JOIN users ON user_id = ticket_assigned_to
         WHERE ticket_schedule IS NULL AND ticket_resolved_at IS NULL AND ticket_closed_at IS NULL AND ticket_archived_at IS NULL
-        AND ticket_assigned_to = $user_id
+        AND " . ($user_id ? "ticket_assigned_to = $user_id" : "ticket_assigned_to > 0") . "
         " . ($client_id ? "AND ticket_client_id = $client_id" : '') . "
         " . clientScopeSql('ticket_client_id') . "
         ORDER BY FIELD(ticket_priority, 'Urgent', 'High', 'Medium', 'Low'), ticket_created_at ASC
-        LIMIT 25");
+        LIMIT " . ($user_id ? 25 : 50));
     $tickets = [];
     while ($row = mysqli_fetch_assoc($sql)) {
         $tickets[] = [
@@ -2391,11 +2393,17 @@ if (isset($_GET['calendar_unscheduled'])) {
             'client' => $row['client_name'] ?: 'Internal',
             'priority' => $row['ticket_priority'],
             'onsite' => intval($row['ticket_onsite']),
+            'agent' => $row['user_name'] ?? '',
         ];
     }
 
     echo json_encode(['tickets' => $tickets]);
     exit;
+}
+
+// Mountaineer IT: the calendar's Left behind list (functions/mit_left_behind.php)
+if (isset($_GET['mit_left_behind'])) {
+    mitLeftBehindAjax();
 }
 
 // Mountaineer IT: save / reset the ticket page layout (functions/mit_ticket_layout.php)

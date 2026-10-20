@@ -277,6 +277,7 @@ function mitCleanCalendarState(array $state) {
 // Repeats by weekday (the third Wednesday, the last Friday) for recurring tickets and events
 require_once __DIR__ . '/mit_recurring.php';
 require_once __DIR__ . '/mit_ticket_techs.php';
+require_once __DIR__ . '/mit_left_behind.php'; // tickets whose booked day has gone
 
 /*
  * ---------- Holidays on the calendar ----------

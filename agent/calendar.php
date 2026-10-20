@@ -151,6 +151,7 @@ foreach ($sources as $key => $source) {
                 </div>
             </div>
         <?php } ?>
+        <?= function_exists('mitLeftBehindCard') ? mitLeftBehindCard() : '' // Mountaineer IT: tickets whose booked day has gone ?>
 
         <div class="card">
             <div class="card-body">
@@ -189,4 +190,4 @@ foreach ($sources as $key => $source) {
 <link href="/libs/fullcalendar/themes/classic/palette.css" rel="stylesheet">
 <script src="/libs/fullcalendar/fullcalendar.global.js"></script>
 <script src="/libs/fullcalendar/themes/classic/global.js"></script>
-<script src="/agent/js/calendar.js"></script>
+<script src="<?= function_exists('mitAsset') ? mitAsset('/agent/js/calendar.js') : '/agent/js/calendar.js' ?>"></script><!-- Mountaineer IT: versioned, we change it -->

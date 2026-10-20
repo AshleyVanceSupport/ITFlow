@@ -502,7 +502,7 @@
         if (hint) {
             hint.textContent = n
                 ? 'Open tickets with no time booked - drag one onto the calendar to book it.'
-                : 'Nothing waiting - every open ticket ' + (agentId() && agentId() !== myId ? 'they have' : 'you have') + ' is booked or needs no visit.';
+                : 'Nothing waiting - every open ticket ' + (!agentId() ? 'anyone has' : (agentId() !== myId ? 'they have' : 'you have')) + ' is booked or needs no visit.';
         }
     }
 
@@ -510,7 +510,7 @@
         if (!unscheduledList) {
             return;
         }
-        itflowGet('ajax.php', {calendar_unscheduled: 1, user_id: agentId() || myId, client_id: clientId}, function (text) {
+        itflowGet('ajax.php', {calendar_unscheduled: 1, user_id: agentId(), client_id: clientId}, function (text) { // Mountaineer IT: Everyone = everyone's
             let tickets = [];
             try {
                 tickets = JSON.parse(text).tickets || [];
@@ -539,7 +539,7 @@
                 line.textContent = ticket.reference + ' ' + ticket.subject;
                 const sub = document.createElement('div');
                 sub.className = 'text-truncate small text-body-secondary';
-                sub.textContent = (clientId ? '' : ticket.client + ' · ') + ticket.priority + (ticket.onsite ? ' · Onsite' : '');
+                sub.textContent = (clientId ? '' : ticket.client + ' · ') + (!agentId() && ticket.agent ? ticket.agent + ' · ' : '') + ticket.priority + (ticket.onsite ? ' · Onsite' : '');
                 text.appendChild(line);
                 text.appendChild(sub);
                 item.appendChild(text);
