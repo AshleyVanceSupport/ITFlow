@@ -287,15 +287,21 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
             return true;
         }
 
+        // Mountaineer IT: a sender who is not a contact of this client, a watcher or one of our agents is a stranger - anyone
+        // can put [TCK-n] in a subject (the numbers count up). Their mail is still kept as an internal note, but it does not
+        // reopen the ticket, its attachments are held back (left in the mailbox) and the agent's email is text only.
+        $stranger = false;
         if (empty($ticket_contact_email) || $ticket_contact_email !== $from_email) {
             $from_email_esc2 = mysqli_real_escape_string($mysqli, $from_email);
             $row2 = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT contact_id FROM contacts WHERE contact_email = '$from_email_esc2' AND contact_client_id = $client_id LIMIT 1"));
             if ($row2) {
                 $ticket_reply_contact = intval($row2['contact_id']);
             } else {
+                $stranger = !mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id AND watcher_email = '$from_email_esc2'
+                    UNION SELECT 1 FROM users WHERE user_email = '$from_email_esc2' AND user_type = 1 AND user_archived_at IS NULL"));
                 $ticket_reply_type = 'Internal';
                 $ticket_reply_contact = '0';
-                $message = "<b>WARNING: Contact email mismatch</b><br>$message";
+                $message = ($stranger ? "<b>WARNING: From someone who is not a contact, watcher or agent - the ticket was not reopened" . ($attachments ? ' and ' . count($attachments) . ' attachment(s) were held back - see the email in the support mailbox' : '') . "</b><br>" : "<b>WARNING: Contact email mismatch</b><br>") . $message;
                 $message_esc = mysqli_real_escape_string($mysqli, $message);
             }
         }
@@ -306,7 +312,7 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
         $ticket_dir = "../uploads/tickets/" . $ticket_id . "/";
         mkdirMissing($ticket_dir);
 
-        foreach ($attachments as $attachment) {
+        foreach ($stranger ? [] : $attachments as $attachment) {
             $att_name = $attachment['name'];
             $att_extension = strtolower(pathinfo($att_name, PATHINFO_EXTENSION));
 
@@ -335,18 +341,23 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
             if ($ticket_assigned_to) {
                 $tech_sql = mysqli_query($mysqli, "SELECT user_email, user_name FROM users WHERE user_id = $ticket_assigned_to LIMIT 1");
                 $tech_row = mysqli_fetch_assoc($tech_sql);
-                $tech_email = escapeSql($tech_row['user_email']);
-                $tech_name = escapeSql($tech_row['user_name']);
+                // Built from the values as stored and escaped once below (they were escaped twice, so \' showed in the mail)
+                $tech_email = $tech_row['user_email'];
+                $tech_name = $tech_row['user_name'];
+                $mail_subject_text = $row['ticket_subject'];
+                $mail_client_name = htmlspecialchars((string) $row['client_name'], ENT_QUOTES);
+                // A stranger's mail reaches the agent as text only
+                $mail_message = $stranger ? nl2br(htmlspecialchars(trim(strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\n", $message))), ENT_QUOTES)) : $message;
 
-                $email_subject = "$config_app_name - Ticket updated - [$config_ticket_prefix$ticket_number] $ticket_subject";
-                $email_body    = "Hello $tech_name,<br><br>A new reply has been added to the below ticket.<br><br>Client: $client_name<br>Ticket: $config_ticket_prefix$ticket_number<br>Subject: $ticket_subject<br>Link: https://$config_base_url/agent/ticket.php?ticket_id=$ticket_id$client_uri<br><br>--------------------------------<br>$message_esc";
+                $email_subject = "$config_app_name - Ticket updated - [$config_ticket_prefix$ticket_number] $mail_subject_text";
+                $email_body    = "Hello " . htmlspecialchars((string) $tech_name, ENT_QUOTES) . ",<br><br>A new reply has been added to the below ticket.<br><br>Client: $mail_client_name<br>Ticket: $config_ticket_prefix$ticket_number<br>Subject: " . htmlspecialchars((string) $mail_subject_text, ENT_QUOTES) . "<br>Link: https://$config_base_url/agent/ticket.php?ticket_id=$ticket_id$client_uri<br><br>--------------------------------<br>$mail_message";
 
                 $data = [
                     [
                         'from' => $config_ticket_from_email,
                         'from_name' => $config_ticket_from_name,
-                        'recipient' => $tech_email,
-                        'recipient_name' => $tech_name,
+                        'recipient' => mysqli_real_escape_string($mysqli, $tech_email),
+                        'recipient_name' => mysqli_real_escape_string($mysqli, $tech_name),
                         'subject' => mysqli_real_escape_string($mysqli, $email_subject),
                         'body' => mysqli_real_escape_string($mysqli, $email_body)
                     ]
@@ -356,12 +367,16 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
             }
         }
 
-        mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 2, ticket_resolved_at = NULL WHERE ticket_id = $ticket_id AND ticket_client_id = $client_id LIMIT 1");
-        resetTicketResolutionSla($ticket_id);
+        if ($stranger) {
+            logTicketHistory($ticket_id, "$from_email_esc (not a contact, watcher or agent) emailed - kept as an internal note, the ticket was not reopened");
+        } else {
+            mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 2, ticket_resolved_at = NULL WHERE ticket_id = $ticket_id AND ticket_client_id = $client_id LIMIT 1");
+            resetTicketResolutionSla($ticket_id);
 
-        // Only record the reopen when the ticket was not already open
-        if (intval($ticket_status) !== 2) {
-            logTicketHistory($ticket_id, "$from_email_esc replied by email, reopening the ticket");
+            // Only record the reopen when the ticket was not already open
+            if (intval($ticket_status) !== 2) {
+                logTicketHistory($ticket_id, "$from_email_esc replied by email, reopening the ticket");
+            }
         }
 
         logAudit("Ticket", "Edit", "Email parser: Client contact $from_email_esc updated ticket $config_ticket_prefix$ticket_number_esc ($subject)", $client_id, $ticket_id);

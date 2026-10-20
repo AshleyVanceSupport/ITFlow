@@ -96,6 +96,79 @@ function mitModulesSave(array $post) {
 }
 
 /**
+ * Sign-ins end when the password or MFA changes: each session keeps a fingerprint of the user's password hash and MFA
+ * secret (mitSessionStamp), checked on every page (includes/load_user_session.php, client/includes/check_login.php).
+ * A password reset - by an admin, the "reset all passwords" button or the person - or MFA turned on / off changes it, so
+ * every other sign-in of that person ends at its next click. The session that made its own change is restamped
+ * (mitSessionRestamp) and carries on. No table of its own - the fingerprint comes from ITFlow's users row.
+ */
+function mitSessionStamp($user_id) {
+    global $mysqli;
+    $row = mysqli_fetch_row(mysqli_query($mysqli, "SELECT user_password, user_token FROM users WHERE user_id = " . intval($user_id)));
+    return $row ? substr(hash('sha256', (string) $row[0] . '|' . (string) $row[1]), 0, 32) : '';
+}
+
+/** True while this session's sign-in still stands (the first page after signing in takes the fingerprint). */
+function mitSessionCheck($user_id) {
+    $stamp = mitSessionStamp($user_id);
+    if (!isset($_SESSION['mit_session_stamp'])) {
+        $_SESSION['mit_session_stamp'] = $stamp;
+        return true;
+    }
+    return hash_equals((string) $_SESSION['mit_session_stamp'], $stamp);
+}
+
+/** After the signed-in person changed their own password or MFA: this session carries on. */
+function mitSessionRestamp($user_id) {
+    if (session_status() === PHP_SESSION_ACTIVE && intval($_SESSION['user_id'] ?? 0) === intval($user_id)) {
+        $_SESSION['mit_session_stamp'] = mitSessionStamp($user_id);
+    }
+}
+
+/**
+ * HTML from somewhere we don't control (an AI model's answer, written from ticket text a customer typed) made safe to
+ * show: the ticket page's HTMLPurifier rules, without the class that makes our scripts load a pop-up from a link.
+ */
+function mitPurifyHtml($html) {
+    static $purifier = null;
+    if ($purifier === null) {
+        require_once __DIR__ . '/../libs/htmlpurifier/HTMLPurifier.standalone.php';
+        $config = HTMLPurifier_Config::createDefault();
+        $config->set('Cache.DefinitionImpl', null);
+        $config->set('URI.AllowedSchemes', ['data' => true, 'src' => true, 'http' => true, 'https' => true]);
+        $config->set('Attr.ForbiddenClasses', ['ajax-modal']);
+        $purifier = new HTMLPurifier($config);
+    }
+    return $purifier->purify((string) $html);
+}
+
+/** The tenant (tid) of a Microsoft access token, read from its payload (it came straight from Microsoft), or ''. */
+function mitPortalEntraTenant($access_token) {
+    $parts = explode('.', (string) $access_token);
+    $payload = isset($parts[1]) ? json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true) : null;
+    $tid = is_array($payload) ? (string) ($payload['tid'] ?? '') : '';
+    return preg_match('/^[0-9a-f-]{36}$/i', $tid) ? strtolower($tid) : '';
+}
+
+/**
+ * May a contact of this client sign in to the portal from this Microsoft 365 organization? The first Entra sign-in for
+ * a client records its organization (mit_settings portal_entra_tenant_<client>); later ones must come from the same one.
+ * An admin clears the setting to change it. No tenant read = refused.
+ */
+function mitPortalEntraTenantOk($client_id, $tenant) {
+    $client_id = intval($client_id);
+    if ($tenant === '' || !$client_id) {
+        return false;
+    }
+    $known = (string) mitSetting("portal_entra_tenant_$client_id", '');
+    if ($known === '') {
+        mitSetSetting("portal_entra_tenant_$client_id", $tenant);
+        return true;
+    }
+    return hash_equals($known, $tenant);
+}
+
+/**
  * The system mail From address and name, read from the settings as stored. Not the $config_mail_from_* globals: a
  * cron job before ours (nightly_tasks) SQL-escapes those in the shared scope, so "O'Brien" would go out as "O\'Brien".
  */

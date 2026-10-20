@@ -646,6 +646,7 @@ if (isset($_POST['edit_profile'])) {
     if (!empty($new_password)) {
         $password_hash = password_hash($new_password, PASSWORD_DEFAULT);
         mysqli_query($mysqli, "UPDATE users SET user_password = '$password_hash' WHERE user_id = $session_user_id");
+        mitSessionRestamp($session_user_id); // Mountaineer IT: other sign-ins end, this one carries on
 
         // Logging
         logAudit("Contact", "Edit", "Client contact $session_contact_name edited their profile/password in the client portal", $session_client_id, $session_contact_id);
@@ -876,6 +877,18 @@ if (isset($_GET['add_payment_by_provider'])) {
         redirect();
     }
 
+    // One payment per invoice at a time (two quick clicks were two charges): held until the end of this request, and the
+    // invoice's state read again inside it - the first payment has made it Paid by then
+    if (!mitLock("invoice_pay_$invoice_id", 30)) {
+        flashAlert("A payment for this invoice is already going through - check it in a moment", 'error');
+        redirect();
+    }
+    $invoice_status_now = (string) getFieldById('invoices', $invoice_id, 'invoice_status');
+    if ($invoice_status_now !== 'Sent' && $invoice_status_now !== 'Viewed') {
+        flashAlert("This invoice is already paid or no longer open for payment", 'error');
+        redirect();
+    }
+
     // Initialize Stripe
     require_once __DIR__ . '/../includes/stripe_init.php';
     $stripe = new \Stripe\StripeClient($private_key);
@@ -899,7 +912,8 @@ if (isset($_GET['add_payment_by_provider'])) {
                 'itflow_invoice_number' => $invoice_prefix . $invoice_number,
                 'itflow_invoice_id' => $invoice_id,
             ]
-        ]);
+        // Stripe answers the same request (within a day) with the same payment instead of charging again
+        ], ['idempotency_key' => "itflow-saved-card-$invoice_id-" . intval(round($balance_to_pay * 100)) . '-' . $saved_payment_method]);
 
         // Get details from PI
         $pi_id = escapeSql($payment_intent->id);

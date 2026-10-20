@@ -15,8 +15,14 @@ require_once "../includes/inc_set_timezone.php";
 $session_ip = escapeSql(getIP());
 $session_user_agent = escapeSql($_SERVER['HTTP_USER_AGENT']);
 
-$sql_settings = mysqli_query($mysqli, "SELECT config_azure_client_id, config_azure_client_secret FROM settings WHERE company_id = 1");
+$sql_settings = mysqli_query($mysqli, "SELECT config_azure_client_id, config_azure_client_secret, config_client_portal_enable FROM settings WHERE company_id = 1");
 $settings = mysqli_fetch_assoc($sql_settings);
+
+// No portal, no portal sign-in
+if (intval($settings['config_client_portal_enable'] ?? 0) !== 1) {
+    header("Location: ../login.php");
+    exit();
+}
 
 $client_id = $settings['config_azure_client_id'];
 $client_secret = $settings['config_azure_client_secret'];
@@ -98,6 +104,8 @@ if (isset($_GET['code']) || isset($_GET['error'])) {
         http_build_query($params)
     );
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     #curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0); // DEBUG ONLY - WAMP
 
     $access_token_response = json_decode(curl_exec($ch), 1);
@@ -111,6 +119,8 @@ if (isset($_GET['code']) || isset($_GET['error'])) {
             'Content-type: application/json'));
         curl_setopt($ch, CURLOPT_URL, "https://graph.microsoft.com/v1.0/me/");
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
         #curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0); // DEBUG ONLY - WAMP
 
         $msgraph_response = json_decode(curl_exec($ch), 1);
@@ -132,6 +142,7 @@ if (isset($_GET['code']) || isset($_GET['error'])) {
                 WHERE user_email = '$upn'
                 AND user_archived_at IS NULL
                 AND client_archived_at IS NULL
+                AND contact_archived_at IS NULL
                 AND user_type = 2
                 AND user_status = 1
                 LIMIT 1"
@@ -143,6 +154,16 @@ if (isset($_GET['code']) || isset($_GET['error'])) {
             $contact_id = intval($row['contact_id']);
             $user_email = escapeSql($row['user_email']);
             $user_auth_method = escapeSql($row['user_auth_method']);
+
+            // Mountaineer IT: the Microsoft 365 organization signing in - any organization can sign in through this
+            // app, and only the email was matched. A client's contacts sign in from the organization the first of them used.
+            $entra_tenant = mitPortalEntraTenant($access_token_response['access_token'] ?? '');
+            if ($user_auth_method == 'azure' && !mitPortalEntraTenantOk($client_id, $entra_tenant)) {
+                logAudit("Client Login", "Failed", "Client contact $upn tried to sign in via Entra from another Microsoft 365 organization", $client_id, $user_id);
+                $_SESSION['login_message'] = 'Your Microsoft account is not from the organization this portal knows for your company - ask us to check your account.';
+                header("Location: ../login.php");
+                exit();
+            }
 
             if ($user_auth_method == 'azure') {
 

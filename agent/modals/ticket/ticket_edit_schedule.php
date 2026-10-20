@@ -26,7 +26,10 @@ if (!isset($schedule_lengths[$schedule_minutes])) {
 $schedule_agents = [];
 $sql_schedule_agents = mysqli_query($mysqli, "SELECT user_id, user_name, user_avatar FROM users WHERE user_type = 1 AND user_status = 1 AND user_archived_at IS NULL ORDER BY user_name");
 while ($agent_row = mysqli_fetch_assoc($sql_schedule_agents)) {
-    $schedule_agents[] = $agent_row;
+    // Only agents who can see this client (the save refuses the others)
+    if (intval($agent_row['user_id']) === $schedule_tech || mitAgentCanSeeClient($agent_row['user_id'], $row['ticket_client_id'])) {
+        $schedule_agents[] = $agent_row;
+    }
 }
 
 ob_start();

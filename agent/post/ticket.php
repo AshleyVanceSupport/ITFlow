@@ -1306,6 +1306,7 @@ if (isset($_POST['change_client_ticket'])) {
     mysqli_query($mysqli, "UPDATE tickets SET ticket_client_id = $client_id, ticket_contact_id = $contact_id, ticket_asset_id = 0, ticket_location_id = 0,
         ticket_vendor_id = $vendor_id, ticket_project_id = $project_id WHERE ticket_id = $ticket_id LIMIT 1");
     mysqli_query($mysqli, "DELETE FROM ticket_assets WHERE ticket_id = $ticket_id");
+    mitTicketClientMoved($ticket_id, $client_id); // Mountaineer IT: the old client's watchers and remembered recipients go
     applyTicketSla($ticket_id);
 
     $old_client_name = $old_client_id ? (string) getFieldById('clients', $old_client_id, 'client_name') : 'no client';

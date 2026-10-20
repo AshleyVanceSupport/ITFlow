@@ -153,6 +153,7 @@ if (isset($_POST['enable_mfa'])) {
     if ($token !== '' && $verify_code !== '' && TokenAuth6238::verify($token, $verify_code, 1)) {
 
         mysqli_query($mysqli, "UPDATE users SET user_token = '" . escapeSql($token) . "' WHERE user_id = $session_user_id");
+        mitSessionRestamp($session_user_id); // Mountaineer IT: other sign-ins end, this one carries on
 
         // Delete any existing MFA tokens - these browsers should be re-validated
         mysqli_query($mysqli, "DELETE FROM remember_tokens WHERE remember_token_user_id = $session_user_id");

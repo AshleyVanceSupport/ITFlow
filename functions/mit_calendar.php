@@ -161,6 +161,18 @@ function mitScheduleShortText($start, $end = null) {
 }
 
 /**
+ * A clashing booking as the agent scheduling may see it: "TCK-12 - Subject", or only that there is one when it is for a
+ * client they can't see (agents restricted to some clients must not learn other clients' tickets this way).
+ */
+function mitConflictWhat(array $row) {
+    $client_id = intval($row['ticket_client_id'] ?? 0);
+    if ($client_id && function_exists('hasClientAccess') && !hasClientAccess($client_id)) {
+        return 'Another booking (a client you can\'t see)';
+    }
+    return ticketReference($row) . ' - ' . $row['ticket_subject'];
+}
+
+/**
  * The agent's other open booked work that overlaps $start - $end, as plain text lines - as the lead
  * or helping on a ticket.
  * Overlap uses each booking's real end (or the default length when it has none). Their
@@ -177,7 +189,7 @@ function mitScheduleConflicts($user_id, $start, $end, $ticket_id = 0) {
     $end = escapeSql(mitTicketScheduleEnd($start, $end));
     $default_minutes = intval(CALENDAR_TICKET_MINUTES);
     $conflicts = [];
-    $sql = mysqli_query($mysqli, "SELECT ticket_prefix, ticket_number, ticket_schedule, ticket_schedule_end, ticket_subject FROM tickets
+    $sql = mysqli_query($mysqli, "SELECT ticket_prefix, ticket_number, ticket_schedule, ticket_schedule_end, ticket_subject, ticket_client_id FROM tickets
         WHERE ticket_assigned_to = $user_id AND ticket_id <> $ticket_id
         AND ticket_resolved_at IS NULL AND ticket_closed_at IS NULL AND ticket_archived_at IS NULL
         AND ticket_schedule IS NOT NULL
@@ -186,8 +198,7 @@ function mitScheduleConflicts($user_id, $start, $end, $ticket_id = 0) {
         ORDER BY ticket_schedule");
     while ($row = mysqli_fetch_assoc($sql)) {
         $row_end = mitTicketScheduleEnd($row['ticket_schedule'], $row['ticket_schedule_end']);
-        $conflicts[] = ticketReference($row) . ' - ' . $row['ticket_subject'] . ' @ '
-            . date('g:ia', strtotime($row['ticket_schedule'])) . '-' . date('g:ia', strtotime($row_end));
+        $conflicts[] = mitConflictWhat($row) . ' @ ' . date('g:ia', strtotime($row['ticket_schedule'])) . '-' . date('g:ia', strtotime($row_end));
     }
     // Tickets they are helping on (functions/mit_ticket_techs.php)
     $conflicts = array_merge($conflicts, mitTicketTechConflicts($user_id, $start, $end, $ticket_id));

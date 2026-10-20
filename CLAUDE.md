@@ -75,6 +75,18 @@ model: see DEPLOYMENT.md.
   `client/ticket_attachment.php` refuses internal / archived replies' files, `verifyContactTicketAccess` "Any";
   `cron/cron.php` records a job stopped with a non-zero code as Failed (parser connect error passed on);
   autopay includes Partial invoices (`cron/nightly_tasks.php`); `api/v1/clients/delete.php` uploads path.
+  Audit B (Oct 20, 26.10.73): `.htaccess` security headers (nosniff, Referrer-Policy same-origin, CSP frame-ancestors 'self',
+  HSTS on HTTPS); `api/v1/validate_api_key.php` takes the key from `X-API-Key` / `Authorization: Bearer` (getallheaders
+  fallback) or the POST body and refuses `?api_key=` (var_dump gone); trips need Financial edit and an active agent
+  (`agent/post/trip.php`, `trip_model.php`); `bulk_edit_expense_client` checks each expense's current client; portal
+  `client/includes/check_login.php` ends sessions of archived clients / contacts and when the portal is off;
+  `client/login_microsoft.php` (portal on, contact not archived, curl timeouts, tenant hook); saved-card payment
+  (`client/post.php`) under `mitLock("invoice_pay_<id>")` with the status re-read and a Stripe idempotency key; AI summary /
+  document template output through `mitPurifyHtml` (`agent/ajax.php`); API asset / contact models keep only the client's own
+  location / contact / network / vendor ids; `admin/post/roles.php` refuses removing admin from the last admin role;
+  `cron/ticket_email_parser.php` addReply: strangers (not contact / watcher / agent) give an internal note only - no reopen,
+  no attachments, text-only tech mail - and the tech mail is escaped once; `functions/security.php`
+  `user_encryption_session_ciphertext ?? ''`.
   These fixes carry no "Mountaineer IT" marker (they are plain bug fixes, meant to match upstream's
   eventual fix) - find them with `git log`.
   When an upstream release fixes the same thing, resolve conflicts in favour of upstream.
@@ -453,6 +465,16 @@ model: see DEPLOYMENT.md.
   invite only after the reassign; our cron mails use `mitMailFrom()` (globals are escaped by nightly_tasks);
   `scripts/install.sh` runs setup before enabling the site, keeps `https_only` with `--ssl none` (mod_remoteip for private
   proxies, `SetEnvIf X-Forwarded-Proto`).
+  Audit B (26.10.73), ours: sign-ins end when the password or MFA changes - `mitSessionStamp` / `mitSessionCheck` /
+  `mitSessionRestamp` (mit_common; a fingerprint of `user_password` + `user_token` in `$_SESSION['mit_session_stamp']`, no
+  table), hooks in `includes/load_user_session.php`, `client/includes/check_login.php`, `functions/user.php` userSetPassword /
+  userResetMfa, `agent/user/post/profile.php` (MFA on), `client/post.php` (own password). Portal Entra sign-in is tied to the
+  client's Microsoft 365 organization (`mitPortalEntraTenant` / `mitPortalEntraTenantOk`, `mit_settings`
+  portal_entra_tenant_<client>, first sign-in records it - delete the row to change it). Moving a ticket to another client
+  (`change_client_ticket`, `mitDispatchSaveDetails`) calls `mitTicketClientMoved` (remembered recipients go, watchers who are
+  not agents or the new client's contacts go). Schedule conflicts show "Another booking (a client you can't see)"
+  (`mitConflictWhat`); the schedule modal lists only agents who can see the client. `mitReimbTripLocked` stops trips made by
+  reimbursements being changed in Trips.
 - Review fixes (Oct 2026): `functions/mit_common.php` (ours, required first in `functions.php`) - shared
   helpers: `mitMailBody` / `mitSqlHtml` (HTML for SQL without escapeSql's strip_tags), `mitProductIsTangible`,
   module switches (`mitModuleOn`, `mitModuleRequire` for pages/modals, `mitModuleGuard` for handler files,

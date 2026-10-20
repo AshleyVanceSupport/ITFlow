@@ -554,7 +554,7 @@ function mitTicketTechConflicts($user_id, $start, $end, $ticket_id = 0) {
     $default_minutes = intval(CALENDAR_TICKET_MINUTES);
     $s = MIT_HELPER_START_SQL;
     $e = MIT_HELPER_END_SQL;
-    $sql = mysqli_query($mysqli, "SELECT ticket_prefix, ticket_number, ticket_subject, $s AS start, $e AS end FROM mit_ticket_techs tt
+    $sql = mysqli_query($mysqli, "SELECT ticket_prefix, ticket_number, ticket_subject, ticket_client_id, $s AS start, $e AS end FROM mit_ticket_techs tt
         JOIN tickets ON tickets.ticket_id = tt.ticket_id
         WHERE tt.user_id = $user_id AND tt.ticket_id <> $ticket_id AND tt.user_id <> ticket_assigned_to
         AND ticket_resolved_at IS NULL AND ticket_closed_at IS NULL AND ticket_archived_at IS NULL
@@ -564,7 +564,7 @@ function mitTicketTechConflicts($user_id, $start, $end, $ticket_id = 0) {
     $lines = [];
     while ($row = mysqli_fetch_assoc($sql)) {
         $row_end = mitTicketScheduleEnd($row['start'], $row['end']);
-        $lines[] = ticketReference($row) . ' - ' . $row['ticket_subject'] . ' (helping) @ ' . date('g:ia', strtotime($row['start'])) . '-' . date('g:ia', strtotime($row_end));
+        $lines[] = mitConflictWhat($row) . ' (helping) @ ' . date('g:ia', strtotime($row['start'])) . '-' . date('g:ia', strtotime($row_end));
     }
     return $lines;
 }

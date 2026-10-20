@@ -12,6 +12,9 @@ if (isset($_POST['add_trip'])) {
 
     validateCSRFToken();
 
+    // The same access the trip modals need (logging trips under any agent's name is a finance job)
+    enforceUserPermission('module_financial', 2);
+
     require_once 'trip_model.php';
 
     $client_id = intval($_POST['client_id']);
@@ -36,9 +39,17 @@ if (isset($_POST['edit_trip'])) {
 
     validateCSRFToken();
 
+    enforceUserPermission('module_financial', 2);
+
     require_once 'trip_model.php';
 
     $trip_id = intval($_POST['trip_id']);
+
+    // Mountaineer IT: a trip made by a reimbursement is changed there, so payroll and the trip stay the same
+    if (mitReimbTripLocked($trip_id)) {
+        flashAlert('This trip belongs to mileage logged for reimbursement - change it in the ticket\'s Reimbursements box.', 'error');
+        redirect();
+    }
 
     // Check the client the trip belongs to now, not just the one submitted
     $existing_client_id = intval(getFieldById('trips', $trip_id, 'trip_client_id'));
@@ -69,6 +80,12 @@ if (isset($_GET['delete_trip'])) {
     enforceUserPermission('module_financial', 3);
 
     $trip_id = intval($_GET['delete_trip']);
+
+    // Mountaineer IT: a trip made by a reimbursement is removed there
+    if (mitReimbTripLocked($trip_id)) {
+        flashAlert('This trip belongs to mileage logged for reimbursement - remove it in the ticket\'s Reimbursements box.', 'error');
+        redirect();
+    }
 
     // Get Trip Info and Client ID for logging
     $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT trip_client_id, trip_destination, trip_source FROM trips WHERE trip_id = $trip_id"));

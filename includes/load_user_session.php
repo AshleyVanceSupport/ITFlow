@@ -51,6 +51,13 @@ if ($session_user_archived_at !== null) {
     redirect("/login.php");
 }
 
+// Mountaineer IT: the password or MFA changed since this sign-in (a reset, the incident-response button) - sign in again
+if (function_exists('mitSessionCheck') && !mitSessionCheck($session_user_id)) {
+    session_unset();
+    session_destroy();
+    redirect("/login.php");
+}
+
 // Load user client permissions (allow + deny lists)
 $user_client_access_sql = "SELECT client_id, permission_type FROM user_client_permissions WHERE user_id = $session_user_id";
 $user_client_access_result = mysqli_query($mysqli, $user_client_access_sql);

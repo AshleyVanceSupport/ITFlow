@@ -244,8 +244,15 @@ if (isset($_POST['bulk_edit_expense_client'])) {
         foreach($_POST['expense_ids'] as $expense_id) {
             $expense_id = intval($expense_id);
 
-            // Get Expense Details for Logging
-            $expense_description = escapeSql(getFieldById('expenses', $expense_id, 'expense_description'));
+            // Get Expense Details for Logging - and the client it is with now, which this agent must be able to see too
+            $expense_row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT expense_description, expense_client_id FROM expenses WHERE expense_id = $expense_id"));
+            if (!$expense_row) {
+                continue;
+            }
+            if (intval($expense_row['expense_client_id'])) {
+                enforceClientAccess(intval($expense_row['expense_client_id']));
+            }
+            $expense_description = escapeSql($expense_row['expense_description']);
 
             mysqli_query($mysqli,"UPDATE expenses SET expense_client_id = $client_id WHERE expense_id = $expense_id");
 

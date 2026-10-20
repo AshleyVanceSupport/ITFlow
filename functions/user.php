@@ -205,6 +205,7 @@ function userSetPassword($user_id, $password) {
     $hash = escapeSql(password_hash((string) $password, PASSWORD_DEFAULT));
     $ciphertext = escapeSql(encryptUserSpecificKey((string) $password));
     mysqli_query($mysqli, "UPDATE users SET user_password = '$hash', user_specific_encryption_ciphertext = '$ciphertext' WHERE user_id = " . intval($user_id));
+    mitSessionRestamp($user_id); // Mountaineer IT: their other sign-ins end, this one (their own change) carries on
 }
 
 /** Turn an agent's MFA off - and forget the browsers it trusted, which have to sign in afresh. */
@@ -213,6 +214,7 @@ function userResetMfa($user_id) {
     $user_id = intval($user_id);
     mysqli_query($mysqli, "UPDATE users SET user_token = '' WHERE user_id = $user_id");
     mysqli_query($mysqli, "DELETE FROM remember_tokens WHERE remember_token_user_id = $user_id");
+    mitSessionRestamp($user_id); // Mountaineer IT: their other sign-ins end, this one (their own change) carries on
 }
 
 /**

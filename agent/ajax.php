@@ -1934,7 +1934,7 @@ if (isset($_GET['ai_create_document_template'])) {
     }
 
     // Print the generated HTML template directly
-    echo $result['content'];
+    echo mitPurifyHtml($result['content']); // the model's HTML, cleaned like a ticket's
 }
 
 if (isset($_GET['ai_ticket_summary'])) {
@@ -2042,7 +2042,7 @@ if (isset($_GET['ai_ticket_summary'])) {
         exit;
     }
 
-    echo $result['content'];
+    echo mitPurifyHtml($result['content']); // written from ticket text a customer typed - cleaned like the ticket's own
 }
 
 // Stops people trying to use sub-domains in the domains tracker

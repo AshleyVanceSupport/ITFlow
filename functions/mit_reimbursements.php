@@ -310,6 +310,15 @@ function mitReimbDelete(array $row) {
     return [true, 'Removed' . (intval($row['part_id']) ? ' - the part it added is still on the ticket.' : '.')];
 }
 
+/** Is this ITFlow trip one a reimbursement made (agent/post/trip.php refuses to change or delete it there)? */
+function mitReimbTripLocked($trip_id) {
+    global $mysqli;
+    if (!intval($trip_id) || !mitReimbReady()) {
+        return false;
+    }
+    return mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM mit_reimbursements WHERE trip_id = " . intval($trip_id) . " LIMIT 1")) > 0;
+}
+
 /** The words an expense recorded from a purchase carries. */
 function mitReimbExpenseDescription(array $row) {
     $user_name = (string) getFieldById('users', intval($row['user_id']), 'user_name');

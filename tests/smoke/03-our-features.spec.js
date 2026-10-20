@@ -310,3 +310,15 @@ test('a pop-up link to another site is not loaded (ajax-modal runs the page it g
     await page.waitForTimeout(500);
     expect(outside).toEqual([]);
 });
+
+test('security headers, and API keys only in a header', async ({ page }) => {
+    const response = await page.goto('login.php');
+    const headers = response.headers();
+    expect(headers['x-content-type-options']).toBe('nosniff');
+    expect(headers['content-security-policy'] || '').toContain("frame-ancestors 'self'");
+    expect(headers['referrer-policy']).toBe('same-origin');
+    // A key in the address is refused with a message (it would end up in server logs), whatever the key
+    const api = await page.goto('api/v1/clients/read.php?api_key=mit-smoke-not-a-key');
+    expect(api.status()).toBe(401);
+    expect(await api.text()).toContain('X-API-Key');
+});

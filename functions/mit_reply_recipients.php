@@ -265,3 +265,25 @@ function mitInternalNoteNotify(array $ticket, $reply_id, array $post) {
     }
     return $told;
 }
+
+/**
+ * A ticket moved to another client (agent/post/ticket.php change_client_ticket, Dispatch's details save): its remembered
+ * "To" choices go, and so do watchers who are neither our agents nor contacts of the new client - otherwise the next
+ * email reply (with the guest link) could go to the old client's people. Returns how many watchers were taken off.
+ */
+function mitTicketClientMoved($ticket_id, $client_id) {
+    global $mysqli;
+    $ticket_id = intval($ticket_id);
+    $client_id = intval($client_id);
+    if (mitReplyRecipientsReady()) {
+        mysqli_query($mysqli, "DELETE FROM mit_ticket_mail_choices WHERE ticket_id = $ticket_id");
+    }
+    mysqli_query($mysqli, "DELETE FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id
+        AND watcher_email NOT IN (SELECT user_email FROM users WHERE user_type = 1 AND user_archived_at IS NULL AND user_email IS NOT NULL)
+        AND watcher_email NOT IN (SELECT contact_email FROM contacts WHERE contact_client_id = $client_id AND contact_archived_at IS NULL AND contact_email != '')");
+    $removed = mysqli_affected_rows($mysqli);
+    if ($removed > 0) {
+        logTicketHistory($ticket_id, "$removed watcher(s) of the old client were taken off with the move");
+    }
+    return $removed;
+}

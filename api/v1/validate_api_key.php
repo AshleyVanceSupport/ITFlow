@@ -48,19 +48,35 @@ DEFINE("WORDING_UNAUTHORIZED", "HTTP/1.1 401 Unauthorized");
 // Decline methods other than GET/POST
 if ($_SERVER['REQUEST_METHOD'] !== "GET" && $_SERVER['REQUEST_METHOD'] !== "POST") {
     header("HTTP/1.1 405 Method Not Allowed");
-    var_dump($_SERVER['REQUEST_METHOD']);
     exit();
 }
 
+// Mountaineer IT: the key comes in a header (X-API-Key, or Authorization: Bearer) or the POST body - never in the address,
+// which ends up in web server and proxy logs
+if (isset($_GET['api_key'])) {
+    header(WORDING_UNAUTHORIZED);
+    echo json_encode(['success' => 'False', 'message' => 'Send the API key in the X-API-Key header (or Authorization: Bearer), not in the address.']);
+    exit();
+}
+$api_key_header = (string) ($_SERVER['HTTP_X_API_KEY'] ?? '');
+// Apache does not always hand PHP the Authorization header in $_SERVER - ask it directly
+$api_key_auth = (string) ($_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? ''));
+if ($api_key_auth === '' && function_exists('getallheaders')) {
+    $api_key_auth = (string) (array_change_key_case(getallheaders() ?: [], CASE_LOWER)['authorization'] ?? '');
+}
+if ($api_key_header === '' && preg_match('/^Bearer\s+(\S+)$/i', $api_key_auth, $api_key_match)) {
+    $api_key_header = $api_key_match[1];
+}
+
 // Check API key is provided
-if (!isset($_GET['api_key']) && !isset($_POST['api_key'])) {
+if ($api_key_header === '' && !isset($_POST['api_key'])) {
     header(WORDING_UNAUTHORIZED);
     exit();
 }
 
 // Set API key variable
-if (isset($_GET['api_key'])) {
-    $api_key = escapeSql($_GET['api_key']);
+if ($api_key_header !== '') {
+    $api_key = escapeSql($api_key_header);
 }
 if (isset($_POST['api_key'])) {
     $api_key = escapeSql($_POST['api_key']);

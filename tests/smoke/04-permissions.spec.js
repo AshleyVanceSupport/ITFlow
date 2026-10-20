@@ -66,3 +66,40 @@ test('ticket Parts box for everyone; the rest of procurement only with the Procu
     const text = await page.evaluate(async () => (await fetch('/agent/mit_procurement.php')).text());
     expect(text.includes('To order</h3>'), 'Procurement > To order page').toBe(hasProcurement);
 });
+
+test('changing your password ends your other sign-ins', async ({ browser }, testInfo) => {
+    const use = testInfo.project.use;
+    const signIn = async () => {
+        const context = await browser.newContext({ storageState: { cookies: [], origins: [] }, baseURL: use.baseURL, ignoreHTTPSErrors: use.ignoreHTTPSErrors });
+        const page = await context.newPage();
+        await page.goto('login.php');
+        await page.fill('input[name=email]', process.env.ITFLOW_TECH_EMAIL);
+        await page.fill('input[name=password]', process.env.ITFLOW_TECH_PASSWORD);
+        await Promise.all([page.waitForNavigation(), page.click('button[name=login]')]);
+        return [context, page];
+    };
+    const [one, page] = await signIn();
+    const [two, otherPage] = await signIn();
+    try {
+        await otherPage.goto('agent/tickets.php');
+        expect(otherPage.url()).toContain('/agent/tickets.php');
+
+        // One sign-in sets the same password again - a new hash, so every other sign-in must end
+        await visit(page, 'agent/user/user_security.php');
+        const form = page.locator('form:has([name=edit_your_user_password])');
+        await form.locator('input[name=current_password]').fill(process.env.ITFLOW_TECH_PASSWORD);
+        await form.locator('input[name=new_password]').fill(process.env.ITFLOW_TECH_PASSWORD);
+        await form.locator('input[name=confirm_password]').fill(process.env.ITFLOW_TECH_PASSWORD);
+        await Promise.all([page.waitForNavigation(), form.locator('button[name=edit_your_user_password]').click()]);
+
+        await otherPage.goto('agent/tickets.php');
+        expect(otherPage.url()).toContain('login.php');
+    } finally {
+        await one.close();
+        await two.close();
+        // The saved technician sign-in ended too: sign in again for the tests after this one
+        const [again, againPage] = await signIn();
+        await againPage.context().storageState({ path: techState });
+        await again.close();
+    }
+});

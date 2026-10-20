@@ -105,3 +105,6 @@ if (isset($_POST['contact_location_id'])) {
 } else {
     $location_id = '0';
 }
+
+// Only this client's own location
+$location_id = ticketClientOwnedId('location', $location_id, $client_id);

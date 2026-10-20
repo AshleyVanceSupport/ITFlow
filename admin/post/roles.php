@@ -49,6 +49,17 @@ if (isset($_POST['edit_role'])) {
     $description = escapeSql($_POST['role_description']);
     $admin = intval($_POST['role_is_admin']);
 
+    // Taking admin away from a role must leave someone who can still get into Admin
+    $was_admin = intval(getFieldById('user_roles', $role_id, 'role_is_admin'));
+    if ($was_admin === 1 && $admin !== 1) {
+        $other_admins = mysqli_fetch_row(mysqli_query($mysqli, "SELECT COUNT(*) FROM users JOIN user_roles ON role_id = user_role_id
+            WHERE role_is_admin = 1 AND role_id != $role_id AND user_type = 1 AND user_status = 1 AND user_archived_at IS NULL"))[0];
+        if (intval($other_admins) === 0) {
+            flashAlert("This is the only role with active admins - nobody could get into Admin. Give another role (and an active user in it) admin first.", 'error');
+            redirect();
+        }
+    }
+
     mysqli_query($mysqli, "UPDATE user_roles SET role_name = '$name', role_description = '$description', role_is_admin = $admin WHERE role_id = $role_id");
 
     // Update role access levels
