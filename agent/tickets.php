@@ -202,7 +202,7 @@ $filters = clientScopeSql('ticket_client_id') . " $client_query " . implode(' ',
 $open_sql = TICKET_OPEN_SQL;
 $base_sql = $view === 'kanban' ? 'tickets.ticket_closed_at IS NULL' : $open_sql;
 $shows = [
-    'open' => ['label' => $view === 'kanban' ? 'On the board' : 'Open', 'where' => $base_sql,
+    'open' => ['label' => $view === 'kanban' ? 'Active' : 'Open', 'where' => $base_sql,
         'title' => $view === 'kanban' ? 'Everything not closed yet' : 'Neither resolved nor closed'],
     'mine' => ['label' => 'Mine', 'icon' => 'fa-user-check', 'where' => "$base_sql AND " . mitAssignedSql($session_user_id)], // Mountaineer IT: or helping
     'unassigned' => ['label' => 'Unassigned', 'icon' => 'fa-user-slash', 'where' => "$base_sql AND ticket_assigned_to = 0", 'alarm' => 'warning'],
@@ -403,8 +403,8 @@ $export_extra = [
                             <a href="<?= escapeHtml($filter_url(['view' => 'list'])) ?>" class="btn <?= $view === 'list' ? 'btn-dark' : 'btn-outline-dark' ?>" title="List">
                                 <i class="fas fa-fw fa-list"></i><span class="d-none d-xl-inline ms-1">List</span>
                             </a>
-                            <a href="<?= escapeHtml($filter_url(['view' => 'kanban', 'show' => in_array($show, ['closed', 'all'], true) ? '' : $show])) ?>" class="btn <?= $view === 'kanban' ? 'btn-dark' : 'btn-outline-dark' ?>" title="Board">
-                                <i class="fas fa-fw fa-columns"></i><span class="d-none d-xl-inline ms-1">Board</span>
+                            <a href="<?= escapeHtml($filter_url(['view' => 'kanban', 'show' => in_array($show, ['closed', 'all'], true) ? '' : $show])) ?>" class="btn <?= $view === 'kanban' ? 'btn-dark' : 'btn-outline-dark' ?>" title="Kanban - a column for each status">
+                                <i class="fas fa-fw fa-columns"></i><span class="d-none d-xl-inline ms-1">Kanban</span>
                             </a>
                         </div>
                     </div>

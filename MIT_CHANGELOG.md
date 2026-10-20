@@ -4,6 +4,9 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.84 - 2026-10-20
+- Tickets: the List / Board buttons are now List / Kanban, and the kanban view's first tab is "Active" (was "On the board") - so "board" on the Tickets page only means a service board (Service Desk, Tier 1 ...).
+
 ## 26.10.83 - 2026-10-20
 - Service boards, part 2 - round-robin: a board can hand its new tickets to its members in turn (Admin > Settings > Boards > Edit > Auto-assign). It skips anyone left out of the turn, on leave today (timesheets), Out of office in Outlook right now, who can't see the client, or who already holds the board's limit of open tickets. Tickets that arrive after working hours wait for the day to start. Only tickets placed on the board after it is turned on are handed out - never the ones already waiting.
 - Dashboard: a Board picker beside the greeting (remembered) - Needs attention, Open tickets by tech and the Opened and resolved chart follow it - and a "Your boards" strip with each of your boards' open, unassigned and past-SLA tickets.

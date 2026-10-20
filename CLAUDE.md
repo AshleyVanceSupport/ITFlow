@@ -500,6 +500,8 @@ model: see DEPLOYMENT.md.
   `agent/reports/mit_boards.php` (catalog line `'mit_boards' => mitBoardReportEntry()` in `functions/reports.php` reportCatalog
   before sla_by_client): per board new / moved in / escalated on / resolved / median first reply and resolve / SLA / open now;
   escalation flows; agents for one board; CSV.
+  Wording: ITFlow's kanban toggle on `agent/tickets.php` says "Kanban" (was "Board") and its first pill there "Active" (was "On the
+  board"), so "board" on that page only means a service board - two strings; keep them if an upstream merge brings the old ones back.
 - Modern look (Oct 2026): `functions/mit_theme.php`, `css/mit_theme.css`, `js/mit_theme.js`, `css/fonts/inter/` (Inter,
   OFL - from @fontsource-variable/inter, latin + latin-ext) - ours. Colours, type and spacing over ITFlow's own styles, no markup
   changes: slate sidebar with a blue active pill, white top bar (the script switches ITFlow's `.app-header` `data-bs-theme="dark"`

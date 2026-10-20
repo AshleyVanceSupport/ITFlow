@@ -10,7 +10,7 @@ test('Tickets list remembers the view, and Reset forgets it', async ({ page }) =
 
     await visit(page, 'agent/tickets.php');
     await go('a[href^="?mit_reset_view="]');
-    await go('a[title="Board"]');
+    await go('a[title^="Kanban"]');
     await go('nav a.nav-link:has-text("Unassigned")');
     await go('a[title="List"]');
 
@@ -43,6 +43,11 @@ test('ticket board and filters', async ({ page }) => {
     for (const url of ['agent/tickets.php?view=kanban', 'agent/tickets.php?show=all&sort=ticket_priority&order=ASC', 'agent/tickets.php?show=scheduled', 'agent/tickets.php?q=smoke']) {
         await visit(page, url, errors);
     }
+    // The status columns are "Kanban" and their first pill "Active" - "board" means a service board on this page
+    await visit(page, 'agent/tickets.php?view=kanban', errors);
+    await expect(page.locator('[aria-label=View] a[title^="Kanban"]'), 'the Kanban view button').toHaveCount(1);
+    await expect(page.locator('body'), 'no "On the board" pill').not.toContainText('On the board');
+    await expect(page.locator('a.nav-link, a.btn', { hasText: /^\s*Active\b/ }).first(), 'the Active pill').toBeVisible();
     await visit(page, 'agent/tickets.php', errors);
     await Promise.all([page.waitForNavigation(), page.click('a[href^="?mit_reset_view="]')]);
 });
