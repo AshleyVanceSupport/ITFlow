@@ -5,7 +5,7 @@
 // with their notes, even when a step fails); a person's pay type is put back.
 
 const { test, expect } = require('@playwright/test');
-const { smokeName, watch, visit, openModal, fillForm, submit, flash, action, expectClean } = require('./helpers');
+const { smokeName, watch, visit, openModal, fillForm, submit, flash, action, expectClean, clearTime } = require('./helpers');
 
 test.describe.configure({ mode: 'serial' });
 
@@ -53,7 +53,7 @@ test('note times: required with time worked, set the length, shown on the note, 
     const send = await page.locator('#ticket_add_reply').boundingBox();
     expect(send.height, 'send button on one line').toBeLessThan(45);
     await page.fill('#minutes', '20');
-    await page.fill('#mitWorkStart', '');
+    await clearTime(page.locator('#mitWorkStart'));
     await page.click('#ticket_add_reply');
     await expect(page.locator('[data-mit-times-error]'), 'refused without times').toBeVisible();
     expect(page.url(), 'still on the ticket').toContain(`ticket_id=${made.ticketId}`);
@@ -71,6 +71,33 @@ test('note times: required with time worked, set the length, shown on the note, 
     await fillForm(modal, { time: '01:00:00' });
     await submit(modal, 'edit_ticket_reply');
     await expect(page.locator('[data-mit-reply-times]').first(), 'start moved back').toContainText('8:45 - 9:45 AM');
+    await expectClean(page, errors);
+});
+
+// js/mit_time_inputs.js, on every agent / admin page
+test('time fields: the clock icon puts in now, typing keeps the AM / PM of now, an untouched field stays empty', async ({ page }) => {
+    test.skip(!made.ticketId, 'no ticket');
+    await page.clock.setFixedTime(new Date('2026-10-21T21:36:00'));
+    const errors = watch(page);
+    await visit(page, `agent/ticket.php?client_id=${made.clientId}&ticket_id=${made.ticketId}`, errors);
+    await page.click('label[for=public_reply_type_opt1]');
+    await page.locator('#replyComposer.show').waitFor();
+    test.skip(await page.locator('#mitWorkStart').count() === 0, 'needs database update M028');
+    const start = page.locator('#mitWorkStart');
+    const end = page.locator('#mitWorkEnd');
+    await start.evaluate((el) => { el.value = ''; });
+    const box = await start.boundingBox();
+    await page.mouse.click(box.x + box.width - 14, box.y + box.height / 2);
+    await expect(start, 'the clock icon: now').toHaveValue('21:36');
+    await end.evaluate((el) => { el.value = ''; });
+    await end.click({ position: { x: 12, y: box.height / 2 } });
+    await page.keyboard.type('915');
+    await page.locator('#mitWorkDate').focus();
+    await expect(end, '9:15 typed in the evening is 9:15 PM').toHaveValue('21:15');
+    await end.evaluate((el) => { el.value = ''; });
+    await end.focus();
+    await page.locator('#mitWorkDate').focus();
+    await expect(end, 'clicked into and left: still empty').toHaveValue('');
     await expectClean(page, errors);
 });
 

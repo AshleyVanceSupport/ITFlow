@@ -4,6 +4,9 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.92 - 2026-10-21
+- Time fields everywhere (ticket notes, timesheets, Dispatch, calendar events, scheduling): the clock icon now puts in the time now instead of opening the scroll list. An empty time field starts from now when you click into it, so typing just the hour and minutes keeps the right AM / PM (and today's date on date-and-time fields); click in and leave without typing and it stays empty.
+
 ## 26.10.91 - 2026-10-21
 - Pay type (Hourly / Salaried / Contractor) is now set in Admin > Users > Edit user, as "Employment" (also on New user). Admin > Timesheets > People shows it with a link there.
 

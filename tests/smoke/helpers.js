@@ -155,4 +155,13 @@ async function getJson(page, url) {
     return JSON.parse(text);
 }
 
-module.exports = { PHP_ERROR, smokeName, watch, expectClean, visit, csrf, openModal, fillForm, submit, flash, action, fetchText, getJson };
+// Empty a time field as a person deleting it would (fill('') focuses it after, and js/mit_time_inputs.js then starts it from now)
+async function clearTime(locator) {
+    await locator.evaluate((el) => {
+        el.value = '';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+}
+
+module.exports = { PHP_ERROR, clearTime, smokeName, watch, expectClean, visit, csrf, openModal, fillForm, submit, flash, action, fetchText, getJson };

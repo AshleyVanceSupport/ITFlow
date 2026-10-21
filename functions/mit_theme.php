@@ -25,12 +25,14 @@ function mitLookOn() {
     return $on;
 }
 
-/** The stylesheet and script for the modern look, for includes/header.php - '' for Classic or nobody signed in. */
+/** For includes/header.php: the time-field script (everyone), and the modern look's stylesheet and script (not for Classic or nobody signed in). */
 function mitThemeHead() {
+    // Time fields (clock icon = now, AM / PM from now) - for every look
+    $time = '<script src="' . mitAsset('/js/mit_time_inputs.js') . '" defer></script>';
     if (!mitLookOn()) {
-        return '';
+        return $time;
     }
-    return '<link rel="stylesheet" href="' . mitAsset('/css/mit_theme.css') . '">'
+    return $time . '<link rel="stylesheet" href="' . mitAsset('/css/mit_theme.css') . '">'
         . '<script src="' . mitAsset('/js/mit_theme.js') . '" defer></script>';
 }
 

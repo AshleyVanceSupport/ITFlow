@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
-const { watch, visit, expectClean, fillForm, submit } = require('./helpers');
+const { watch, visit, expectClean, fillForm, submit, clearTime } = require('./helpers');
 
 const techState = path.join(__dirname, '.auth', 'tech.json');
 test.skip(!fs.existsSync(techState), 'no ITFLOW_TECH_EMAIL / ITFLOW_TECH_PASSWORD given');
@@ -50,8 +50,8 @@ test('a day: times, meal check, saves as you type', async ({ page }) => {
         while (await panel.locator('[data-block]').count() > 1) {
             await panel.locator('[data-remove-block]').last().click();
         }
-        await block(0).locator('[data-block-start]').fill('');
-        await block(0).locator('[data-block-end]').fill('');
+        await clearTime(block(0).locator('[data-block-start]'));
+        await clearTime(block(0).locator('[data-block-end]'));
         await expect(panel.locator('[data-mit-day-status]')).toContainText('Saved', { timeout: 10000 });
         await page.waitForTimeout(300);
         await expect(page.locator(`.mit-ts-day[data-date="${date}"]`)).not.toContainText('8:00 AM');
@@ -136,8 +136,8 @@ test('blocks that can\'t be right are refused, not saved', async ({ page }) => {
             await page.click(`#mitTsWeeks [data-week="${now.weeks.findIndex((w) => w.includes(date))}"]`);
             await page.click(`.mit-ts-day[data-date="${date}"]`);
             while (await panel.locator('[data-remove-block]').count() > 1) await panel.locator('[data-remove-block]').last().click();
-            await block(0).locator('[data-block-start]').fill('');
-            await block(0).locator('[data-block-end]').fill('');
+            await clearTime(block(0).locator('[data-block-start]'));
+            await clearTime(block(0).locator('[data-block-end]'));
             await expect(status).toContainText('Saved', { timeout: 10000 });
         }
     }
@@ -187,8 +187,8 @@ test('time not on a code goes on the default charge code (Admin > Timesheets)', 
         await expect(row.locator('.mit-ts-chips')).not.toContainText(/(^|[^(])Not on a code/);
     } finally {
         if (date) {
-            await block(0).locator('[data-block-start]').fill('');
-            await block(0).locator('[data-block-end]').fill('');
+            await clearTime(block(0).locator('[data-block-start]'));
+            await clearTime(block(0).locator('[data-block-end]'));
             await expect(panel.locator('[data-mit-day-status]')).toContainText('Saved', { timeout: 10000 });
         }
         await setCode(before);
