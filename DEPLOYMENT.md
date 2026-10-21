@@ -211,6 +211,9 @@ break stock ITFlow, and lists what stops working after a move.
   recurring auto-send come back, and payments made in QuickBooks stop coming back. Payments already brought back are
   ordinary ITFlow payments (method "QuickBooks Online") and stay; the approvals, batches and mappings stay unused in `mit_qbo_*` /
   `mit_invoice_approvals`.
+- **Usage billing** – recurring invoices bill the fixed quantity on their lines again (update it by hand each month); the
+  counts, `api/v1/mit_usage/` and Usage Review go (the data stays in `mit_usage_*`). Invoices already made keep their
+  quantities. Systems reporting counts through the API get "resource not mapped" errors - switch them off.
 - **Email reply recipients** – an email reply goes to the contact and every watcher again, as stock ITFlow does; the
   per-ticket choices stay unused in `mit_ticket_mail_choices`.
 - **Modern look** – pages (and the sign-in screen) go back to ITFlow's own look, without the client count tiles and header contact line; the Look

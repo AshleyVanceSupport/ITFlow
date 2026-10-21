@@ -457,6 +457,7 @@ if (isset($_GET['force_recurring'])) {
 
     //Also update the newly created invoice with the new amounts
     mysqli_query($mysqli,"UPDATE invoices SET invoice_amount = $new_recurring_invoice_amount WHERE invoice_id = $new_invoice_id");
+    if (function_exists('mitUsageApply') && mitUsageApply($new_invoice_id, $recurring_invoice_id)) { $recurring_invoice_auto_send = 0; } // Mountaineer IT: usage quantities, kept a Draft for review
 
     // Only send the invoice if the recurring invoice is set to auto-send, otherwise just leave as draft for manual sending
     if ($recurring_invoice_auto_send == 1) {

@@ -599,6 +599,7 @@ while ($row = mysqli_fetch_assoc($sql_recurring_invoices)) {
     }
 
     mysqli_query($mysqli, "INSERT INTO history SET history_status = 'Draft', history_description = 'Invoice Generated from Recurring!', history_invoice_id = $new_invoice_id");
+    if (function_exists('mitUsageApply') && mitUsageApply($new_invoice_id, $recurring_invoice_id)) { $recurring_invoice_auto_send = 0; } // Mountaineer IT: usage quantities, kept a Draft for review
 
     if ($recurring_invoice_auto_send == 1) {
         appNotify("Recurring Sent", "Recurring Invoice $config_invoice_prefix$new_invoice_number for $client_name Sent", "/agent/invoice.php?invoice_id=$new_invoice_id", $client_id);

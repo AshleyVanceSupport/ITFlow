@@ -553,6 +553,23 @@ model: see DEPLOYMENT.md.
   stand-in at `qbo-mock/index.php` (not in the repo; `MIT_QBO_AUTH_URL` / `_TOKEN_URL` / `_REVOKE_URL` / `_API_BASE` in its
   config.php - never on a real one); smoke `10-qbo.spec.js`. Not yet: portal / guest Stripe pay is not blocked for invoices in
   QuickBooks (turn ITFlow's Stripe off), statements still come from ITFlow.
+- Usage billing (Oct 2026, step 4 of the billing plan; step 5 = source connectors reporting through its API): `functions/mit_usage.php`
+  (ours, required from `functions.php`). Tables M032: `mit_usage_lines` (a recurring invoice line billed by a count - source
+  manual / api / tag, usage name `line_metric` - tag lines "tag:<id>" -, optional minimum; FK recurring_invoice_items /
+  recurring_invoices CASCADE), `mit_usage_counts` (client + metric + as_of, source, note; FK clients CASCADE), `mit_usage_applied`
+  (per generated invoice line: snapshot, count used, base / previous / applied qty, flags, override + reason; FK invoices,
+  invoice_items CASCADE, line SET NULL). Settings `mit_settings` usage_snapshot_day (1-28) / usage_change_pct / usage_stale_days
+  (card `admin/includes/mit_usage_card.php` - one require at the end of `admin/settings_invoice.php`, handler
+  `admin/post/mit_usage_settings.php`). `mitUsageApply($new_invoice_id, $recurring_invoice_id)` - one guarded line each in
+  `cron/nightly_tasks.php` (after "Invoice Generated from Recurring!") and `agent/post/recurring_invoice.php` force_recurring (after
+  the amount update): matches the new invoice's lines to the recurring lines by item_id order (how ITFlow copies them), sets
+  qty from the last count on or before `mitUsageSnapshotDate()`, recalculates, writes history, and returning true turns
+  auto-send off (stays a Draft). UI: `mitUsageRecurringCard` (one line in `agent/recurring_invoice.php` before History),
+  `mitUsageClientCard` (one line at the end of the billing section in `agent/client_overview.php`), Billing > Usage Review
+  `agent/mit_usage_review.php` (override = `mitUsageOverride`; Approve = the QuickBooks approval link), nav entry in
+  `agent/includes/mit_billing_nav.php`, handlers `agent/post/mit_usage.php`. API `api/v1/mit_usage/create.php` / `read.php` - one
+  line in `api/v1/enforce_api_rbac.php` (`'mit_usage' => 'module_sales'`). Cron job `mit_usage` daily 00:30 (`cron/mit_usage.php`,
+  `mitUsageRecordTagCounts`; apply also counts tags when the snapshot is today). Smoke `11-usage.spec.js`.
 - Project tickets kept apart (Oct 2026): `functions/mit_projects.php` (ours) - a ticket in a project (ITFlow's
   `ticket_project_id`) is off the Tickets board / client tab (`mitProjectTicketsShows` adds `ticket_project_id = 0` to each
   view of `agent/tickets.php` plus a "Projects" view, unless the Project filter is set), the Dispatch queue + its menu count

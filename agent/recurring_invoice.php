@@ -445,6 +445,8 @@ if (isset($_GET['recurring_invoice_id'])) {
         </div>
     </div>
 
+    <?= function_exists('mitUsageRecurringCard') ? mitUsageRecurringCard($recurring_invoice_id) : '' // Mountaineer IT: usage billing ?>
+
     <div class="row mb-3">
         <div class="col-sm d-print-none">
             <div class="card">

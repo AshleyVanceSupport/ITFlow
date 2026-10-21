@@ -147,6 +147,15 @@ function cronJobRegistry(): array
             'interval_minutes' => 60,
         ],
         [
+            // Mountaineer IT (functions/mit_usage.php)
+            'name' => 'mit_usage',
+            'label' => 'Usage Counts',
+            'script' => 'mit_usage.php',
+            'description' => 'Counts each client\'s contacts carrying the tag of a usage-billed recurring invoice line, so the snapshot day has a count to bill.',
+            'schedule' => 'Daily',
+            'daily_at' => '00:30',
+        ],
+        [
             // Mountaineer IT (functions/mit_qbo_billing.php)
             'name' => 'mit_qbo_sync',
             'label' => 'QuickBooks Online Payments',

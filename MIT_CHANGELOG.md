@@ -4,6 +4,13 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.99 - 2026-10-21
+Usage billing (database update M032):
+- A recurring invoice's lines can be billed by a count instead of a fixed quantity (its new Usage billing card): typed each month, reported through the API, or the client's contacts carrying a tag (e.g. "Billable user"). A minimum can be set per line.
+- Counts are kept with their date and source. Other systems report them with `POST /api/v1/mit_usage/create.php` (ITFlow API key, JSON: client_id, metric, quantity, as_of); `GET /api/v1/mit_usage/read.php` lists the usage names to report. Tag counts are recorded daily (cron job "Usage Counts"). The client's overview has a Usage card with the latest counts and a box to type one.
+- Snapshot day (Admin > Settings > Invoices > Usage billing, default the 1st): when a recurring invoice is made, each usage line's quantity becomes the last count on or before the snapshot day, totals are worked out again, and the invoice stays a Draft whatever auto-send says.
+- Billing > Usage Review: per snapshot, last month's and this month's quantity, the change and flags (over 20% by default, a count older than 7 days before the snapshot, no count, the minimum used). Change a quantity with a reason (kept in the invoice history) and approve - approved invoices go into QuickBooks batches as before.
+
 ## 26.10.98 - 2026-10-21
 QuickBooks Online, first release (database update M031):
 - Admin > Integrations > QuickBooks Online: connect a company through Intuit's sign-in (an Intuit developer app's client ID and secret), choose how tax is sent (US: taxable / non-taxable lines and one tax code per invoice), the item for lines with no match, the ITFlow account payments from QuickBooks go to, and whether QuickBooks emails new batches. Customers, Items and Tax codes tabs map ITFlow clients, products and taxes to QuickBooks (or match by name; missing customers can be made in QuickBooks).

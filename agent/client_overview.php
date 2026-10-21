@@ -600,6 +600,7 @@ $money_format = function ($amount) use ($currency_format, $client_currency_code,
                 </div>
             <?php } ?>
         </div>
+        <?= function_exists('mitUsageClientCard') ? mitUsageClientCard($client_id) : '' // Mountaineer IT: usage counts ?>
 
     <?php } ?>
 

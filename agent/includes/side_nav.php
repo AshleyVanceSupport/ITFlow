@@ -168,7 +168,7 @@
                             <p>Products</p>
                         </a>
                     </li>
-                    <?php require __DIR__ . '/mit_billing_nav.php'; // Mountaineer IT: Unbilled Parts, Invoice Approvals, QuickBooks Batches ?>
+                    <?php require __DIR__ . '/mit_billing_nav.php'; // Mountaineer IT: Unbilled Parts, Usage Review, Invoice Approvals, QuickBooks Batches ?>
                 <?php } ?>
 
                 <?php require __DIR__ . '/mit_procurement_nav.php'; // Mountaineer IT ?>

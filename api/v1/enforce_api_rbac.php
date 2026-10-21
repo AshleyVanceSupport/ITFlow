@@ -148,6 +148,7 @@ $resource_module = [
     'products'      => 'module_sales',
     'expenses'      => 'module_financial',
     'credentials'   => 'module_credential',
+    'mit_usage'     => 'module_sales', // Mountaineer IT: usage counts (functions/mit_usage.php)
 ];
 
 // Operation -> required permission level (read = 1, create/update = 2, delete = 3).
