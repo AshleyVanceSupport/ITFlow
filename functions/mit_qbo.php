@@ -127,8 +127,30 @@ function mitQboConnect($code, $realm_id) {
     if ($code === '' || $realm_id === '') {
         throw new RuntimeException('Intuit did not say which company was connected.');
     }
+    // Another company than the one the mappings and batches belong to (e.g. sandbox, then production): its customer, item and
+    // invoice ids mean nothing here - refused while invoices are in QuickBooks batches, else the old mappings are cleared
+    $mapped_realm = (string) mitSetting('qbo_mapped_realm', '');
+    $cleared = false;
+    if ($mapped_realm !== '' && $mapped_realm !== $realm_id) {
+        global $mysqli;
+        if (mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM mit_qbo_batch_invoices WHERE entry_status != 'removed' LIMIT 1"))) {
+            throw new RuntimeException('That is a different QuickBooks company from the one your batches went to - take every invoice out of its batch first, '
+                . 'or connect the same company again.');
+        }
+        $cleared = true;
+    }
     $tokens = mitQboTokenCall(['grant_type' => 'authorization_code', 'code' => $code, 'redirect_uri' => mitQboRedirectUri()]);
+    if ($cleared) {
+        foreach (MIT_QBO_MAP_TABLES as [$table]) {
+            mysqli_query($mysqli, "DELETE FROM $table");
+        }
+        foreach (['qbo_no_tax_code', 'qbo_fallback_item'] as $setting) {
+            mitSetSetting($setting, '');
+        }
+    }
     mitSetSetting('qbo_realm_id', $realm_id);
+    mitSetSetting('qbo_mapped_realm', $realm_id);
+    $GLOBALS['mit_qbo_mappings_cleared'] = $cleared;
     mitQboStoreTokens($tokens);
     mitSetSetting('qbo_connected_by', intval($session_user_id));
     mitSetSetting('qbo_connected_at', date('Y-m-d H:i:s'));
@@ -217,7 +239,12 @@ function mitQboApi($method, $path, $body = null, array $query = []) {
         . http_build_query($query + ['minorversion' => MIT_QBO_MINOR_VERSION], '', '&', PHP_QUERY_RFC3986);
     $payload = $body === null ? null : json_encode($body);
     $send = function ($token) use ($method, $url, $payload) {
-        return mitHttp($method, $url, ['Authorization: Bearer ' . $token, 'Accept: application/json'], $payload, 60);
+        $headers = ['Authorization: Bearer ' . $token, 'Accept: application/json'];
+        if ($payload === null && $method === 'POST') {
+            // A POST with nothing in it (send an invoice by email): Intuit wants this type, not a form
+            $headers[] = 'Content-Type: application/octet-stream';
+        }
+        return mitHttp($method, $url, $headers, $payload, 60);
     };
     $response = $send(mitQboAccessToken());
     if ($response['status'] === 401) {
@@ -261,7 +288,8 @@ function mitQboList($kind) {
         } elseif ($kind === 'items') {
             foreach (mitQboQueryAll('Item', 'Active = true') as $row) {
                 if (in_array($row['Type'] ?? '', ['Service', 'NonInventory', 'Inventory'], true)) {
-                    $list[(string) $row['Id']] = ['id' => (string) $row['Id'], 'name' => (string) ($row['FullyQualifiedName'] ?? $row['Name'] ?? ''), 'type' => (string) $row['Type']];
+                    $list[(string) $row['Id']] = ['id' => (string) $row['Id'], 'name' => (string) ($row['FullyQualifiedName'] ?? $row['Name'] ?? ''),
+                        'short' => (string) ($row['Name'] ?? ''), 'type' => (string) $row['Type']];
                 }
             }
         } elseif ($kind === 'tax_codes') {
@@ -320,6 +348,12 @@ function mitQboAutoMatch($kind) {
     foreach (mitQboList($kind) as $row) {
         $by_name[mb_strtolower(trim($row['name']))] = $row;
     }
+    // Items inside a QuickBooks category are "Category:Item" - their own name matches too (when it is not taken)
+    foreach (mitQboList($kind) as $row) {
+        if (($row['short'] ?? '') !== '') {
+            $by_name[mb_strtolower(trim($row['short']))] = $by_name[mb_strtolower(trim($row['short']))] ?? $row;
+        }
+    }
     $map = mitQboMap($kind);
     $sources = [
         'customers' => "SELECT client_id AS id, client_name AS name FROM clients WHERE client_archived_at IS NULL",
@@ -372,9 +406,13 @@ function mitQboCreateCustomer($client_id) {
     }
     // QuickBooks' display names are unique and may not hold a colon
     $name = mb_substr(trim(str_replace(':', '-', (string) $client['client_name'])), 0, 100);
-    $existing = mitQboQueryAll('Customer', 'DisplayName = ' . mitQboQuote($name));
+    // Inactive ones too: QuickBooks keeps their names taken
+    $existing = mitQboQueryAll('Customer', 'DisplayName = ' . mitQboQuote($name) . ' AND Active IN (true, false)');
     if ($existing) {
         $id = (string) $existing[0]['Id'];
+        if (($existing[0]['Active'] ?? true) === false) {
+            mitQboApi('POST', '/customer', ['Id' => $id, 'SyncToken' => (string) ($existing[0]['SyncToken'] ?? '0'), 'sparse' => true, 'Active' => true]);
+        }
     } else {
         $body = ['DisplayName' => $name, 'CompanyName' => $name];
         $emails = mitQboClientEmails($client_id);
@@ -428,6 +466,9 @@ function mitQboInvoicePayload($invoice_id, array $items, $batch_id = 0) {
     $items_by_name = [];
     foreach ($items as $item) {
         $items_by_name[mb_strtolower(trim($item['name']))] = $item['id'];
+        if (($item['short'] ?? '') !== '') {
+            $items_by_name[mb_strtolower(trim($item['short']))] = $items_by_name[mb_strtolower(trim($item['short']))] ?? $item['id'];
+        }
     }
 
     $lines = [];

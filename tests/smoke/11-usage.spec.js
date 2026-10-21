@@ -113,6 +113,9 @@ test('the API reports a count; a bad one is refused', async ({ page }) => {
     answer = await api(page, '/api/v1/mit_usage/create.php', { client_id: made.clientId, metric: made.metric, quantity: -3 });
     expect(answer.status).toBe(400);
     expect(answer.json.message).toContain('quantity');
+    // Tag lines' names are kept for the daily tag count - the API can't write over them
+    answer = await api(page, '/api/v1/mit_usage/create.php', { client_id: made.clientId, metric: `tag:${made.tagId}`, quantity: 99 });
+    expect(answer.status, 'tag: name refused').toBe(400);
     // The read endpoint lists the line to report for, with its latest count
     const read = await page.evaluate(async ({ key, client }) => {
         const response = await fetch(`/api/v1/mit_usage/read.php?client_id=${client}`, { headers: { 'X-API-Key': key } });

@@ -408,7 +408,7 @@ while ($row = mysqli_fetch_assoc($sql_resolved_tickets_to_close)) {
     //TODO: Add client notifs if $config_ticket_client_general_notifications is on
 }
 
-if ($config_send_invoice_reminders == 1 && !(function_exists('mitQboHandlesInvoiceMail') && mitQboHandlesInvoiceMail())) { // Mountaineer IT: QuickBooks Online sends reminders and late fees
+if ($config_send_invoice_reminders == 1) {
 
     // PAST DUE INVOICE Notifications
     $invoiceAlertArray = [1,30,60,90,120,150,180,210,240,270,300,330,360,390,420,450,480,510,540,570,590,620,650,680,710,740];
@@ -432,6 +432,7 @@ if ($config_send_invoice_reminders == 1 && !(function_exists('mitQboHandlesInvoi
 
         while ($row = mysqli_fetch_assoc($sql)) {
             $invoice_id = intval($row['invoice_id']);
+            if (function_exists('mitQboTakesPayments') && mitQboTakesPayments($invoice_id)) { continue; } // Mountaineer IT: QuickBooks Online sends its reminders and late fees
             $invoice_prefix = escapeSql($row['invoice_prefix']);
             $invoice_number = intval($row['invoice_number']);
             $invoice_status = escapeSql($row['invoice_status']);
@@ -750,6 +751,7 @@ while ($row = mysqli_fetch_assoc($sql_recurring_payments)) {
     $invoice_scope = escapeSql($row['invoice_scope']);
     $invoice_date = escapeSql($row['invoice_date']);
     $invoice_due = escapeSql($row['invoice_due']);
+    if (function_exists('mitQboTakesPayments') && mitQboTakesPayments($invoice_id)) { continue; } // Mountaineer IT: paid in QuickBooks Online, not here
     // Autopay collects what is still owed - an invoice with a partial payment against it was
     // otherwise charged in full. Nothing owed, nothing to collect.
     $invoice_amount = round(floatval($row['invoice_amount']) - floatval($row['invoice_amount_paid']), 2);

@@ -12,6 +12,9 @@ if (isset($_POST['mit_usage_connector_run'])) {
     validateCSRFToken();
 
     $connector = isset(MIT_USAGE_CONNECTORS[$_POST['connector'] ?? '']) ? $_POST['connector'] : '';
+    if ($connector === '') {
+        redirect('mit_usage_connectors.php');
+    }
     try {
         $report = mitUsageRunConnectors($connector);
         if (!isset($report[$connector])) {
@@ -75,17 +78,24 @@ if (isset($_POST['mit_usage_ingram_save']) || isset($_POST['mit_usage_ingram_cus
 
     validateCSRFToken();
 
-    $base = trim((string) ($_POST['usage_ingram_base'] ?? ''));
-    if ($base !== '' && !preg_match('#^https://[a-z0-9.-]+(:\d+)?(/[^\s?#]*)?$#i', $base)) {
-        flashAlert('The API address must be an https address.', 'error');
+    $base = rtrim(trim((string) ($_POST['usage_ingram_base'] ?? '')), '/');
+    if ($base !== '' && (!preg_match('#^https://[a-z0-9.-]+(:\d+)?(/[^\s?#]*)?$#i', $base) || !mitUsageIngramBaseOk($base))) {
+        flashAlert('The API address must be a public https address.', 'error');
+        redirect('mit_usage_connectors.php?tab=ingram');
+    }
+    $marketplace = preg_replace('/[^a-z]/', '', strtolower((string) ($_POST['usage_ingram_marketplace'] ?? 'us'))) ?: 'us';
+    $password = (string) ($_POST['usage_ingram_password'] ?? '');
+    $key = trim((string) ($_POST['usage_ingram_key'] ?? ''));
+    // The saved password and key are only ever sent where they were saved for - a new address needs them typed again
+    $moved = $base !== (string) mitSetting('usage_ingram_base', '') || $marketplace !== (string) mitSetting('usage_ingram_marketplace', 'us');
+    if ($moved && (string) mitSetting('usage_ingram_password', '') !== '' && ($password === '' || $key === '')) {
+        flashAlert('The API address or marketplace changed - type the password and subscription key again.', 'error');
         redirect('mit_usage_connectors.php?tab=ingram');
     }
     $old = [mitSetting('usage_ingram_base', ''), mitSetting('usage_ingram_marketplace', 'us'), mitSetting('usage_ingram_login', '')];
-    mitSetSetting('usage_ingram_base', rtrim($base, '/'));
-    mitSetSetting('usage_ingram_marketplace', preg_replace('/[^a-z]/', '', strtolower((string) ($_POST['usage_ingram_marketplace'] ?? 'us'))) ?: 'us');
+    mitSetSetting('usage_ingram_base', $base);
+    mitSetSetting('usage_ingram_marketplace', $marketplace);
     mitSetSetting('usage_ingram_login', mb_substr(trim((string) ($_POST['usage_ingram_login'] ?? '')), 0, 200));
-    $password = (string) ($_POST['usage_ingram_password'] ?? '');
-    $key = trim((string) ($_POST['usage_ingram_key'] ?? ''));
     if ($password !== '') {
         mitSetSetting('usage_ingram_password', mitEncryptSecret($password));
     }

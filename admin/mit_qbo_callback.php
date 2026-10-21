@@ -36,5 +36,6 @@ try {
     redirect('mit_qbo.php');
 }
 logAudit("Settings", "Edit", escapeSql("$session_name connected QuickBooks Online ($company)"));
-flashAlert("QuickBooks Online connected: " . escapeHtml($company) . ". Map the customers, items and tax codes next.");
+flashAlert("QuickBooks Online connected: " . escapeHtml($company) . ". Map the customers, items and tax codes next."
+    . (!empty($GLOBALS['mit_qbo_mappings_cleared']) ? ' (A different company than before - the old mappings were cleared.)' : ''));
 redirect('mit_qbo.php?tab=customers');

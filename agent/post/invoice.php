@@ -180,6 +180,7 @@ if (isset($_POST['mark_invoice_sent'])) {
     enforceUserPermission('module_sales', 2);
 
     $invoice_id = intval($_POST['invoice_id']);
+    if (function_exists('mitQboGuardInvoice')) { mitQboGuardInvoice($invoice_id); } // Mountaineer IT: locked while in a QuickBooks batch
 
     // Get Invoice Number and Prefix and Client ID for Logging
     $sql = mysqli_query($mysqli,"SELECT invoice_prefix, invoice_number, invoice_client_id FROM invoices WHERE invoice_id = $invoice_id");

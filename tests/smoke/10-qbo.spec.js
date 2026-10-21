@@ -31,7 +31,7 @@ async function mock(page, path) {
     return response.ok() ? response.json() : null;
 }
 
-async function sendBatch(page) {
+async function sendBatch(page, beforeSend = null) {
     await page.locator('select[name=batch_id]').selectOption('0');
     await page.fill('input[name=batch_name]', smokeName('QBO batch'));
     await page.locator('input[name="invoice_ids[]"]').evaluateAll((boxes, id) => boxes.forEach((b) => { b.checked = b.value === String(id); }), made.invoiceId);
@@ -39,6 +39,11 @@ async function sendBatch(page) {
     expect(await flash(page)).toContain('1 invoice added');
     made.batchIds.push(new URL(page.url()).searchParams.get('batch_id'));
     await expect(page.locator(`[data-mit-batch-entries] a[href*="invoice_id=${made.invoiceId}"]`)).toHaveCount(1);
+    if (beforeSend) {
+        const batchPage = page.url();
+        await beforeSend();
+        await visit(page, batchPage);
+    }
     await page.locator('button[name=mit_qbo_batch_send]').click();
     await page.locator('.swal2-confirm').click();
     await page.waitForLoadState('load');
@@ -115,9 +120,15 @@ test('approve, batch and send an invoice - locked while in QuickBooks', async ({
     await submit(page.locator('#mitApproveForm'), 'mit_invoice_approve_bulk');
     expect(await flash(page)).toContain('1 invoice approved');
 
-    // Batch and send
+    // Batch, and while it waits to be sent a payment in ITFlow is refused (it would be billed again by QuickBooks); then send
     await visit(page, 'agent/mit_qbo_batches.php', errors);
-    await sendBatch(page);
+    await sendBatch(page, async () => {
+        await visit(page, invoicePage(), errors);
+        await post(page, '/agent/post.php', { add_payment: '1', invoice_id: String(made.invoiceId), date: new Date().toISOString().slice(0, 10), amount: '110',
+            account: '1', payment_method: 'Cash', reference: 'Smoke test refused', currency_code: 'USD', balance: '110', email_receipt: '0' });
+        await visit(page, invoicePage(), errors);
+        await expect(page.locator('body'), 'no payment while batched').not.toContainText('Smoke test refused');
+    });
     const state = await mock(page, '/_state');
     const qbo = state.invoices.find((i) => i.PrivateNote && i.PrivateNote.includes('From ITFlow invoice'));
     expect(qbo, 'the invoice in QuickBooks').toBeTruthy();

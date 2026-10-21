@@ -590,7 +590,7 @@ if (isset($_POST['add_bulk_payment'])) {
     // Loop Through Each Invoice
     while ($row = mysqli_fetch_assoc($result_invoices)) {
         $invoice_id = intval($row['invoice_id']);
-        if (function_exists('mitQboInQuickBooks') && mitQboInQuickBooks($invoice_id)) { continue; } // Mountaineer IT: paid in QuickBooks Online
+        if (function_exists('mitQboTakesPayments') && mitQboTakesPayments($invoice_id)) { continue; } // Mountaineer IT: paid in QuickBooks Online
         $invoice_prefix = escapeSql($row['invoice_prefix']);
         $invoice_number = intval($row['invoice_number']);
         $invoice_amount = floatval($row['invoice_amount']);

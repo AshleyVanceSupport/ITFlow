@@ -525,6 +525,11 @@ model: see DEPLOYMENT.md.
   config.php to point at a stand-in API (never on a real one).
 - QuickBooks Online (Oct 2026, first release - steps 1-3 of the billing plan; later: usage billing on agreement lines with an
   inbound API, monthly snapshot and review, then source connectors NinjaOne / Bitwarden / Ingram Micro / Parallels / M365):
+  Audit fixes (26.10.101): payments refused for any live batch entry (`mitQboTakesPayments`; hooks also in `cron/nightly_tasks.php` autopay +
+  reminders loop, `client/post.php` add_payment_by_provider, `guest/guest_ajax.php` intent), `mark_invoice_sent` guarded, client delete refused
+  (`mitQboGuardClientDelete` in `agent/post/client.php`, `mitQboClientLock` in `api/v1/clients/delete.php`), send re-checks status / payments and
+  adopts a QuickBooks invoice a timed-out try made (DocNumber + customer + marker), voids seen by the sync (TotalAmt 0), unlink keeps payments,
+  locks `qbo_sync` / `qbo_batch_<id>` on sync, remove, delete; `qbo_mapped_realm` guards a change of company; fingerprint without item_product_id.
   `functions/mit_qbo.php` (connection - Intuit OAuth 2.0 code flow, tokens via `mitEncryptSecret`, refresh under
   `mitLock('qbo_token')`; API v3 JSON, minorversion 75, `mitQboApi` / `mitQboQueryAll`; mappings; `mitQboInvoicePayload` - number
   = prefix + number (QuickBooks needs "Custom transaction numbers" on), US tax = TAX / NON lines + one TxnTaxCodeRef, discount +
@@ -583,6 +588,12 @@ model: see DEPLOYMENT.md.
   (handlers `admin/post/mit_usage_connectors.php`, menu `admin/includes/mit_integrations_nav.php`). The usage card's metric box has
   a datalist from `mitUsageKnownMetrics` (Ingram names from the count note). Test install stand-in `usage-mock/index.php` (not in
   the repo; `MIT_BITWARDEN_IDENTITY_URL` / `MIT_BITWARDEN_API_URL` / `MIT_INGRAM_API_BASE` in its config.php); smoke `12-connectors.spec.js`.
+  Audit fixes (26.10.101): NinjaOne counts need a sync run in 2 days (`mitUsageNinjaFreshSync`), classes `MIT_NINJA_WORKSTATION_CLASSES` /
+  `MIT_NINJA_SERVER_CLASSES`, metrics workstations / servers / devices (= both) / all; `mitUsageRecordDaily` cleans the name and returns a
+  problem; Ingram products keyed by the cleaned metric, rows de-duplicated by id, other customers' subscriptions skipped,
+  `mitUsageIngramBaseOk` (public https, re-checked before the token call), new address needs the secrets again; `mitUsageRunConnectors`
+  under `mitLock('usage_connectors')`, each connector in its own try. Usage: tag lines skip deleted / archived tags, `tag:` names refused for
+  other sources, previous_qty from the live line of a still-billable invoice, `mitUsageApply` never lets a failure send the invoice.
 - Project tickets kept apart (Oct 2026): `functions/mit_projects.php` (ours) - a ticket in a project (ITFlow's
   `ticket_project_id`) is off the Tickets board / client tab (`mitProjectTicketsShows` adds `ticket_project_id = 0` to each
   view of `agent/tickets.php` plus a "Projects" view, unless the Project filter is set), the Dispatch queue + its menu count

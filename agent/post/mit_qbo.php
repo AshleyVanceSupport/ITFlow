@@ -112,7 +112,9 @@ if (isset($_POST['mit_qbo_batch_edit'])) {
 
     $batch_id = intval($_POST['batch_id'] ?? 0);
     $name = mb_substr(trim((string) ($_POST['batch_name'] ?? '')), 0, 200);
-    if ($name !== '') {
+    if (mitQboBatchHiddenCount($batch_id)) {
+        flashAlert('This batch also holds invoices of clients you can\'t see.', 'error');
+    } elseif ($name !== '') {
         mysqli_query($mysqli, "UPDATE mit_qbo_batches SET batch_name = '" . escapeSql($name) . "', batch_email = " . (empty($_POST['batch_email']) ? 0 : 1) . "
             WHERE batch_id = $batch_id AND batch_status = 'open'");
         flashAlert('Batch saved');

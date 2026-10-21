@@ -53,7 +53,8 @@ function mitInvoiceFingerprint($invoice_id) {
         return '';
     }
     $parts = [json_encode(array_values($invoice))];
-    $result = mysqli_query($mysqli, "SELECT item_name, item_description, item_quantity, item_price, item_tax_id, item_product_id, item_total
+    // Not item_product_id: receiving a PO clears it on the line (functions/mit_procurement_extras.php) - nothing the customer sees changes
+    $result = mysqli_query($mysqli, "SELECT item_name, item_description, item_quantity, item_price, item_tax_id, item_total
         FROM invoice_items WHERE item_invoice_id = $invoice_id AND item_archived_at IS NULL ORDER BY item_order, item_id");
     while ($row = mysqli_fetch_row($result)) {
         $parts[] = json_encode($row);
@@ -116,6 +117,9 @@ function mitInvoiceApprove(array $invoice_ids) {
 function mitInvoiceUnapprove($invoice_id) {
     global $mysqli, $session_name;
     $invoice_id = intval($invoice_id);
+    if (!mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM invoices WHERE invoice_id = $invoice_id" . clientScopeSql('invoices.invoice_client_id')))) {
+        return 'That invoice is not one you can see.';
+    }
     if ($why = mitQboInvoiceLock($invoice_id)) {
         return $why;
     }
@@ -176,10 +180,15 @@ function mitQboInQuickBooks($invoice_id) {
     return $entry && $entry['entry_status'] === 'sent';
 }
 
-/** An invoice in QuickBooks takes its payments there - ITFlow refuses them (the sync brings them back). */
+/** Does a payment for this invoice belong in QuickBooks (it is in a batch, sent or about to be)? */
+function mitQboTakesPayments($invoice_id) {
+    return (bool) mitQboActiveEntry($invoice_id);
+}
+
+/** An invoice in a batch takes its payments in QuickBooks - ITFlow refuses them (the sync brings them back). */
 function mitQboGuardPayment($invoice_id) {
-    if (mitQboInQuickBooks($invoice_id)) {
-        flashAlert('Payments for this invoice are recorded in QuickBooks Online - they come back to ITFlow on their own.', 'error');
+    if (mitQboTakesPayments($invoice_id)) {
+        flashAlert('This invoice is in a QuickBooks batch - its payments are recorded in QuickBooks Online and come back to ITFlow on their own.', 'error');
         redirect();
     }
 }
@@ -193,6 +202,25 @@ function mitQboGuardPaymentEdit($payment_id) {
     $payment_id = intval($payment_id);
     if (mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM mit_qbo_batch_invoices WHERE payment_id = $payment_id AND entry_status = 'sent' LIMIT 1"))) {
         flashAlert('That payment comes from QuickBooks Online and follows it - change it in QuickBooks.', 'error');
+        redirect();
+    }
+}
+
+/** Why a client can't be deleted yet ('' = it can): its invoices are in QuickBooks batches, which would lose track of them. */
+function mitQboClientLock($client_id) {
+    global $mysqli;
+    if (!mitQboReady()) {
+        return '';
+    }
+    $n = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COUNT(*) FROM mit_qbo_batch_invoices e JOIN invoices ON invoices.invoice_id = e.invoice_id
+        WHERE invoice_client_id = " . intval($client_id) . " AND e.entry_status != 'removed'"))[0]);
+    return $n ? "$n of this client's invoices are in QuickBooks batches - take them out first (Billing > QuickBooks Batches)." : '';
+}
+
+/** For agent/post/client.php delete_client (one line). */
+function mitQboGuardClientDelete($client_id) {
+    if ($why = mitQboClientLock($client_id)) {
+        flashAlert(escapeHtml($why), 'error');
         redirect();
     }
 }
@@ -305,6 +333,12 @@ function mitQboSendEntry(array $entry, array $items, $email) {
     if (!hash_equals((string) $entry['fingerprint'], mitInvoiceFingerprint($invoice_id))) {
         return $fail('The invoice changed after it was batched - take it out, approve it again and add it back.');
     }
+    // Paid, cancelled or archived since it was batched (or paid in ITFlow) - QuickBooks must not bill it again
+    $invoice_now = mysqli_fetch_row(mysqli_query($mysqli, "SELECT (SELECT COALESCE(SUM(payment_amount), 0) FROM payments WHERE payment_invoice_id = $invoice_id)
+        FROM invoices WHERE invoice_id = $invoice_id AND " . MIT_QBO_BATCHABLE_SQL));
+    if (!$invoice_now || floatval($invoice_now[0]) > 0) {
+        return $fail('The invoice is no longer open and unpaid in ITFlow (' . $invoice['invoice_status'] . (floatval($invoice_now[0] ?? 0) > 0 ? ', with payments' : '') . ') - take it out of the batch.');
+    }
     $warnings = [];
     if ((string) $entry['qbo_invoice_id'] === '') {
         [$payload, $problems] = mitQboInvoicePayload($invoice_id, $items, intval($entry['batch_id']));
@@ -312,7 +346,19 @@ function mitQboSendEntry(array $entry, array $items, $email) {
             return $fail(implode(' ', $problems));
         }
         try {
-            $answer = mitQboApi('POST', '/invoice', $payload);
+            // A try that failed may still have made the invoice (a timeout after QuickBooks saved it) - take that one rather than make it twice
+            $answer = null;
+            if ((string) ($entry['error'] ?? '') !== '') {
+                foreach (mitQboQueryAll('Invoice', 'DocNumber = ' . mitQboQuote($payload['DocNumber'])) as $found) {
+                    if (($found['DocNumber'] ?? '') === $payload['DocNumber'] && ($found['CustomerRef']['value'] ?? '') === $payload['CustomerRef']['value']
+                        && floatval($found['TotalAmt'] ?? 0) > 0
+                        && strpos((string) ($found['PrivateNote'] ?? ''), 'From ITFlow invoice') !== false) {
+                        $answer = ['Invoice' => $found];
+                        break;
+                    }
+                }
+            }
+            $answer = $answer ?? mitQboApi('POST', '/invoice', $payload);
         } catch (Throwable $e) {
             $message = $e->getMessage();
             if (stripos($message, 'Duplicate Document Number') !== false) {
@@ -329,7 +375,7 @@ function mitQboSendEntry(array $entry, array $items, $email) {
         }
         mysqli_query($mysqli, "UPDATE mit_qbo_batch_invoices SET entry_status = 'sent', error = NULL, qbo_invoice_id = '$qbo_id',
             qbo_sync_token = '" . escapeSql((string) ($qbo['SyncToken'] ?? '0')) . "', qbo_doc_number = '" . escapeSql((string) ($qbo['DocNumber'] ?? '')) . "',
-            qbo_total = $total, qbo_balance = " . floatval($qbo['Balance'] ?? $total) . ", sent_at = NOW() WHERE entry_id = $entry_id");
+            qbo_total = $total, qbo_balance = " . floatval($qbo['Balance'] ?? $total) . ", sent_at = NOW() WHERE entry_id = $entry_id AND entry_status IN ('queued', 'failed')");
         $entry['qbo_invoice_id'] = $qbo['Id'] ?? '';
         $entry['bill_email'] = $qbo['BillEmail']['Address'] ?? '';
         // ITFlow follows: a Draft becomes Sent (QuickBooks has it), with the step in its history
@@ -339,7 +385,7 @@ function mitQboSendEntry(array $entry, array $items, $email) {
         mysqli_query($mysqli, "INSERT INTO history SET history_status = 'Sent', history_description = 'Sent to QuickBooks Online (batch "
             . intval($entry['batch_id']) . ") by " . escapeSql(stripslashes($session_name ?? 'ITFlow')) . "', history_invoice_id = $invoice_id");
     } else {
-        mysqli_query($mysqli, "UPDATE mit_qbo_batch_invoices SET entry_status = 'sent', error = NULL WHERE entry_id = $entry_id");
+        mysqli_query($mysqli, "UPDATE mit_qbo_batch_invoices SET entry_status = 'sent', error = NULL WHERE entry_id = $entry_id AND entry_status IN ('queued', 'failed')");
     }
     // QuickBooks emails it to the billing contacts when the batch says so
     if ($email && empty($entry['emailed_at'])) {
@@ -395,12 +441,26 @@ function mitQboBatchSend($batch_id) {
 
 /**
  * Take an invoice out of its batch. Not yet in QuickBooks: it just comes out (and unlocks). In QuickBooks: $how 'void' voids it
- * there (refused while it has payments), 'unlink' leaves it there - either way ITFlow's invoice unlocks, goes back to Draft
- * and needs approving again. Returns '' or the problem.
+ * there (refused while it has payments), 'unlink' leaves it there - either way ITFlow's invoice unlocks and needs approving
+ * again; voided it goes back to Draft, unlinked it keeps the payments already brought back (as ordinary ITFlow payments). Not
+ * while its batch is being sent. Returns '' or the problem.
  */
 function mitQboRemoveEntry($entry_id, $how = 'void') {
-    global $mysqli, $session_user_id, $session_name;
+    global $mysqli;
     $entry_id = intval($entry_id);
+    $batch_id = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT batch_id FROM mit_qbo_batch_invoices WHERE entry_id = $entry_id"))[0] ?? 0);
+    if (!mitLock("qbo_batch_$batch_id", 5)) {
+        return 'Its batch is being sent right now - try again in a moment.';
+    }
+    try {
+        return mitQboRemoveEntryLocked($entry_id, $how);
+    } finally {
+        mitUnlock("qbo_batch_$batch_id");
+    }
+}
+
+function mitQboRemoveEntryLocked($entry_id, $how) {
+    global $mysqli, $session_user_id, $session_name;
     $entry = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT e.*, invoice_status, invoice_client_id FROM mit_qbo_batch_invoices e JOIN invoices ON invoices.invoice_id = e.invoice_id
         WHERE e.entry_id = $entry_id AND e.entry_status != 'removed'" . clientScopeSql('invoices.invoice_client_id')));
     if (!$entry) {
@@ -423,30 +483,60 @@ function mitQboRemoveEntry($entry_id, $how = 'void') {
         } else {
             $removed_how = 'unlinked';
         }
-        // ITFlow's invoice goes back to a Draft to be approved again; the sync's payment (if any) goes with the link
-        if ($entry['payment_id']) {
-            mysqli_query($mysqli, "DELETE FROM payments WHERE payment_id = " . intval($entry['payment_id']));
-        }
-        mysqli_query($mysqli, "UPDATE invoices SET invoice_status = 'Draft' WHERE invoice_id = $invoice_id AND invoice_status IN ('Sent', 'Viewed', 'Partial', 'Paid')");
         mysqli_query($mysqli, "DELETE FROM mit_invoice_approvals WHERE invoice_id = $invoice_id");
-        mysqli_query($mysqli, "INSERT INTO history SET history_status = 'Draft', history_description = 'Taken out of QuickBooks batch " . intval($entry['batch_id'])
+        if ($removed_how === 'voided') {
+            // Voided (nothing was paid there): back to a Draft to be approved again; the sync's payment, if any, goes with it
+            if ($entry['payment_id']) {
+                mysqli_query($mysqli, "DELETE FROM payments WHERE payment_id = " . intval($entry['payment_id']));
+            }
+            mysqli_query($mysqli, "UPDATE invoices SET invoice_status = 'Draft' WHERE invoice_id = $invoice_id AND invoice_status IN ('Sent', 'Viewed', 'Partial', 'Paid')");
+            $status = 'Draft';
+        } else {
+            // Left in QuickBooks: money already received stays recorded - the payment becomes an ordinary ITFlow payment
+            $status = mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM payments WHERE payment_invoice_id = $invoice_id LIMIT 1"))
+                ? (updateInvoiceStatusFromPayments($invoice_id) ?? $entry['invoice_status']) : 'Draft';
+            if ($status === 'Draft') {
+                mysqli_query($mysqli, "UPDATE invoices SET invoice_status = 'Draft' WHERE invoice_id = $invoice_id AND invoice_status IN ('Sent', 'Viewed')");
+            }
+        }
+        mysqli_query($mysqli, "INSERT INTO history SET history_status = '" . escapeSql((string) $status) . "', history_description = 'Taken out of QuickBooks batch " . intval($entry['batch_id'])
             . ($removed_how === 'voided' ? ' and voided in QuickBooks' : ' (left in QuickBooks)') . " by " . escapeSql(stripslashes($session_name)) . "', history_invoice_id = $invoice_id");
     }
-    mysqli_query($mysqli, "UPDATE mit_qbo_batch_invoices SET entry_status = 'removed', removed_by = " . intval($session_user_id) . ", removed_at = NOW(),
+    mysqli_query($mysqli, "UPDATE mit_qbo_batch_invoices SET entry_status = 'removed', payment_id = NULL, removed_by = " . intval($session_user_id) . ", removed_at = NOW(),
         removed_how = '$removed_how' WHERE entry_id = $entry_id");
     mitQboBatchRestatus($entry['batch_id']);
     return '';
+}
+
+/** How many of a batch's invoices belong to clients the signed-in agent can't see (they may not change such a batch as a whole). */
+function mitQboBatchHiddenCount($batch_id) {
+    global $mysqli;
+    $batch_id = intval($batch_id);
+    $all = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COUNT(*) FROM mit_qbo_batch_invoices WHERE batch_id = $batch_id"))[0]);
+    $seen = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COUNT(*) FROM mit_qbo_batch_invoices e JOIN invoices ON invoices.invoice_id = e.invoice_id
+        WHERE e.batch_id = $batch_id" . clientScopeSql('invoices.invoice_client_id')))[0]);
+    return $all - $seen;
 }
 
 /** Delete a batch with nothing in QuickBooks (its waiting invoices come out and unlock). Returns '' or the problem. */
 function mitQboBatchDelete($batch_id) {
     global $mysqli;
     $batch_id = intval($batch_id);
-    if (mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM mit_qbo_batch_invoices WHERE batch_id = $batch_id AND entry_status = 'sent' LIMIT 1"))) {
-        return 'Part of this batch is in QuickBooks - take those invoices out first.';
+    if (mitQboBatchHiddenCount($batch_id)) {
+        return 'This batch also holds invoices of clients you can\'t see - someone with access to all of them must delete it.';
     }
-    mysqli_query($mysqli, "DELETE FROM mit_qbo_batches WHERE batch_id = $batch_id");
-    return '';
+    if (!mitLock("qbo_batch_$batch_id", 5)) {
+        return 'This batch is being sent right now.';
+    }
+    try {
+        if (mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM mit_qbo_batch_invoices WHERE batch_id = $batch_id AND entry_status = 'sent' LIMIT 1"))) {
+            return 'Part of this batch is in QuickBooks - take those invoices out first.';
+        }
+        mysqli_query($mysqli, "DELETE FROM mit_qbo_batches WHERE batch_id = $batch_id");
+        return '';
+    } finally {
+        mitUnlock("qbo_batch_$batch_id");
+    }
 }
 
 /*
@@ -460,13 +550,29 @@ function mitQboBatchDelete($batch_id) {
  * Returns ['checked' => n, 'changed' => n, 'errors' => [...]]; throws when QuickBooks can't be reached.
  */
 function mitQboPaymentSync() {
+    // One at a time: the hourly job and "Check payments now" would otherwise both add the same payment
+    if (!mitLock('qbo_sync', 30)) {
+        throw new RuntimeException('Payments are already being checked - try again in a minute.');
+    }
+    try {
+        return mitQboPaymentSyncLocked();
+    } finally {
+        mitUnlock('qbo_sync');
+    }
+}
+
+function mitQboPaymentSyncLocked() {
     global $mysqli;
     $report = ['checked' => 0, 'changed' => 0, 'errors' => []];
+    if (!mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM mit_qbo_batch_invoices WHERE entry_status = 'sent' LIMIT 1"))) {
+        mitSetSetting('qbo_last_sync', date('Y-m-d H:i:s'));
+        return $report;
+    }
     $account = mitQboSettings()['payment_account'];
     if (!$account) {
         throw new RuntimeException('Pick the account payments from QuickBooks go to (Admin > Integrations > QuickBooks Online > Connection).');
     }
-    $result = mysqli_query($mysqli, "SELECT e.entry_id, e.invoice_id, e.qbo_invoice_id, e.qbo_doc_number, e.payment_id, invoice_amount, invoice_currency_code
+    $result = mysqli_query($mysqli, "SELECT e.entry_id, e.invoice_id, e.qbo_invoice_id, e.qbo_doc_number, e.qbo_total, e.payment_id, invoice_amount, invoice_currency_code
         FROM mit_qbo_batch_invoices e JOIN invoices ON invoices.invoice_id = e.invoice_id
         WHERE e.entry_status = 'sent' AND e.qbo_invoice_id IS NOT NULL AND e.sent_at > NOW() - INTERVAL 1 YEAR
             AND (e.qbo_balance IS NULL OR e.qbo_balance > 0 OR e.paid_synced_at IS NULL OR e.paid_synced_at < NOW() - INTERVAL 1 DAY)
@@ -490,6 +596,15 @@ function mitQboPaymentSync() {
                 mysqli_query($mysqli, "UPDATE mit_qbo_batch_invoices SET warning = 'QuickBooks no longer has this invoice.', paid_synced_at = NOW() WHERE entry_id = " . intval($entry['entry_id']));
                 continue;
             }
+            // Voided in QuickBooks (total 0 now): nothing is owed or paid there - not "paid in full"
+            if (floatval($qbo['TotalAmt'] ?? 0) <= 0.004 && floatval($entry['invoice_amount']) > 0) {
+                $report['errors'][] = 'Invoice ' . $entry['qbo_doc_number'] . ' was voided in QuickBooks - take it out of its batch in ITFlow.';
+                mysqli_query($mysqli, "UPDATE mit_qbo_batch_invoices SET warning = 'Voided in QuickBooks - take it out of the batch (Leave in QuickBooks).' WHERE entry_id = " . intval($entry['entry_id']));
+                if (mitQboApplyPaid($entry, 0, 0, $account, true)) {
+                    $report['changed']++;
+                }
+                continue;
+            }
             if (mitQboApplyPaid($entry, floatval($qbo['TotalAmt'] ?? 0), floatval($qbo['Balance'] ?? 0), $account)) {
                 $report['changed']++;
             }
@@ -501,14 +616,14 @@ function mitQboPaymentSync() {
 }
 
 /** One invoice's paid amount from QuickBooks into ITFlow. Returns true when ITFlow changed. */
-function mitQboApplyPaid(array $entry, $qbo_total, $qbo_balance, $account) {
+function mitQboApplyPaid(array $entry, $qbo_total, $qbo_balance, $account, $voided = false) {
     global $mysqli;
     $entry_id = intval($entry['entry_id']);
     $invoice_id = intval($entry['invoice_id']);
     $amount = floatval($entry['invoice_amount']);
     // What the sync's payment should be: all of ITFlow's amount when QuickBooks says paid, else what was paid there - less any
-    // payment recorded in ITFlow before it went to QuickBooks
-    $paid = round($qbo_balance <= 0.004 ? $amount : min($amount, max(0, $qbo_total - $qbo_balance)), 2);
+    // payment recorded in ITFlow before it went to QuickBooks. Voided there: nothing.
+    $paid = $voided ? 0.0 : round($qbo_balance <= 0.004 ? $amount : min($amount, max(0, $qbo_total - $qbo_balance)), 2);
     $own_id = intval($entry['payment_id'] ?? 0);
     $others = floatval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COALESCE(SUM(payment_amount), 0) FROM payments WHERE payment_invoice_id = $invoice_id
         AND payment_id != $own_id"))[0]);
@@ -646,17 +761,16 @@ function mitQboInvoiceBar($invoice_id) {
     }
     // While QuickBooks handles them, ITFlow's own email and (for invoices in QuickBooks) payment buttons and edits are hidden;
     // the handlers refuse them anyway
-    $hide = ['[data-modal-url*="invoice_email.php"]', 'button[form="quickSendInvoice"]'];
+    $hide = mitQboConnected() ? ['[data-modal-url*="invoice_email.php"]', 'button[form="quickSendInvoice"]'] : [];
     if ($entry) {
         $hide = array_merge($hide, ['[data-modal-url*="invoice_edit.php"]', '[data-modal-url*="invoice_item_edit"]', 'a[href*="delete_invoice_item="]',
-            'tr:has(button[name="add_invoice_item"])', 'a[href*="cancel_invoice="]', 'a[href*="delete_invoice="]']);
-        if ($entry['entry_status'] === 'sent') {
-            $hide = array_merge($hide, ['[data-modal-url*="payment_add.php"]', '[data-modal-url*="payment_saved_method_add.php"]']);
-        }
+            'tr:has(button[name="add_invoice_item"])', 'a[href*="cancel_invoice="]', 'a[href*="delete_invoice="]', '[data-modal-url*="invoice_mark_sent.php"]',
+            '#items .drag-handle', '[data-modal-url*="payment_add.php"]', '[data-modal-url*="payment_saved_method_add.php"]']);
     }
     return '<div class="alert alert-light border d-flex flex-wrap align-items-center gap-2 py-2 d-print-none" data-mit-qbo-bar>'
         . '<i class="fas fa-file-export text-success"></i><strong class="me-1">QuickBooks</strong><span class="me-auto">' . implode(' ', $parts) . '</span>' . $buttons . '</div>'
-        . '<style>' . implode(', ', $hide) . ' { display: none !important; }</style>';
+        . ($hide ? '<style>' . implode(', ', $hide) . ' { display: none !important; }</style>' : '')
+        . ($entry ? '<script>document.addEventListener("DOMContentLoaded", function () { var n = document.getElementById("invoiceNotes"); if (n) { n.readOnly = true; n.title = "Locked while in a QuickBooks batch"; } });</script>' : '');
 }
 
 /** Side-menu counts: invoices awaiting approval, and approved ones waiting for a batch. */

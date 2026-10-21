@@ -254,6 +254,7 @@ if (isset($_GET['delete_client'])) {
 
     enforceClientAccess();
     if (function_exists('mitTsDeleteGuard')) { mitTsDeleteGuard(0, $client_id); } // Mountaineer IT: not while its ticket time is on a submitted timesheet
+    if (function_exists('mitQboGuardClientDelete')) { mitQboGuardClientDelete($client_id); } // Mountaineer IT: not while its invoices are in QuickBooks batches
 
     // Get Client Name
     $client_name = escapeSql(getFieldById('clients', $client_id, 'client_name'));

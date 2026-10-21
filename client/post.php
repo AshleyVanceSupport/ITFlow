@@ -826,6 +826,7 @@ if (isset($_GET['add_payment_by_provider'])) {
 
     $invoice_id = intval($_GET['invoice_id']);
     $saved_payment_id = intval($_GET['add_payment_by_provider']);
+    if (function_exists('mitQboGuardPayment')) { mitQboGuardPayment($invoice_id); } // Mountaineer IT: paid in QuickBooks Online
 
     // Get invoice details
     $sql = mysqli_query($mysqli,"SELECT client_id, client_name, contact_email, contact_extension, contact_mobile,

@@ -4,7 +4,16 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
-## 26.10.100 - 2026-10-21
+## 26.10.101 - 2026-10-21
+Audit of the QuickBooks, usage billing and connector releases (four reviewers; every finding checked against the code):
+- QuickBooks: an invoice in a batch (sent or still waiting) takes no payments in ITFlow - agent, bulk, nightly autopay, client portal and guest pay links (before, autopay could charge a card for an invoice QuickBooks was also collecting). Sending refuses an invoice paid, cancelled or archived since it was batched.
+- QuickBooks: an invoice voided in QuickBooks is no longer read as "paid in full" (it is flagged to take out). "Leave in QuickBooks" keeps payments already brought back. A send that timed out after QuickBooks saved the invoice is not made twice. Payment checks and batch send / delete / take-out can't run over each other.
+- QuickBooks: connecting a different company (e.g. sandbox, then production) is refused while invoices are in batches, and clears the old mappings otherwise. The sign-in is renewed before it lapses even with nothing to check. Items inside a QuickBooks category and inactive customers are matched. The email call uses the content type Intuit asks for.
+- QuickBooks: overdue reminders and late fees stop only for invoices in batches (others carry on); Mark Sent and deleting a client are refused while invoices are in batches; batch delete / rename need access to all its clients; receiving a PO no longer makes an approved invoice "changed"; the invoice strip also locks the notes, line order and Mark Sent.
+- Usage billing: a deleted or archived tag is no longer counted as 0 (the line shows "No count"); "tag:" usage names are kept for tag counts; last month's quantity is what the last invoice still standing billed (hand edits count, cancelled ones don't); the Usage Review count includes invoices changed since approval; an error setting quantities still leaves the invoice a Draft.
+- Connectors: NinjaOne counts only while its sync has run in the last 2 days (a stopped sync no longer bills 0); servers include VMware / Hyper-V hosts, `ninjaone:devices` = workstations + servers, new `ninjaone:all` for everything. Ingram part numbers with unusual characters are counted and kept consistently; paging and customer filtering are checked; the API address must be public https and a new address needs the password and key typed again. One connector failing no longer stops the others; runs can't overlap.
+
+
 Usage connectors (database update M033) - Admin > Integrations > Usage connectors, run daily with the Usage Counts job or Run now:
 - NinjaOne: workstations, servers and all devices per client (from what the NinjaOne sync saw in the last 7 days) - usage names `ninjaone:workstations`, `ninjaone:servers`, `ninjaone:devices`.
 - Bitwarden: each client organization linked with its own API key (the Provider portal has no API; the key is tested before it is kept, and stored encrypted) - `bitwarden:users` (members not revoked, as Bitwarden bills) and `bitwarden:confirmed`. US or EU region.

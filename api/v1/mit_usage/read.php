@@ -16,6 +16,13 @@ require_once '../validate_api_key.php';
 
 require_once '../require_get_method.php';
 
+if (!function_exists('mitUsageReady') || !mitUsageReady()) {
+    $return_arr['success'] = "False";
+    $return_arr['message'] = "Usage billing needs the database update.";
+    echo json_encode($return_arr);
+    exit();
+}
+
 $source_sql = in_array($_GET['source'] ?? '', ['manual', 'api', 'tag'], true) ? " AND l.line_source = '" . $_GET['source'] . "'" : '';
 
 $sql = mysqli_query($mysqli,

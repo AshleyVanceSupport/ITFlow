@@ -22,7 +22,9 @@ const MIT_USAGE_CONNECTORS = [
     'bitwarden' => 'Bitwarden',
     'ingram' => 'Ingram Micro',
 ];
+// Agent-managed NinjaOne classes counted (network-only NMS_* devices, VM guests and phones are left out - ninjaone:all has them)
 const MIT_NINJA_WORKSTATION_CLASSES = ['WINDOWS_WORKSTATION', 'MAC', 'LINUX_WORKSTATION'];
+const MIT_NINJA_SERVER_CLASSES = ['WINDOWS_SERVER', 'LINUX_SERVER', 'MAC_SERVER', 'VMWARE_VM_HOST', 'HYPERV_VMM_HOST'];
 
 /** Has M033 run? */
 function mitUsageLinksReady() {
@@ -57,6 +59,32 @@ function mitUsageConnectorSettings() {
     ];
 }
 
+/**
+ * May the Ingram Micro API address be called? https, and a public address (never this server or the internal network) - the
+ * login and keys go to it. The test install's MIT_INGRAM_API_BASE stand-in is not checked.
+ */
+function mitUsageIngramBaseOk($url) {
+    if (defined('MIT_INGRAM_API_BASE') && rtrim($url, '/') === rtrim(MIT_INGRAM_API_BASE, '/')) {
+        return true;
+    }
+    $parts = parse_url((string) $url);
+    if (($parts['scheme'] ?? '') !== 'https' || empty($parts['host'])) {
+        return false;
+    }
+    $host = trim($parts['host'], '[]');
+    $ips = filter_var($host, FILTER_VALIDATE_IP) ? [$host] : array_merge(gethostbynamel($host) ?: [],
+        array_column(@dns_get_record($host, DNS_AAAA) ?: [], 'ipv6'));
+    if (!$ips) {
+        return false;
+    }
+    foreach ($ips as $ip) {
+        if (!mitIpIsPublic($ip)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /** Is Ingram Micro set up (login, password, subscription key)? */
 function mitUsageIngramConfigured() {
     $s = mitUsageConnectorSettings();
@@ -73,20 +101,28 @@ function mitUsageLinks($connector) {
         WHERE l.connector = '" . escapeSql($connector) . "' ORDER BY client_name"), MYSQLI_ASSOC);
 }
 
-/** Record a connector's count for today - one a day per client, usage name and source (a later run updates it). */
+/**
+ * Record a connector's count for today - one a day per client, usage name and source (a later run updates it). The name is
+ * cleaned the way it is stored (mitUsageCleanMetric). Returns '' or the problem.
+ */
 function mitUsageRecordDaily($client_id, $metric, $quantity, $source, $note = '') {
     global $mysqli;
     $client_id = intval($client_id);
-    $metric_sql = escapeSql(mitUsageCleanMetric($metric));
+    $metric = mitUsageCleanMetric($metric);
+    $quantity = floatval($quantity);
+    if ($metric === '' || $quantity < 0 || $quantity >= 1e9) {
+        return "A count for client $client_id could not be kept (" . ($metric === '' ? 'no usage name' : "quantity $quantity") . ').';
+    }
+    $metric_sql = escapeSql($metric);
     $source_sql = escapeSql($source);
     $today = mysqli_fetch_row(mysqli_query($mysqli, "SELECT count_id FROM mit_usage_counts WHERE client_id = $client_id AND metric = '$metric_sql' AND as_of = CURDATE()
-        AND count_source = '$source_sql' LIMIT 1"));
+        AND count_source = '$source_sql' ORDER BY count_id LIMIT 1"));
     if ($today) {
-        mysqli_query($mysqli, "UPDATE mit_usage_counts SET quantity = " . round(floatval($quantity), 2) . ", count_note = '" . escapeSql(mb_substr((string) $note, 0, 255)) . "',
+        mysqli_query($mysqli, "UPDATE mit_usage_counts SET quantity = " . round($quantity, 2) . ", count_note = '" . escapeSql(mb_substr((string) $note, 0, 255)) . "',
             reported_at = NOW() WHERE count_id = " . intval($today[0]));
-        return intval($today[0]);
+        return '';
     }
-    return mitUsageRecordCount($client_id, $metric, max(0, floatval($quantity)), date('Y-m-d'), $source, $note)[0];
+    return mitUsageRecordCount($client_id, $metric, $quantity, date('Y-m-d'), $source, $note)[1];
 }
 
 /** Note how a link's run went. */
@@ -100,22 +136,34 @@ function mitUsageLinkResult($link_id, $ok, $message) {
  * ---------- NinjaOne ----------
  */
 
-/** Workstations / servers / all devices per mapped client, from what the NinjaOne sync saw in the last 7 days. */
+/**
+ * Per mapped client, from what the NinjaOne sync saw in the last 7 days: workstations, servers (agent-managed, hypervisor hosts
+ * included), devices (the two together - managed endpoints) and all (everything NinjaOne lists: network devices, VMs, phones).
+ */
 function mitUsageNinjaCounts() {
     global $mysqli;
     if (!function_exists('mitNinjaReady') || !mitNinjaReady()) {
         return [];
     }
     $workstations = "'" . implode("','", MIT_NINJA_WORKSTATION_CLASSES) . "'";
-    $result = mysqli_query($mysqli, "SELECT o.client_id, COUNT(*) AS devices, SUM(d.node_class IN ($workstations)) AS workstations,
-            SUM(d.node_class LIKE '%SERVER%') AS servers
+    $servers = "'" . implode("','", MIT_NINJA_SERVER_CLASSES) . "'";
+    $result = mysqli_query($mysqli, "SELECT o.client_id, COUNT(*) AS everything, SUM(d.node_class IN ($workstations)) AS workstations,
+            SUM(d.node_class IN ($servers)) AS servers
         FROM mit_ninja_devices d JOIN mit_ninja_orgs o ON o.org_id = d.org_id
         WHERE o.client_id > 0 AND o.status = 'mapped' AND d.seen_at > NOW() - INTERVAL 7 DAY GROUP BY o.client_id");
     $counts = [];
     while ($row = mysqli_fetch_assoc($result)) {
-        $counts[intval($row['client_id'])] = ['workstations' => intval($row['workstations']), 'servers' => intval($row['servers']), 'devices' => intval($row['devices'])];
+        $counts[intval($row['client_id'])] = ['workstations' => intval($row['workstations']), 'servers' => intval($row['servers']),
+            'devices' => intval($row['workstations']) + intval($row['servers']), 'all' => intval($row['everything'])];
     }
     return $counts;
+}
+
+/** When the NinjaOne sync last ran through ('' = not in the last 2 days - its device list may be out of date). */
+function mitUsageNinjaFreshSync() {
+    global $mysqli;
+    return (string) (mysqli_fetch_row(mysqli_query($mysqli, "SELECT MAX(finished_at) FROM mit_ninja_runs WHERE outcome IN ('ok', 'warnings', 'problems')
+        AND finished_at > NOW() - INTERVAL 2 DAY"))[0] ?? '');
 }
 
 /** Record NinjaOne's counts. Returns [clients counted, problems]. */
@@ -124,18 +172,25 @@ function mitUsageRunNinja() {
     if (!function_exists('mitNinjaReady') || !mitNinjaReady()) {
         return [0, ['NinjaOne is not set up (Admin > Integrations > NinjaOne).']];
     }
+    // A stopped sync leaves devices unseen - counting then would bill every client for none
+    if (mitUsageNinjaFreshSync() === '') {
+        return [0, ['The NinjaOne sync has not run successfully in the last 2 days - nothing counted (Admin > Integrations > NinjaOne > Sync runs).']];
+    }
     $counts = mitUsageNinjaCounts();
     // Clients mapped but with nothing seen this week count 0, so a client whose devices all went is billed for none
     $result = mysqli_query($mysqli, "SELECT DISTINCT client_id FROM mit_ninja_orgs WHERE client_id > 0 AND status = 'mapped'");
     while ($row = mysqli_fetch_assoc($result)) {
-        $counts[intval($row['client_id'])] = $counts[intval($row['client_id'])] ?? ['workstations' => 0, 'servers' => 0, 'devices' => 0];
+        $counts[intval($row['client_id'])] = $counts[intval($row['client_id'])] ?? ['workstations' => 0, 'servers' => 0, 'devices' => 0, 'all' => 0];
     }
+    $problems = [];
     foreach ($counts as $client_id => $by_kind) {
         foreach ($by_kind as $kind => $qty) {
-            mitUsageRecordDaily($client_id, "ninjaone:$kind", $qty, 'ninjaone', 'NinjaOne devices seen in the last 7 days');
+            if (($why = mitUsageRecordDaily($client_id, "ninjaone:$kind", $qty, 'ninjaone', 'NinjaOne devices seen in the last 7 days')) !== '') {
+                $problems[] = $why;
+            }
         }
     }
-    return [count($counts), []];
+    return [count($counts), $problems];
 }
 
 /*
@@ -207,8 +262,11 @@ function mitUsageRunBitwarden() {
         $key = json_decode(mitDecryptSecret((string) $link['secret']), true) ?: [];
         try {
             $counts = mitUsageBitwardenMembers($key['client_id'] ?? '', $key['client_secret'] ?? '');
-            mitUsageRecordDaily($link['client_id'], 'bitwarden:users', $counts['users'], 'bitwarden', 'Bitwarden members not revoked');
-            mitUsageRecordDaily($link['client_id'], 'bitwarden:confirmed', $counts['confirmed'], 'bitwarden', 'Bitwarden confirmed members');
+            foreach (['users' => 'Bitwarden members not revoked', 'confirmed' => 'Bitwarden confirmed members'] as $kind => $note) {
+                if (($why = mitUsageRecordDaily($link['client_id'], "bitwarden:$kind", $counts[$kind], 'bitwarden', $note)) !== '') {
+                    throw new RuntimeException($why);
+                }
+            }
             mitUsageLinkResult($link['link_id'], true, "{$counts['users']} users ({$counts['confirmed']} confirmed)");
             $done++;
         } catch (Throwable $e) {
@@ -232,6 +290,9 @@ function mitUsageIngramToken($fresh = false) {
     }
     if (!mitUsageIngramConfigured()) {
         throw new RuntimeException('Ingram Micro is not set up - add the API login, password and subscription key.');
+    }
+    if (!mitUsageIngramBaseOk($s['ingram_base'])) {
+        throw new RuntimeException('The Ingram Micro API address must be a public https address.');
     }
     $response = mitHttp('POST', $s['ingram_base'] . '/token', ['Accept: application/json', 'Content-Type: application/json',
         'X-Subscription-Key: ' . mitDecryptSecret((string) mitSetting('usage_ingram_key', ''))], json_encode([
@@ -265,12 +326,20 @@ function mitUsageIngramList($path, array $query = []) {
             throw new RuntimeException("Ingram Micro $path: " . ($response['json']['message'] ?? ($response['error'] ?: 'HTTP ' . $response['status'])));
         }
         $page = isset($response['json']['data']) && is_array($response['json']['data']) ? $response['json']['data'] : (array_is_list($response['json']) ? $response['json'] : []);
-        $rows = array_merge($rows, $page);
-        if (count($page) < 100) {
+        // Rows by id: an API that ignored the offset would hand the same page back - stop instead of counting it again
+        $new = 0;
+        foreach ($page as $row) {
+            $key = is_array($row) && isset($row['id']) ? 'id:' . $row['id'] : 'row:' . md5(json_encode($row));
+            if (!isset($rows[$key])) {
+                $rows[$key] = $row;
+                $new++;
+            }
+        }
+        if (count($page) < 100 || $new === 0) {
             break;
         }
     }
-    return $rows;
+    return array_values($rows);
 }
 
 /** Ingram's customers (read from the API and kept for the mapping page): id => name. */
@@ -320,26 +389,33 @@ function mitUsageIngramAutoMatch() {
         $found = $by_name[mb_strtolower(trim((string) $row['client_name']))] ?? null;
         if ($found && !in_array(intval($row['client_id']), $linked_clients, true) && !in_array((string) $found[0], $linked_customers, true)) {
             mitUsageIngramSetLink($row['client_id'], $found[0], $found[1]);
+            $linked_customers[] = (string) $found[0];
             $matched++;
         }
     }
     return $matched;
 }
 
-/** One customer's active subscriptions as part number => [quantity, name]. */
+/** One customer's active subscriptions as usage name (ingram:<part number>, as stored) => [quantity, name]. */
 function mitUsageIngramProducts($customer_id) {
     $products = [];
     foreach (mitUsageIngramList('/subscriptions', ['customerId' => $customer_id, 'status' => 'active']) as $subscription) {
         if (isset($subscription['status']) && strtolower((string) $subscription['status']) !== 'active') {
             continue;
         }
+        // Only this customer's - should the filter ever be ignored, other customers' subscriptions are not added in
+        $owner = $subscription['customerId'] ?? ($subscription['customer']['id'] ?? null);
+        if ($owner !== null && (string) $owner !== (string) $customer_id) {
+            continue;
+        }
         foreach ((array) ($subscription['products'] ?? []) as $product) {
             $mpn = trim((string) ($product['mpn'] ?? ''));
-            if ($mpn === '') {
+            $metric = mitUsageCleanMetric("ingram:$mpn");
+            if ($mpn === '' || $metric === 'ingram:') {
                 continue;
             }
-            $products[$mpn]['quantity'] = ($products[$mpn]['quantity'] ?? 0) + floatval($product['quantity'] ?? 0);
-            $products[$mpn]['name'] = (string) ($product['name'] ?? $product['title'] ?? $subscription['name'] ?? $mpn);
+            $products[$metric]['quantity'] = ($products[$metric]['quantity'] ?? 0) + floatval($product['quantity'] ?? 0);
+            $products[$metric]['name'] = (string) ($product['name'] ?? $product['title'] ?? $subscription['name'] ?? $mpn);
         }
     }
     return $products;
@@ -357,15 +433,16 @@ function mitUsageRunIngram() {
         try {
             $products = mitUsageIngramProducts($link['external_id']);
             $client_id = intval($link['client_id']);
-            foreach ($products as $mpn => $product) {
-                mitUsageRecordDaily($client_id, "ingram:$mpn", $product['quantity'], 'ingram', $product['name']);
+            foreach ($products as $metric => $product) {
+                if (($why = mitUsageRecordDaily($client_id, $metric, $product['quantity'], 'ingram', $product['name'])) !== '') {
+                    throw new RuntimeException($why);
+                }
             }
             // A product counted in the last 60 days and gone now is 0 - not its old count left standing
             $seen = mysqli_query($mysqli, "SELECT DISTINCT metric, count_note FROM mit_usage_counts WHERE client_id = $client_id AND count_source = 'ingram'
                 AND as_of > CURDATE() - INTERVAL 60 DAY AND as_of < CURDATE()");
             while ($row = mysqli_fetch_assoc($seen)) {
-                $mpn = mb_substr((string) $row['metric'], 7);
-                if (!isset($products[$mpn])) {
+                if (!isset($products[(string) $row['metric']])) {
                     mitUsageRecordDaily($client_id, $row['metric'], 0, 'ingram', $row['count_note']);
                 }
             }
@@ -389,14 +466,31 @@ function mitUsageRunConnectors($only = '') {
     if (!mitUsageReady()) {
         return $report;
     }
-    if (($only === '' || $only === 'ninjaone') && (mitUsageConnectorSettings()['ninjaone_on'] || $only === 'ninjaone')) {
-        $report['ninjaone'] = mitUsageRunNinja();
+    // One run at a time (the daily job and Run now), so a day never gets two counts
+    if (!mitLock('usage_connectors', 30)) {
+        throw new RuntimeException('The usage connectors are already running - try again in a minute.');
     }
-    if (mitUsageLinksReady() && ($only === '' || $only === 'bitwarden') && mitUsageLinks('bitwarden')) {
-        $report['bitwarden'] = mitUsageRunBitwarden();
-    }
-    if (mitUsageLinksReady() && ($only === '' || $only === 'ingram') && mitUsageLinks('ingram')) {
-        $report['ingram'] = mitUsageRunIngram();
+    try {
+        $runs = [];
+        if (($only === '' || $only === 'ninjaone') && (mitUsageConnectorSettings()['ninjaone_on'] || $only === 'ninjaone')) {
+            $runs['ninjaone'] = 'mitUsageRunNinja';
+        }
+        if (mitUsageLinksReady() && ($only === '' || $only === 'bitwarden') && mitUsageLinks('bitwarden')) {
+            $runs['bitwarden'] = 'mitUsageRunBitwarden';
+        }
+        if (mitUsageLinksReady() && ($only === '' || $only === 'ingram') && mitUsageLinks('ingram')) {
+            $runs['ingram'] = 'mitUsageRunIngram';
+        }
+        // Each on its own: one failing does not stop the others
+        foreach ($runs as $connector => $run) {
+            try {
+                $report[$connector] = $run();
+            } catch (Throwable $e) {
+                $report[$connector] = [0, [$e->getMessage()]];
+            }
+        }
+    } finally {
+        mitUnlock('usage_connectors');
     }
     $last = json_decode((string) mitSetting('usage_connectors_last', '{}'), true) ?: [];
     foreach ($report as $connector => [$counted, $problems]) {
@@ -410,8 +504,10 @@ function mitUsageRunConnectors($only = '') {
 function mitUsageKnownMetrics($client_id) {
     global $mysqli;
     $metrics = [];
-    $result = mysqli_query($mysqli, "SELECT metric, count_source, count_note FROM mit_usage_counts c WHERE client_id = " . intval($client_id) . "
-        AND count_id = (SELECT MAX(count_id) FROM mit_usage_counts c2 WHERE c2.client_id = c.client_id AND c2.metric = c.metric) ORDER BY metric");
+    $client_id = intval($client_id);
+    $result = mysqli_query($mysqli, "SELECT c.metric, c.count_source, c.count_note FROM mit_usage_counts c
+        JOIN (SELECT MAX(count_id) AS count_id FROM mit_usage_counts WHERE client_id = $client_id GROUP BY metric) latest ON latest.count_id = c.count_id
+        ORDER BY c.metric");
     while ($row = mysqli_fetch_assoc($result)) {
         if (strpos($row['metric'], 'tag:') === 0) {
             continue;

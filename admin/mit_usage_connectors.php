@@ -62,18 +62,20 @@ $status_badge = function ($link) {
                     <label class="form-check-label" for="mitUsageNinjaOn">Count NinjaOne devices every day</label>
                 </div>
                 <p class="small text-muted">From the devices the NinjaOne sync saw in the last 7 days, by the client each NinjaOne organization is mapped to
-                    (Admin &gt; Integrations &gt; NinjaOne &gt; Mapping). Usage names: <code>ninjaone:workstations</code> (Windows, Mac, Linux workstations),
-                    <code>ninjaone:servers</code>, <code>ninjaone:devices</code> (all).</p>
+                    (Admin &gt; Integrations &gt; NinjaOne &gt; Mapping), and only while the sync has run in the last 2 days. Usage names:
+                    <code>ninjaone:workstations</code> (Windows, Mac, Linux workstations), <code>ninjaone:servers</code> (Windows, Linux, Mac servers and
+                    VMware / Hyper-V hosts), <code>ninjaone:devices</code> (workstations + servers) and <code>ninjaone:all</code> (everything NinjaOne lists,
+                    network devices, VMs and phones included).</p>
                 <button type="submit" name="mit_usage_ninjaone_save" class="btn btn-primary btn-sm"><i class="fas fa-check me-2"></i>Save</button>
             </form>
             <?php $counts = mitUsageNinjaCounts();
             if ($counts) {
                 $names = array_column($clients, 'client_name', 'client_id'); ?>
                 <table class="table table-sm mt-3" style="max-width: 46rem">
-                    <thead><tr><th>Client</th><th class="text-end">Workstations</th><th class="text-end">Servers</th><th class="text-end">All devices</th></tr></thead>
+                    <thead><tr><th>Client</th><th class="text-end">Workstations</th><th class="text-end">Servers</th><th class="text-end">Devices</th><th class="text-end">All</th></tr></thead>
                     <tbody>
                     <?php foreach ($counts as $client_id => $c) { ?>
-                        <tr><td><?= escapeHtml($names[$client_id] ?? "Client $client_id") ?></td><td class="text-end"><?= $c['workstations'] ?></td><td class="text-end"><?= $c['servers'] ?></td><td class="text-end"><?= $c['devices'] ?></td></tr>
+                        <tr><td><?= escapeHtml($names[$client_id] ?? "Client $client_id") ?></td><td class="text-end"><?= $c['workstations'] ?></td><td class="text-end"><?= $c['servers'] ?></td><td class="text-end"><?= $c['devices'] ?></td><td class="text-end"><?= $c['all'] ?></td></tr>
                     <?php } ?>
                     </tbody>
                 </table>

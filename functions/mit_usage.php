@@ -113,6 +113,9 @@ function mitUsageSaveLine($recurring_item_id, $source, $metric, $tag_id, $min_qt
     } else {
         $tag_id = 0;
         $metric = mitUsageCleanMetric($metric) ?: mitUsageMetricFromName($item['item_name']);
+        if (stripos($metric, 'tag:') === 0) {
+            return '"' . $item['item_name'] . '": usage names starting with "tag:" are kept for tag counts - pick "Contacts with a tag" instead.';
+        }
     }
     $min = trim((string) $min_qty) === '' ? 'NULL' : max(0, min(1e9, round(floatval($min_qty), 2)));
     $metric_sql = escapeSql($metric);
@@ -149,6 +152,9 @@ function mitUsageRecordCount($client_id, $metric, $quantity, $as_of = '', $sourc
     if ($metric === '') {
         return [0, 'The usage name is missing.'];
     }
+    if ($source !== 'tag' && stripos($metric, 'tag:') === 0) {
+        return [0, 'Usage names starting with "tag:" are kept for the daily tag counts.'];
+    }
     if (!is_numeric($quantity) || floatval($quantity) < 0 || floatval($quantity) >= 1e9) {
         return [0, 'The quantity must be a number from 0 up.'];
     }
@@ -179,6 +185,7 @@ function mitUsageRecordTagCounts($client_id = 0) {
     $client_sql = $client_id ? ' AND recurring_invoice_client_id = ' . intval($client_id) : '';
     $result = mysqli_query($mysqli, "SELECT DISTINCT recurring_invoice_client_id AS client_id, line_tag_id, line_metric FROM mit_usage_lines
         JOIN recurring_invoices ON recurring_invoices.recurring_invoice_id = mit_usage_lines.recurring_invoice_id
+        JOIN tags ON tags.tag_id = line_tag_id AND tags.tag_archived_at IS NULL
         WHERE line_source = 'tag' AND recurring_invoice_status = 1 AND recurring_invoice_archived_at IS NULL$client_sql");
     $recorded = 0;
     while ($row = mysqli_fetch_assoc($result)) {
@@ -242,11 +249,23 @@ function mitUsageRecalcInvoice($invoice_id) {
  */
 function mitUsageApply($invoice_id, $recurring_invoice_id) {
     global $mysqli;
-    $invoice_id = intval($invoice_id);
     $lines = mitUsageLines($recurring_invoice_id);
     if (!$lines) {
         return false;
     }
+    // Whatever happens, an invoice with usage lines stays a Draft for review (a failure is noted in its history)
+    try {
+        mitUsageApplyLines(intval($invoice_id), $recurring_invoice_id, $lines);
+    } catch (Throwable $e) {
+        error_log('Usage billing: invoice ' . intval($invoice_id) . ': ' . $e->getMessage());
+        mysqli_query($mysqli, "INSERT INTO history SET history_status = 'Draft', history_description = '" . escapeSql(mb_substr('Usage quantities could not be set: '
+            . $e->getMessage(), 0, 500)) . "', history_invoice_id = " . intval($invoice_id));
+    }
+    return true;
+}
+
+function mitUsageApplyLines($invoice_id, $recurring_invoice_id, array $lines) {
+    global $mysqli;
     $invoice = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT invoice_client_id, invoice_date FROM invoices WHERE invoice_id = $invoice_id"));
     if (!$invoice) {
         return false;
@@ -271,8 +290,12 @@ function mitUsageApply($invoice_id, $recurring_invoice_id) {
         $invoice_item_id = intval($invoice_items[$i]['item_id']);
         $base = round(floatval($recurring_item['item_quantity']), 2);
         $count = mitUsageCountAt($client_id, $line['line_metric'], $snapshot);
-        $previous = mysqli_fetch_row(mysqli_query($mysqli, "SELECT COALESCE(override_qty, applied_qty) FROM mit_usage_applied WHERE line_id = $line_id AND invoice_id != $invoice_id
-            ORDER BY applied_id DESC LIMIT 1"));
+        // Last month = what the last invoice still standing billed on this line (as it is now - hand edits count; cancelled ones don't)
+        $previous = mysqli_fetch_row(mysqli_query($mysqli, "SELECT invoice_items.item_quantity FROM mit_usage_applied a
+            JOIN invoice_items ON invoice_items.item_id = a.invoice_item_id JOIN invoices ON invoices.invoice_id = a.invoice_id
+            WHERE a.line_id = $line_id AND a.invoice_id != $invoice_id AND invoices.invoice_status NOT IN ('Cancelled', 'Non-Billable')
+                AND invoices.invoice_archived_at IS NULL
+            ORDER BY a.applied_id DESC LIMIT 1"));
         $previous = $previous ? round(floatval($previous[0]), 2) : null;
         $flags = [];
         $qty = $count ? round(floatval($count['quantity']), 2) : $base;
@@ -307,13 +330,13 @@ function mitUsageApply($invoice_id, $recurring_invoice_id) {
 function mitUsageOverride($applied_id, $qty, $reason) {
     global $mysqli, $session_user_id, $session_name;
     $applied_id = intval($applied_id);
-    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT a.*, invoice_status, invoice_client_id, item_name FROM mit_usage_applied a
+    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT a.*, invoice_status, invoice_archived_at, invoice_client_id, item_name FROM mit_usage_applied a
         JOIN invoices ON invoices.invoice_id = a.invoice_id JOIN invoice_items ON invoice_items.item_id = a.invoice_item_id
         WHERE a.applied_id = $applied_id" . clientScopeSql('invoices.invoice_client_id')));
     if (!$row) {
         return 'That usage line no longer exists.';
     }
-    if ($row['invoice_status'] !== 'Draft') {
+    if ($row['invoice_status'] !== 'Draft' || $row['invoice_archived_at'] !== null) {
         return 'The invoice is no longer a Draft.';
     }
     if (function_exists('mitQboInvoiceLock') && ($why = mitQboInvoiceLock($row['invoice_id'])) !== '') {
@@ -384,9 +407,14 @@ function mitUsageNavCount() {
     if (!mitUsageReady()) {
         return 0;
     }
-    return intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COUNT(DISTINCT a.invoice_id) FROM mit_usage_applied a JOIN invoices ON invoices.invoice_id = a.invoice_id
-        WHERE a.flags != '' AND a.override_at IS NULL AND invoice_status = 'Draft' AND invoice_archived_at IS NULL" . clientScopeSql('invoices.invoice_client_id') . "
-            AND NOT EXISTS (SELECT 1 FROM mit_invoice_approvals ap WHERE ap.invoice_id = a.invoice_id)"))[0]);
+    $ids = array_map('intval', array_column(mysqli_fetch_all(mysqli_query($mysqli, "SELECT DISTINCT a.invoice_id FROM mit_usage_applied a
+        JOIN invoices ON invoices.invoice_id = a.invoice_id
+        WHERE a.flags != '' AND a.override_at IS NULL AND invoice_status = 'Draft' AND invoice_archived_at IS NULL" . clientScopeSql('invoices.invoice_client_id')), MYSQLI_ASSOC), 'invoice_id'));
+    if (!$ids || !function_exists('mitInvoiceApprovalStates') || !mitQboReady()) {
+        return count($ids);
+    }
+    // Approved and unchanged since - reviewed; changed since approval - to review again
+    return count(array_filter(mitInvoiceApprovalStates($ids), fn($state) => $state !== 'approved'));
 }
 
 /** Flag badges for a usage row. */

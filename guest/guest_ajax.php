@@ -42,6 +42,9 @@ if (isset($_GET['stripe_create_pi'])) {
     if (!$invoice_sql || mysqli_num_rows($invoice_sql) !== 1) {
         exit(json_encode(['error' => 'Invalid Invoice ID/SQL query']));
     }
+    if (function_exists('mitQboTakesPayments') && mitQboTakesPayments($invoice_id)) { // Mountaineer IT: paid in QuickBooks Online
+        exit(json_encode(['error' => 'Please pay this invoice from the QuickBooks email you received.']));
+    }
 
     $row = mysqli_fetch_assoc($invoice_sql);
     $invoice_prefix = escapeHtml($row['invoice_prefix']);

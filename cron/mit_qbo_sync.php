@@ -32,6 +32,10 @@ if (!mitQboConnected()) {
 } else {
     $session_name = 'QuickBooks Online sync';
     try {
+        // Intuit's sign-in lapses after about 100 days unused - renew it in good time even with nothing to check
+        if (intval(mitSetting('qbo_refresh_expires', 0)) < time() + 30 * 86400) {
+            mitQboAccessToken(true);
+        }
         $mit_qbo_report = mitQboPaymentSync();
     } catch (Throwable $e) {
         mitSetSetting('qbo_last_error', mb_substr($e->getMessage(), 0, 500));

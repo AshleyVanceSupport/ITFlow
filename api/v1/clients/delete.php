@@ -7,6 +7,11 @@ require_once '../require_post_method.php';
 // Default
 $delete_count = false;
 
+// Mountaineer IT: not while its invoices are in QuickBooks batches (the delete then fails as not found)
+if (!empty($client_id) && function_exists('mitQboClientLock') && mitQboClientLock($client_id) !== '') {
+    $client_id = 0;
+}
+
 if (!empty($client_id)) {
     $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT client_name FROM clients WHERE client_id = $client_id AND client_archived_at IS NOT NULL LIMIT 1"));
     $client_name = $row['client_name'];
