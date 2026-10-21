@@ -690,6 +690,15 @@ model: see DEPLOYMENT.md.
   update. Our runner (`admin/database_updates_mountaineerit.php`) has `mitColumnExists` / `mitIndexExists`.
   Our features check their own update with a `...Ready()` function (one cached query per request) and fall back
   quietly; `function_exists()` guards in ITFlow files are kept on purpose so a half-merged checkout still loads.
+- Performance (Oct 21, 26.10.97): measured on a copy grown to 50,000 tickets / 300,000 replies / 300,000 log rows (the
+  test install keeps it as database `itflow_perf` - point config.php's `$database` at it to time pages; grant the itflow user).
+  M030 adds plain `mit_*` indexes on ITFlow's tables: tickets (closed+resolved+archived for the open counts, created,
+  resolved, schedule, number), ticket_attachments (ticket), ticket_history (created), logs (client+id, user+type+action+id
+  for Admin > Users' last sign-in), invoices (status+archived). Admin > Users 807 -> 10 ms, dashboard 535 -> 275 ms, Dispatch
+  queues 125 -> 20 ms. Our "closed in range" is `mitDispatchDoneIn()` (functions/mit_dispatch_workload.php) - written so those
+  indexes are used, not COALESCE(resolved, closed). Left as ITFlow has them: the Tickets list's tab counts and
+  SQL_CALC_FOUND_ROWS paging (about 0.4 s on the closed list at 50,000), Ticket Summary's reply-time sum over its range,
+  and global search's LIKE over every reply (about 1 s at 300,000 replies).
 - Phase 2 (after the next upstream release is merged): recheck the review findings in files
   upstream rewrote – ticket merge/move/link client checks, AI summary XSS, certificate-check
   SSRF, broken tag links, Clients/Tickets/dashboard/search performance.

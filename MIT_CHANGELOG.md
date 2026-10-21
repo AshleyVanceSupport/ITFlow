@@ -4,6 +4,11 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.97 - 2026-10-21
+Performance review (measured on a copy grown to 50,000 tickets, 300,000 replies and 300,000 log entries):
+- New database indexes (update M030) for the open-ticket counts, date ranges, ticket numbers, attachments, client activity, last sign-ins and invoice counts. Admin > Users went from 0.8 s to 0.01 s, the dashboard from 0.5 s to 0.3 s, Dispatch's queues from 0.13 s to 0.02 s; most other pages are 30-60% quicker on a busy system.
+- Dispatch's "This week" card reads a quarter of what it did.
+
 ## 26.10.96 - 2026-10-21
 Full test pass (every page and pop-up window as admin, a restricted tech and an accountant; every background job; restore into stock ITFlow) - small fixes:
 - Invoices, quotes and recurring invoices no longer ask for a missing company logo when none is set.
