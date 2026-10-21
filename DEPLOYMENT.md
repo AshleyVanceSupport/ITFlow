@@ -174,9 +174,9 @@ the app registration in Entra.
 ## Moving to stock ITFlow (backup portability)
 
 We keep this build so that a backup made here restores into ITFlow's own release and keeps
-working – so going back to itflow-org's `master` is always possible. Tested Oct 2026: a full
-backup of `develop` restored into stock v26.10 and into upstream's newer code; every main page
-loaded and new clients, tickets and replies saved without errors.
+working – so going back to itflow-org's `master` is always possible. Tested Oct 2026 (again on Oct 21, 26.10.96): a
+full backup of `develop` restored into stock v26.10 and into upstream's newer code (database 2.8.9 updated to 2.9.3);
+every main page loaded and new clients, tickets and replies saved without errors.
 
 **Check it at any time:** `sudo -u www-data php scripts/mit_portability_check.php` – compares the
 live database with ITFlow's schema (`db.sql`), exits 1 and prints `FAIL` lines if a backup would

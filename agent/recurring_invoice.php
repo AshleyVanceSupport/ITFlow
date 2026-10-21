@@ -210,7 +210,9 @@ if (isset($_GET['recurring_invoice_id'])) {
 
             <div class="row mb-3">
                 <div class="col-sm-2">
-                    <img class="img-fluid" src="<?= "../uploads/settings/$company_logo" ?>" alt="Company logo">
+                    <?php if (!empty($company_logo)) { ?>
+                        <img class="img-fluid" src="<?= "../uploads/settings/$company_logo" ?>" alt="Company logo">
+                    <?php } ?>
                 </div>
                 <div class="col-sm-6">
                     <ul class="list-unstyled">

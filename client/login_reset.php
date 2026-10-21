@@ -130,9 +130,9 @@ if ($_SERVER['REQUEST_METHOD'] == "POST") {
         // Query user
         $sql = mysqli_query($mysqli, "SELECT contact_id, contact_name, user_id, user_password_reset_token FROM users LEFT JOIN contacts ON user_id = contact_user_id WHERE user_email = '$email' AND user_password_reset_token = '$token' AND contact_client_id = $client AND user_auth_method = 'local' AND user_type = 2 AND user_status = 1 AND user_archived_at IS NULL LIMIT 1");
         $user_row = mysqli_fetch_assoc($sql);
-        $contact_id = intval($user_row['contact_id']);
-        $user_id = intval($user_row['user_id']);
-        $name = escapeSql($user_row['contact_name']);
+        $contact_id = intval($user_row['contact_id'] ?? 0);
+        $user_id = intval($user_row['user_id'] ?? 0);
+        $name = escapeSql($user_row['contact_name'] ?? '');
 
         // Ensure the token is correct
         if ($user_row && !empty($user_row['user_password_reset_token']) && hash_equals($user_row['user_password_reset_token'], strval($_POST['token']))) {

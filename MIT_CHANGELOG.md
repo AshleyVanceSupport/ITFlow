@@ -4,6 +4,11 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.96 - 2026-10-21
+Full test pass (every page and pop-up window as admin, a restricted tech and an accountant; every background job; restore into stock ITFlow) - small fixes:
+- Invoices, quotes and recurring invoices no longer ask for a missing company logo when none is set.
+- Two PHP warnings removed (portal password reset with an unknown link, account changes opened without a referring page).
+
 ## 26.10.95 - 2026-10-21
 Code review of ITFlow's own code - fixes:
 - Security: credential 2FA codes can no longer be reached through a share link by agents without credential access, and shared 2FA codes stop once a one-time link is used; "Require MFA" is now enforced on every page; an existing MFA can't be replaced without turning it off first; the portal password reset no longer emails anyone for an empty or unknown link and is rate-limited; saving a card in the portal only accepts the checkout the person started; bulk email needs edit rights and a configured From address; read-only and wrong-client gaps closed (revenues, transfers, contact links, export list).

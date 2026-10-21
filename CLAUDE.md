@@ -39,7 +39,8 @@ model: see DEPLOYMENT.md.
   restore into a stock checkout of the latest release (`git archive vYY.MM`; install schema first,
   then `scripts/restore_cli.php`) -> click through the main pages and save a client/ticket/reply.
   Keep DEPLOYMENT.md "Moving to stock ITFlow" (what stops working after a move) up to date.
-- Smoke tests: `cd tests/smoke && npx playwright test` against the test install (never production) - after
+- Smoke tests: `cd tests/smoke && ITFLOW_PHP_LOG=/var/log/apache2/itflow-error.log npx playwright test` against the test install
+  (never production; the log variable switches on 99-php-log, which otherwise skips) - after
   every upstream merge, before every "Promote to production", and after changing a page or hook in ITFlow's files.
   Report the result. New features get a test there (it must fail when the feature is broken).
 - Don't modify `libs/` unless asked.
@@ -128,7 +129,9 @@ model: see DEPLOYMENT.md.
   mitPurifyHtml, close needs resolved / resolve needs unresolved with tasks done / a comment on a resolved ticket reopens it
   properly, saved card allows Partial and charges the balance, stripe_save_card only takes this login's checkout session for the
   client's own customer, portal documents / files record the portal user id; `guest_view_ticket.php` avatar path;
-  `guest_download_file.php` checks the item first, quoted filename.
+  `guest_download_file.php` checks the item first, quoted filename. Stage 3 (26.10.96): `agent/invoice.php` / `quote.php` /
+  `recurring_invoice.php` draw the logo only when one is set (an empty name asked for the uploads/settings/ folder - 403);
+  `client/login_reset.php` reads the user row with `?? 0`; `agent/user/post.php` HTTP_REFERER `?? ''`.
   These fixes carry no "Mountaineer IT" marker (they are plain bug fixes, meant to match upstream's
   eventual fix) - find them with `git log`.
   When an upstream release fixes the same thing, resolve conflicts in favour of upstream.
