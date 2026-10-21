@@ -170,9 +170,8 @@ if (isset($_POST['mit_ts_person_save'])) {
         $approver_id = 0;
     }
     $employee_id = trim((string) ($_POST['employee_id'] ?? ''));
-    $pay_type = isset(MIT_TS_PAY_TYPES[$_POST['pay_type'] ?? '']) ? $_POST['pay_type'] : 'hourly';
     $set = "schedule = " . ($schedule === '' ? 'NULL' : "'$schedule'") . ", approver_id = $approver_id,
-        employee_id = " . ($employee_id === '' ? 'NULL' : "'" . escapeSql(mb_substr($employee_id, 0, 50)) . "'") . ", pay_type = '$pay_type'";
+        employee_id = " . ($employee_id === '' ? 'NULL' : "'" . escapeSql(mb_substr($employee_id, 0, 50)) . "'");
     if (mitLeaveReady()) {
         $hire = (string) ($_POST['hire_date'] ?? '');
         $set .= ", hire_date = " . (calendarIsDate($hire) ? "'$hire'" : 'NULL');

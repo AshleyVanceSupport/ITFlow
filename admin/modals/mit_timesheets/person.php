@@ -71,12 +71,9 @@ ob_start();
                 <input type="date" class="form-control" name="hire_date" value="<?= escapeHtml(mitLeaveHireDate($user_id)) ?>">
             </div>
             <div class="col-sm-6">
-                <label class="form-label">Pay</label>
-                <select class="form-select" name="pay_type">
-                    <?php foreach (MIT_TS_PAY_TYPES as $key => $label) { ?>
-                        <option value="<?= $key ?>" <?= $key === $details['pay_type'] ? 'selected' : '' ?>><?= escapeHtml($label) ?></option>
-                    <?php } ?>
-                </select>
+                <label class="form-label">Employment</label>
+                <div class="form-control-plaintext py-1"><strong data-mit-pay-type="<?= escapeHtml($details['pay_type']) ?>"><?= escapeHtml(MIT_TS_PAY_TYPE_SHORT[$details['pay_type']]) ?></strong></div>
+                <div class="form-text">Set in <a href="users.php">Admin &gt; Users</a> (Edit user).</div>
             </div>
             <?php if (mitTsZoneColumn()) { ?>
                 <div class="col-12">

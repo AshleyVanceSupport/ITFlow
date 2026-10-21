@@ -54,6 +54,7 @@ if (isset($_POST['add_user'])) {
     if (!intval($role['role_is_admin'])) {
         userSetClientAccess($user_id, $_POST['client_permission'] ?? []);
     }
+    mitTsSavePayType($user_id, $_POST); // Mountaineer IT: employment (timesheets)
 
     $notes = [];
     $avatar_error = '';
@@ -113,6 +114,7 @@ if (isset($_POST['edit_user'])) {
     $force_mfa = !empty($_POST['force_mfa']) ? 1 : 0;
     mysqli_query($mysqli, "INSERT INTO user_settings SET user_id = $user_id, user_config_force_mfa = $force_mfa ON DUPLICATE KEY UPDATE user_config_force_mfa = $force_mfa");
     mitSaveAgentColor($user_id, $_POST); // Mountaineer IT: calendar colour
+    mitTsSavePayType($user_id, $_POST); // Mountaineer IT: employment (timesheets)
 
     // An admin sees every client - their rules are left as they were, in case the role changes back
     if (!intval($role['role_is_admin']) && isset($_POST['client_permission_shown'])) {

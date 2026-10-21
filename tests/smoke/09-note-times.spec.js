@@ -97,24 +97,38 @@ test('timesheet: the note counts on the day it was worked, listed with its times
     await expectClean(page, errors);
 });
 
-test('timesheets: a Contractor is never under California rules', async ({ page }) => {
+// Pay type is set in Admin > Users (Edit user, "Employment"); the People modal only shows it
+async function setPayType(page, id, payType) {
+    await visit(page, 'admin/users.php');
+    const modal = await openModal(page, `modals/user/user_edit.php?id=${id}`, 'lg');
+    await fillForm(modal, { mit_pay_type: payType });
+    await submit(modal, 'edit_user');
+}
+
+test('timesheets: a Contractor (set in Admin > Users) is never under California rules', async ({ page }) => {
     const errors = watch(page);
     await visit(page, 'admin/mit_timesheets.php?tab=people', errors);
     const row = page.locator('tr', { has: page.locator('.badge', { hasText: 'California' }) }).first();
     test.skip(await row.count() === 0, 'nobody is on California rules here');
     const id = new URL(await row.locator('[data-modal-url*="person.php?id="]').getAttribute('data-modal-url'), page.url()).searchParams.get('id');
     let modal = await openModal(page, `modals/mit_timesheets/person.php?id=${id}`);
-    made.person = { id, pay_type: await modal.locator('select[name=pay_type]').inputValue(), ca_rules: await modal.locator('select[name=ca_rules]').inputValue() };
+    made.person = { id, pay_type: await modal.locator('[data-mit-pay-type]').getAttribute('data-mit-pay-type'), ca_rules: await modal.locator('select[name=ca_rules]').inputValue() };
     // Even with California rules switched on for them by hand
-    await fillForm(modal, { pay_type: 'contractor', ca_rules: '1' });
+    await fillForm(modal, { ca_rules: '1' });
     await submit(modal, 'mit_ts_person_save');
+    await setPayType(page, id, 'contractor');
+    await visit(page, 'admin/mit_timesheets.php?tab=people', errors);
     const person = page.locator('tr', { has: page.locator(`[data-modal-url*="person.php?id=${id}"]`) });
     await expect(person, 'shown as a contractor').toContainText('Contractor');
     await expect(person.locator('.badge', { hasText: 'California' }), 'no California rules').toHaveCount(0);
+    // Saving the People details keeps the pay type set in Users
     modal = await openModal(page, `modals/mit_timesheets/person.php?id=${id}`);
-    await fillForm(modal, { pay_type: made.person.pay_type, ca_rules: made.person.ca_rules });
+    await fillForm(modal, { ca_rules: made.person.ca_rules });
     await submit(modal, 'mit_ts_person_save');
+    await expect(person, 'still a contractor').toContainText('Contractor');
+    await setPayType(page, id, made.person.pay_type);
     made.person = null;
+    await visit(page, 'admin/mit_timesheets.php?tab=people', errors);
     await expect(person.locator('.badge', { hasText: 'California' }), 'back on California rules').toHaveCount(1);
     await expectClean(page, errors);
 });
@@ -126,8 +140,9 @@ test.afterAll(async ({ browser }) => {
     if (made.person) {
         await page.goto('admin/mit_timesheets.php?tab=people');
         const modal = await openModal(page, `modals/mit_timesheets/person.php?id=${made.person.id}`);
-        await fillForm(modal, { pay_type: made.person.pay_type, ca_rules: made.person.ca_rules });
+        await fillForm(modal, { ca_rules: made.person.ca_rules });
         await submit(modal, 'mit_ts_person_save');
+        await setPayType(page, made.person.id, made.person.pay_type);
     }
     if (made.ticketId) {
         await action(page, `delete_ticket=${made.ticketId}`, `agent/ticket.php?client_id=${made.clientId}&ticket_id=${made.ticketId}`);

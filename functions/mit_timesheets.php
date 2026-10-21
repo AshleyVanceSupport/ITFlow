@@ -208,6 +208,31 @@ function mitTsPerson($user_id) {
     ];
 }
 
+/** Admin > Users > New / Edit: how they are paid - overtime and the California rules follow it. Empty before update M013. */
+function mitTsPayTypeField($user_id, $col = 'col-12') {
+    if (!mitTsReady()) {
+        return '';
+    }
+    $current = mitTsPerson($user_id)['pay_type'];
+    $html = '<div class="' . $col . '"><label class="form-label">Employment</label><div class="input-group">'
+        . '<span class="input-group-text"><i class="fas fa-fw fa-id-badge"></i></span><select class="form-select" name="mit_pay_type">';
+    foreach (MIT_TS_PAY_TYPES as $key => $label) {
+        $html .= '<option value="' . $key . '"' . ($key === $current ? ' selected' : '') . '>' . escapeHtml($label) . '</option>';
+    }
+    return $html . '</select></div><div class="form-text">Timesheets: salaried and contractors get no overtime; contractors are never under the California rules.</div></div>';
+}
+
+/** Save the Employment field (a no-op when the form did not have it). */
+function mitTsSavePayType($user_id, array $post) {
+    global $mysqli;
+    $user_id = intval($user_id);
+    if (!$user_id || !isset($post['mit_pay_type']) || !isset(MIT_TS_PAY_TYPES[$post['mit_pay_type']]) || !mitTsReady()) {
+        return;
+    }
+    $pay_type = $post['mit_pay_type'];
+    mysqli_query($mysqli, "INSERT INTO mit_timesheet_people SET user_id = $user_id, pay_type = '$pay_type' ON DUPLICATE KEY UPDATE pay_type = '$pay_type'");
+}
+
 /** A person's paid-break rule: [minutes, for every so many minutes worked] - their own, else the company's. [0, x] = none. */
 function mitTsBreakRule($user_id) {
     $person = mitTsPerson($user_id);

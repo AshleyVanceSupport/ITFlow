@@ -330,7 +330,9 @@ model: see DEPLOYMENT.md.
   California sheet is not approved while the person has changes to acknowledge.
   Pay types (`MIT_TS_PAY_TYPES` / `MIT_TS_PAY_TYPE_SHORT`): hourly, salary (no overtime, California off unless set On), contractor
   (no overtime, never California - `mitTsCaOn` returns false whatever `ca_rules` says; still keeps a timesheet, leave and auto lost
-  time as set). The People list shows a California badge (`mitTsCaOn`). The day panel lists auto lost time as a row with the codes
+  time as set). The pay type is set in Admin > Users > New / Edit ("Employment": `mitTsPayTypeField` - one line in
+  `admin/modals/user/user_form.php` after Role; `mitTsSavePayType` - one line each in `admin/post/users.php` add_user / edit_user);
+  the People modal only shows it and its save leaves it alone. The People list shows a California badge (`mitTsCaOn`). The day panel lists auto lost time as a row with the codes
   (`[data-auto-lost]`, goes down live as codes are typed; "Lost time (auto)" chip on the day row).
   Times on ticket notes (M028, `functions/mit_reply_times.php` + `agent/js/mit_reply_times.js`, required from mit_timesheets.php):
   `mit_reply_times` (reply_id FK ticket_replies CASCADE, work_start / work_end as the person's clock read them). The reply box
