@@ -38,6 +38,14 @@ function mitTsViewDays($user_id, array $period, array $only = []) {
     $entries = mitTsEntries([$user_id], $period['start'], $period['end'])[$user_id] ?? [];
     $ca_days = mitTsCaDays([$user_id], $period['start'], $period['end'])[$user_id] ?? [];
     $today = mitTsToday($user_id);
+    // Each note with time, on the day it was worked (functions/mit_reply_times.php)
+    $notes = [];
+    if (mitTsSettings()['ticket_time']) {
+        foreach (mitTsReplyWorkRows([$user_id], $period['start'], $period['end']) as $row) {
+            $notes[$row['date']][] = $row;
+        }
+    }
+    $see_tickets = lookupUserPermission('module_support') >= 1;
     $out = [];
     foreach ($days as $date => $d) {
         if ($only && !in_array($date, $only, true)) {
@@ -55,6 +63,19 @@ function mitTsViewDays($user_id, array $period, array $only = []) {
             $c = $ca_days[$date];
             $ca = ['blocks' => mitTsCaBlocks($c['periods']), 'worked' => $c['clocked'], 'meals' => $c['meals'], 'answers' => $c['answers'],
                 'meal_premium' => $c['meal_premium'], 'rest_premium' => $c['rest_premium']];
+        }
+        // The day's ticket entries in time order, with times and clashes (overlaps, outside the clocked work times)
+        $day_entries = [];
+        foreach (mitTsDayEntryFlags($notes[$date] ?? [], $ca_days[$date]['periods'] ?? []) as $row) {
+            $visible = $see_tickets && (!$row['client_id'] || hasClientAccess($row['client_id']));
+            $day_entries[] = [
+                'ticket' => $visible ? $row['reference'] . ' ' . $row['subject'] : 'A ticket you cannot see',
+                'url' => $visible ? 'ticket.php?' . ($row['client_id'] ? 'client_id=' . $row['client_id'] . '&' : '') . 'ticket_id=' . $row['ticket_id'] : '',
+                'start' => $row['start'] ? substr($row['start'], 11, 5) : null,
+                'end' => $row['end'] ? substr($row['end'], 11, 5) : null,
+                'minutes' => (int) round($row['seconds'] / 60),
+                'billable' => $row['billable'], 'overlap' => $row['overlap'], 'outside' => $row['outside'],
+            ];
         }
         // What the day adds up to: hours worked (the typed times on California rules), leave, and paid breaks
         $total = ($d['ca'] ? $d['clocked'] : $d['billable'] + $d['other'] + $d['work'] + $d['lost'] + $d['break_paid']) + $d['leave_paid'] + $d['leave_unpaid'];
@@ -76,6 +97,7 @@ function mitTsViewDays($user_id, array $period, array $only = []) {
             'total' => $total,
             'under' => !$d['ca'] && $expected > 0 && $date <= $today && $total < $expected,
             'ca' => $ca,
+            'entries' => $day_entries,
         ];
     }
     return $out;
@@ -95,7 +117,7 @@ function mitTsViewSummary($user_id, array $period) {
             . (mitTsSettings()['billable'] === 'all' && !$t['other'] ? 'all billable' : mitTsHours($t['billable'], false) . ' h billable (' . mitTsBillableShare($t) . ')')],
     ];
     if ($t['ca'] || $settings['ot_day'] || $settings['ot_week']) {
-        $stats[] = ['Overtime', mitTsHours($t['overtime'], false), $t['ca'] ? mitTsHours($t['double'], false) . ' h double time' : (mitTsPerson($user_id)['pay_type'] === 'salary' ? 'Salaried' : 'Over your limits')];
+        $stats[] = ['Overtime', mitTsHours($t['overtime'], false), $t['ca'] ? mitTsHours($t['double'], false) . ' h double time' : (mitTsPerson($user_id)['pay_type'] !== 'hourly' ? MIT_TS_PAY_TYPE_SHORT[mitTsPerson($user_id)['pay_type']] : 'Over your limits')];
     }
     if ($t['ca']) {
         $premiums = intdiv($t['meal_premium'], 60) + intdiv($t['rest_premium'], 60);

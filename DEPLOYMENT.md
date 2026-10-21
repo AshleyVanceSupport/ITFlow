@@ -247,6 +247,8 @@ break stock ITFlow, and lists what stops working after a move.
 - **Additional agents on tickets** – stock ITFlow keeps only the assigned agent. The others, their
   own scheduled times and their calendar / Outlook entries are not shown (the rows sit unused
   in `mit_ticket_techs`); reassign or note them on the tickets that need it.
+- **Times on ticket notes** – stock ITFlow keeps each note's length (time worked) but not when the work was done; the
+  dates and start / end times sit unused in `mit_reply_times`. Ticket time stays on the ticket.
 - **Service boards** – stock ITFlow has no boards: every ticket is in the one Tickets list again
   (filter by category instead), the Board line, Escalate, routing rules and board notifications stop
   (the rows sit unused in `mit_boards` / `mit_ticket_boards` / `mit_board_rules` / `mit_board_members`).

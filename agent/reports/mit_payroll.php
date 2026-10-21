@@ -82,7 +82,7 @@ foreach ($people as $user_id => $person) {
     }
     $details = mitTsPerson($user_id);
     $row = ['user_id' => $user_id, 'person' => $person['user_name'], 'email' => $person['user_email'], 'avatar' => $person['user_avatar'] ?? '',
-        'employee_id' => $details['employee_id'], 'pay_type' => $details['pay_type'] === 'salary' ? 'Salaried' : 'Hourly',
+        'employee_id' => $details['employee_id'], 'pay_type' => MIT_TS_PAY_TYPE_SHORT[$details['pay_type']] ?? 'Hourly',
         'regular' => $t['regular'] * 60, 'overtime' => $t['overtime'] * 60, 'auto_lost' => $t['auto_lost'] * 60, 'break_paid' => $t['break_paid'] * 60,
         'miles' => $r['miles'], 'mileage' => $r['mileage'], 'purchases' => $r['purchases'], 'reimburse' => $r['total'],
         'billable' => $t['billable'] * 60, 'other' => $t['other'] * 60, 'work' => $t['work'] * 60, 'worked' => $t['worked'] * 60, 'leave' => $t['leave'] * 60,

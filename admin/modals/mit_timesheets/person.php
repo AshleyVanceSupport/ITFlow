@@ -89,11 +89,11 @@ ob_start();
                 <div class="col-12">
                     <label class="form-label">California non-exempt rules</label>
                     <select class="form-select" name="ca_rules">
-                        <option value="" <?= $details['ca_rules'] === null ? 'selected' : '' ?>>By pay type (on for hourly)</option>
+                        <option value="" <?= $details['ca_rules'] === null ? 'selected' : '' ?>>By pay type (on for hourly, off for salaried)</option>
                         <option value="1" <?= $details['ca_rules'] === 1 ? 'selected' : '' ?>>On</option>
                         <option value="0" <?= $details['ca_rules'] === 0 ? 'selected' : '' ?>>Off</option>
                     </select>
-                    <div class="form-text">On: they type start, meal and end times each day, answer for missed meal periods, sign their timesheet, and get California overtime, double time and premium pay.</div>
+                    <div class="form-text">On: they type start, meal and end times each day, answer for missed meal periods, sign their timesheet, and get California overtime, double time and premium pay. Contractors are never under these rules.</div>
                 </div>
             <?php } ?>
             <?php if (mitTsBreakColumns()) {

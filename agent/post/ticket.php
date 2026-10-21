@@ -1026,6 +1026,7 @@ if (isset($_POST['add_ticket_reply'])) {
 
     // Time tracking, inputs & combine into string
     $ticket_reply_time_worked = escapeSql(sprintf("%02d:%02d:%02d", max(0, intval($_POST['hours'] ?? 0)), max(0, min(59, intval($_POST['minutes'] ?? 0))), max(0, min(59, intval($_POST['seconds'] ?? 0)))));
+    if (function_exists('mitReplyTimesFromPost')) { $ticket_reply_time_worked = mitReplyTimesFromPost($_POST, $ticket_reply_time_worked); } // Mountaineer IT: when the work was done
 
     // Who sees it: internal note, public note, or public and emailed
     $send_email = 0;
@@ -1062,6 +1063,7 @@ if (isset($_POST['add_ticket_reply'])) {
 
         mysqli_query($mysqli, "INSERT INTO ticket_replies SET ticket_reply = '$ticket_reply', ticket_reply_time_worked = '$ticket_reply_time_worked', ticket_reply_type = '$ticket_reply_type', ticket_reply_by = $session_user_id, ticket_reply_ticket_id = $ticket_id");
         $ticket_reply_id = mysqli_insert_id($mysqli);
+        if (function_exists('mitReplyTimesSavePending')) { mitReplyTimesSavePending($ticket_reply_id); } // Mountaineer IT
 
         // Store any attached files against this reply before the email is built, so
         // a public reply can carry them
@@ -1204,9 +1206,11 @@ if (isset($_POST['edit_ticket_reply'])) {
     // Public or internal - anything else keeps what it was
     $ticket_reply_type = in_array($_POST['ticket_reply_type'] ?? '', ['Public', 'Internal'], true) ? $_POST['ticket_reply_type'] : $reply['ticket_reply_type'];
     $ticket_reply_time_worked = escapeSql(ticketTimeWorked($_POST['time'] ?? ''));
+    if (function_exists('mitReplyTimesFromEdit')) { $ticket_reply_time_worked = mitReplyTimesFromEdit($ticket_reply_id, $_POST, $ticket_reply_time_worked); } // Mountaineer IT: when the work was done
     if (function_exists('mitTsReplyTimeGuard')) { mitTsReplyTimeGuard($ticket_reply_id, $ticket_reply_time_worked); } // Mountaineer IT: time on a submitted timesheet stays
 
     mysqli_query($mysqli, "UPDATE ticket_replies SET ticket_reply = '$ticket_reply', ticket_reply_type = '$ticket_reply_type', ticket_reply_time_worked = '$ticket_reply_time_worked' WHERE ticket_reply_id = $ticket_reply_id");
+    if (function_exists('mitReplyTimesSavePending')) { mitReplyTimesSavePending($ticket_reply_id); } // Mountaineer IT
 
     logAudit("Ticket", "Reply", "$session_name edited a reply on ticket " . escapeSql(ticketReference($row)), $client_id, $ticket_reply_id);
 

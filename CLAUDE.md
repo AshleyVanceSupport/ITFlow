@@ -328,6 +328,24 @@ model: see DEPLOYMENT.md.
   Reply time is locked once its timesheet is submitted / approved: one guarded line in `agent/post/ticket.php` edit_ticket_reply
   (`mitTsReplyTimeGuard`). Days inside an approved sheet stay locked after a pay-period change (`mitTsApprovedDates`); a
   California sheet is not approved while the person has changes to acknowledge.
+  Pay types (`MIT_TS_PAY_TYPES` / `MIT_TS_PAY_TYPE_SHORT`): hourly, salary (no overtime, California off unless set On), contractor
+  (no overtime, never California - `mitTsCaOn` returns false whatever `ca_rules` says; still keeps a timesheet, leave and auto lost
+  time as set). The People list shows a California badge (`mitTsCaOn`). The day panel lists auto lost time as a row with the codes
+  (`[data-auto-lost]`, goes down live as codes are typed; "Lost time (auto)" chip on the day row).
+  Times on ticket notes (M028, `functions/mit_reply_times.php` + `agent/js/mit_reply_times.js`, required from mit_timesheets.php):
+  `mit_reply_times` (reply_id FK ticket_replies CASCADE, work_start / work_end as the person's clock read them). The reply box
+  (`mitReplyTimesField`, one line in `agent/ticket.php` after the send buttons) asks for Date worked / Start / End whenever time is
+  logged - they follow ITFlow's timer (#hours / #minutes / #seconds; end = now) until typed, typed times pause the timer and set
+  the length, a missing / bad time stops the send (capture-phase click on `#ticket_add_reply`). Hooks in `agent/post/ticket.php`:
+  add_ticket_reply `mitReplyTimesFromPost` (after the time is built; typed times win unless within a minute; a submitted /
+  approved day drops the times with a warning) + `mitReplyTimesSavePending` after the INSERT; edit_ticket_reply
+  `mitReplyTimesFromEdit` (only the length changed -> the start moves; moving onto / off a locked day refused) +
+  `mitReplyTimesSavePending` after the UPDATE. Edit modal `mitReplyTimesEditField` (one line in
+  `agent/modals/ticket/ticket_reply_edit.php`), note header `mitReplyTimesText` (one line in `agent/ticket.php`). Notes without a
+  row (older, API, bulk resolve, email) end when posted. Timesheets: `mitTsReplyWorkRows` (the day worked - work_start's date,
+  else mitTsLocalDate of the posting) feeds `mitTsTicketMinutesLive`, `mitTsDayTickets` and the day panel's entry list
+  (`mitTsViewDays` 'entries', `mitTsDayEntryFlags`: overlap between timed entries, outside = not within a California day's clocked
+  work periods); `mitTsReplyTimeGuard` uses the work date.
   California non-exempt (M018): `functions/mit_ts_california.php` (ours, required from mit_timesheets.php) - per person
   `mit_timesheet_people.ca_rules` (NULL = on for hourly; People modal), from `mit_settings` ts_ca_start on (set to the day M018
   ran - earlier days and periods keep their old hours; `mitTsCaOn($user_id, $date)`). Typed start / meal / end times per day

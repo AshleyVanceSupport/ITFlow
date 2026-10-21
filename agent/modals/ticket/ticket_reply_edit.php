@@ -66,6 +66,7 @@ ob_start();
                     </div>
                 </div>
             </div>
+            <?= function_exists('mitReplyTimesEditField') && $ticket_reply_time_worked_formatted !== '00:00:00' ? mitReplyTimesEditField($ticket_reply_id) : '' // Mountaineer IT: when the work was done ?>
         <?php } ?>
 
     </div>

@@ -66,7 +66,7 @@ foreach ($weeks as $i => $week) {
 }
 $data = [
     'user_id' => $user_id, 'start' => $period['start'], 'csrf' => $csrf, 'own' => $own, 'locked' => $locked, 'ca' => $ca,
-    'format' => mitTsFormat(), 'today' => $today, 'future' => $settings['future'], 'ticket_time' => (bool) $settings['ticket_time'],
+    'format' => mitTsFormat(), 'today' => $today, 'future' => $settings['future'], 'ticket_time' => (bool) $settings['ticket_time'], 'lost_paid' => (bool) $settings['auto_lost_paid'],
     'weeks' => $weeks, 'open_week' => $open_week, 'days' => mitTsViewDays($user_id, $period), 'codes' => mitTsViewCodes($user_id, $period),
     'answers' => MIT_TS_CA_ANSWERS, 'problems' => $ca ? mitTsCaProblems($user_id, $period) : [],
 ];
@@ -227,6 +227,7 @@ $status_text = [
     .mit-ts-panel { --bs-offcanvas-width: 480px; }
     .mit-ts-section { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--bs-secondary-color); margin-bottom: .75rem; }
     .mit-ts-code { padding: .6rem 0; border-bottom: 1px solid var(--bs-border-color-translucent); }
+    .mit-ts-code-auto .mit-ts-auto-hours { min-width: 4.5rem; text-align: end; padding-right: .75rem; }
     .mit-ts-hours { width: 5.5rem; }
     .mit-ts-dot { width: .6rem; height: .6rem; border-radius: 50%; flex: none; }
     .mit-ts-auto { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; padding: .5rem .75rem; margin-bottom: .5rem; border-radius: .5rem; background: var(--bs-tertiary-bg); text-decoration: none; }

@@ -21,6 +21,7 @@
     };
     let week = Math.min(D.open_week || 0, D.weeks.length - 1);
     let current = null;      // the date open on the side
+    let codesAtOpen = null;  // the hours on codes when it was opened - the lost time row goes down from there
     let timer = null;        // the save waiting for typing to stop
     let saving = null;       // the save on its way
     let again = false;       // something changed while saving
@@ -159,8 +160,13 @@
             if (m) parts.push(chip(c.color, c.name + ' (not on a code)', m));
         });
         if (d.unallocated && (parts.length || d.ca)) parts.push(chip('', 'Not on a code', d.unallocated, 'muted'));
-        if (d.auto_lost) flags.push(chip('', 'Unaccounted', d.auto_lost, 'warning'));
+        if (d.auto_lost) flags.push(chip('', 'Lost time (auto)', d.auto_lost, 'warning'));
         if (d.under && !d.auto_lost) flags.push(chip('', 'Under ' + hours(d.expected) + ' h', null, 'warning'));
+        // Ticket entries that clash: two at once, or outside the clocked work times
+        const overlaps = (d.entries || []).filter((e) => e.overlap).length;
+        const outside = (d.entries || []).filter((e) => e.outside).length;
+        if (overlaps) flags.push(chip('', 'Ticket times overlap', null, 'warning'));
+        if (outside) flags.push(chip('', outside + ' ticket ' + (outside === 1 ? 'entry' : 'entries') + ' outside your times', null, 'warning'));
         const empty = !times && !parts.length;
         const off = !d.expected;
         return '<button type="button" class="list-group-item list-group-item-action mit-ts-day' + (d.today ? ' is-today' : '') + (off ? ' is-off' : '') + (date === current ? ' active-day' : '') + '" data-date="' + date + '">'
@@ -210,6 +216,7 @@
     function openDay(date) {
         flush();
         current = date;
+        codesAtOpen = null;
         removed = new Set();
         const d = D.days[date];
         panelEl.querySelector('#mitTsDayTitle').textContent = d.long;
@@ -234,12 +241,29 @@
                 + '<span>' + chip('#198754', 'Ticket time', d.tickets.billable + d.tickets.other) + '</span>'
                 + '<span class="small ms-auto">The tickets <i class="fas fa-external-link-alt"></i></span></a>';
         }
+        // Each ticket entry with when it was worked (ticket notes' times)
+        if ((d.entries || []).length) {
+            html += '<ul class="list-unstyled small mb-3 mit-ts-entries" data-ts-entries>' + d.entries.map(function (e) {
+                const when = e.start ? esc(e.start) + ' - ' + esc(e.end) : '<span class="text-body-tertiary" title="This note has no times - it counts as ending when it was posted">no times</span>';
+                const warn = (e.overlap ? '<span class="badge text-bg-warning ms-1">Overlaps</span>' : '') + (e.outside ? '<span class="badge text-bg-warning ms-1">Outside your times</span>' : '');
+                const name = e.url ? '<a href="' + esc(e.url) + '" target="_blank" rel="noopener">' + esc(e.ticket) + '</a>' : esc(e.ticket);
+                return '<li class="d-flex gap-2 py-1 border-bottom' + (e.overlap || e.outside ? ' mit-ts-entry-warn' : '') + '"><span class="text-nowrap font-monospace">' + when + '</span>'
+                    + '<span class="flex-grow-1 text-truncate">' + name + warn + '</span><span class="text-nowrap">' + hours(e.minutes) + '</span></li>';
+            }).join('') + '</ul>';
+        }
         html += '<div data-codes>' + Object.entries(d.codes).map(([id, e]) => codeRow(id, e)).join('') + '</div>';
+        // Unaccounted time, as a row with the codes so it is plain what the day is charged with - it shrinks as time is added
+        if (d.auto_lost) {
+            html += '<div class="mit-ts-code mit-ts-code-auto" data-auto-lost>'
+                + '<div class="d-flex align-items-center gap-2"><span class="mit-ts-dot" style="background:#ffc107"></span>'
+                + '<span class="flex-grow-1">Lost time <span class="badge text-bg-warning">Automatic</span>' + (D.lost_paid ? '' : ' <span class="badge text-bg-light border">Unpaid</span>')
+                + '<span class="d-block small text-body-secondary">The part of the normal day not on ticket time or a code - it goes down as you add time</span></span>'
+                + '<span class="fw-semibold mit-ts-auto-hours" data-auto-lost-hours>' + hours(d.auto_lost) + '</span></div></div>';
+        }
         if (!readOnly) {
             html += '<select class="form-select form-select-sm mt-2" data-add aria-label="Add time to a code"></select>';
         }
         if (d.break_paid) html += '<div class="small text-body-secondary mt-2"><i class="fas fa-coffee me-1"></i>Paid breaks added for you: ' + hours(d.break_paid) + ' h</div>';
-        if (d.auto_lost) html += '<div class="small text-warning-emphasis mt-2"><i class="fas fa-hourglass-half me-1"></i>' + hours(d.auto_lost) + ' h of your normal day is not accounted for</div>';
         html += '</section>';
         body.innerHTML = html;
         fillAdd();
@@ -282,6 +306,15 @@
             total = a.worked + codes;
         } else {
             total = d.tickets.billable + d.tickets.other + codes + d.break_paid;
+        }
+        // Lost time goes down by what has been added since the day was opened (the server's figure replaces it after a save)
+        const lostRow = body.querySelector('[data-auto-lost]');
+        if (lostRow) {
+            if (codesAtOpen === null) codesAtOpen = codes;
+            const lost = Math.max(0, d.auto_lost - Math.max(0, codes - codesAtOpen));
+            lostRow.querySelector('[data-auto-lost-hours]').textContent = hours(lost);
+            lostRow.hidden = !lost;
+            total += lost; // as in the day's row (lost time is in the day's hours, paid or not)
         }
         panelEl.querySelector('[data-mit-day-total]').textContent = hours(total, true) + ' h';
     }

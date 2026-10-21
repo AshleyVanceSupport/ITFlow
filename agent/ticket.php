@@ -792,6 +792,7 @@ if (isset($_GET['ticket_id'])) {
                                                     </button>
                                                 </div>
                                             </div>
+                                            <?= function_exists('mitReplyTimesField') ? mitReplyTimesField() : '' // Mountaineer IT: when the work was done ?>
                                         </div>
 
                                     </div>
@@ -884,7 +885,7 @@ if (isset($_GET['ticket_id'])) {
                                         <div class="small text-muted" title="Created: <?= $ticket_reply_created_at ?><?php if ($ticket_reply_updated_at) { echo '. Edited: ' . $ticket_reply_updated_at; } ?>">
                                             <?= $ticket_reply_created_at_ago ?><?php if ($ticket_reply_updated_at) { echo ' <em>(edited)</em>'; } ?>
                                             <?php if ($ticket_reply_type !== "Client" && $ticket_reply_time_worked && $ticket_reply_time_worked !== "00:00:00") { ?>
-                                                <span class="mx-1">&middot;</span><i class="far fa-fw fa-clock"></i> <?= formatDuration($ticket_reply_time_worked) ?>
+                                                <span class="mx-1">&middot;</span><i class="far fa-fw fa-clock"></i> <?= formatDuration($ticket_reply_time_worked) ?><?= function_exists('mitReplyTimesText') ? mitReplyTimesText($ticket_reply_id, $ticket_id) : '' // Mountaineer IT ?>
                                             <?php } ?>
                                         </div>
                                     </div>

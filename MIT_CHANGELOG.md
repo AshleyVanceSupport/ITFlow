@@ -4,6 +4,12 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.89 - 2026-10-20
+- Ticket notes now record when the work was done: Date worked, Start and End sit under the time worked in the reply box. They follow the timer (ending now) until you type them; typing them sets the length. A note with time can't be sent without them, and they show on the note ("Tue Oct 20, 9:10 - 9:40 AM"). Edit reply has them too - change only the length and the start moves.
+- Timesheets count ticket time on the day it was worked, not the day the note was posted. The day panel lists each ticket entry with its times, and warns when two overlap or (on California / time-clock days) when one falls outside your clocked times.
+- Timesheets: a new Contractor pay type - no overtime and never under the California rules (even if switched on for them); they still keep a timesheet. The People list shows who is on California rules.
+- Timesheets: automatic lost time now shows as a row with the charge codes in the day panel, going down as you add time, so it is clear what the day is charged with.
+
 ## 26.10.88 - 2026-10-20
 - Dispatch Week view: the agent names stay on the left while the days scroll sideways, and each day is kept to a set width - long titles are cut short (hover for the whole title) instead of stretching one day across the screen.
 

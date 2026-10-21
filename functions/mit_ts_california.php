@@ -61,6 +61,10 @@ function mitTsCaOn($user_id, $date = null) {
     if (!mitTsCaReady() || ($date !== null && $date < mitTsCaStart())) {
         return false;
     }
+    // Contractors are not employees - never under the wage-order rules, whatever their own switch says
+    if (mitTsPerson($user_id)['pay_type'] === 'contractor') {
+        return false;
+    }
     $row = mitTsPeople()[intval($user_id)] ?? [];
     if (isset($row['ca_rules']) && $row['ca_rules'] !== null && $row['ca_rules'] !== '') {
         return intval($row['ca_rules']) === 1;

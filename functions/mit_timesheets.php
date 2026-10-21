@@ -44,7 +44,8 @@
 // break: lunch and the like - accounted for (not lost) but not worked; unpaid unless the code says paid (M016)
 const MIT_TS_KINDS = ['work' => 'Work', 'lost' => 'Lost time', 'leave' => 'Leave', 'break' => 'Break / lunch (not worked)'];
 const MIT_TS_PERIODS = ['semi_monthly' => 'Semi-monthly (1st-15th, 16th-end)', 'monthly' => 'Monthly', 'biweekly' => 'Every two weeks', 'weekly' => 'Weekly'];
-const MIT_TS_PAY_TYPES = ['hourly' => 'Hourly', 'salary' => 'Salaried (no overtime)'];
+const MIT_TS_PAY_TYPES = ['hourly' => 'Hourly', 'salary' => 'Salaried (no overtime)', 'contractor' => 'Contractor (no overtime, no California rules)'];
+const MIT_TS_PAY_TYPE_SHORT = ['hourly' => 'Hourly', 'salary' => 'Salaried', 'contractor' => 'Contractor'];
 const MIT_TS_WEEKDAYS = [1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat', 7 => 'Sun'];
 const MIT_TS_STATUSES = [
     'open' => ['Open', 'text-bg-light border'],
@@ -825,7 +826,9 @@ function mitTsReplyTimeGuard($ticket_reply_id, $new_time) {
     if (!$reply || (string) $reply['ticket_reply_time_worked'] === (string) $new_time) {
         return;
     }
-    $reply['reply_date'] = mitTsLocalDate($reply['ticket_reply_by'], $reply['ticket_reply_created_at']);
+    // The day it was worked (its times, functions/mit_reply_times.php), else where the person was when it was posted
+    $times = function_exists('mitReplyTimesOf') ? mitReplyTimesOf($ticket_reply_id) : null;
+    $reply['reply_date'] = $times ? substr($times['work_start'], 0, 10) : mitTsLocalDate($reply['ticket_reply_by'], $reply['ticket_reply_created_at']);
     $sheet = mitTsSheet($reply['ticket_reply_by'], mitTsPeriodFor($reply['reply_date']));
     if (in_array($sheet['status'], ['submitted', 'approved'], true) || mitTsApprovedDates($reply['ticket_reply_by'], $reply['reply_date'], $reply['reply_date'])) {
         flashAlert('The time on this reply is on a timesheet that is ' . ($sheet['status'] === 'submitted' ? 'submitted' : 'approved') . ' - it stays ' . escapeHtml($reply['ticket_reply_time_worked']) . '. Take the timesheet back (or reopen it) to change it.', 'error');
@@ -882,51 +885,23 @@ function mitTsEntries(array $user_ids, $from, $to) {
     return $entries;
 }
 
-/** Ticket time from the replies, as it is now: [user_id][date] => ['billable', 'other'] minutes. */
+/**
+ * Ticket time from the replies, as it is now: [user_id][date] => ['billable', 'other'] minutes - on the day the work was
+ * done (a note's times, functions/mit_reply_times.php), else the day it was posted where the person was.
+ */
 function mitTsTicketMinutesLive(array $user_ids, $from, $to) {
-    global $mysqli;
     $user_ids = array_filter(array_map('intval', $user_ids));
     $minutes = [];
-    if (!$user_ids) {
+    if (!$user_ids || !mitTsSettings()['ticket_time']) {
         return $minutes;
     }
-    $settings = mitTsSettings();
-    if (!$settings['ticket_time']) {
-        return $minutes;
+    $seconds = [];
+    foreach (mitTsReplyWorkRows($user_ids, $from, $to) as $row) {
+        $key = $row['billable'] ? 'b' : 'o';
+        $seconds[$row['user_id']][$row['date']][$key] = ($seconds[$row['user_id']][$row['date']][$key] ?? 0) + $row['seconds'];
     }
-    $billable = mitTsBillableSql($settings['billable']);
-    $where = "ticket_reply_archived_at IS NULL AND ticket_reply_time_worked > '00:00:00'" . ($settings['ticket_internal'] ? '' : " AND ticket_reply_type <> 'Internal'");
-    // People in the company's time zone: added up by day in SQL; anyone with a zone of their own (now or before), reply by
-    // reply into the day it was where they were
-    $own = array_values(array_filter($user_ids, 'mitTsZoneAware'));
-    $rest = array_diff($user_ids, $own);
-    if ($rest) {
-        $result = mysqli_query($mysqli, "SELECT ticket_reply_by AS u, DATE(ticket_reply_created_at) AS d,
-                SUM(CASE WHEN $billable THEN TIME_TO_SEC(ticket_reply_time_worked) ELSE 0 END) AS b,
-                SUM(CASE WHEN $billable THEN 0 ELSE TIME_TO_SEC(ticket_reply_time_worked) END) AS o
-            FROM ticket_replies JOIN tickets ON ticket_id = ticket_reply_ticket_id
-            WHERE $where AND ticket_reply_by IN (" . implode(',', $rest) . ")
-            AND ticket_reply_created_at >= '" . escapeSql($from) . " 00:00:00' AND ticket_reply_created_at < '" . escapeSql(date('Y-m-d', strtotime($to . ' +1 day'))) . " 00:00:00'
-            GROUP BY ticket_reply_by, DATE(ticket_reply_created_at)");
-        while ($row = mysqli_fetch_assoc($result)) {
-            $minutes[intval($row['u'])][$row['d']] = ['billable' => mitTsRound($row['b'] / 60), 'other' => mitTsRound($row['o'] / 60)];
-        }
-    }
-    foreach ($own as $user_id) {
-        [$start, $end] = mitTsReplyRange($user_id, $from, $to);
-        $result = mysqli_query($mysqli, "SELECT ticket_reply_created_at AS at, IF($billable, 1, 0) AS billable, TIME_TO_SEC(ticket_reply_time_worked) AS seconds
-            FROM ticket_replies JOIN tickets ON ticket_id = ticket_reply_ticket_id
-            WHERE $where AND ticket_reply_by = $user_id
-            AND ticket_reply_created_at >= '" . escapeSql($start) . "' AND ticket_reply_created_at < '" . escapeSql($end) . "'");
-        $seconds = [];
-        while ($row = mysqli_fetch_assoc($result)) {
-            $date = mitTsLocalDate($user_id, $row['at']);
-            if ($date < $from || $date > $to) {
-                continue;
-            }
-            $seconds[$date][intval($row['billable']) ? 'b' : 'o'] = ($seconds[$date][intval($row['billable']) ? 'b' : 'o'] ?? 0) + intval($row['seconds']);
-        }
-        foreach ($seconds as $date => $sum) {
+    foreach ($seconds as $user_id => $days) {
+        foreach ($days as $date => $sum) {
             $minutes[$user_id][$date] = ['billable' => mitTsRound(($sum['b'] ?? 0) / 60), 'other' => mitTsRound(($sum['o'] ?? 0) / 60)];
         }
     }
@@ -1181,28 +1156,16 @@ function mitTsBillableShare(array $t) {
     return $t['worked'] > 0 ? round($t['billable'] / $t['worked'] * 100) . '%' : '-';
 }
 
-/** A day's tickets with time on them: ticket rows with 'minutes' and 'ticket_billable'. */
+/** A day's tickets with time on them (worked that day): ticket rows with 'minutes' and 'ticket_billable'. */
 function mitTsDayTickets($user_id, $date) {
-    global $mysqli;
-    $settings = mitTsSettings();
-    $billable = mitTsBillableSql($settings['billable']);
-    [$start, $end] = mitTsReplyRange($user_id, $date, $date);
-    // Reply by reply, kept when it falls on this day where the person was (mitTsLocalDate), then added up by ticket
-    $result = mysqli_query($mysqli, "SELECT ticket_id, ticket_prefix, ticket_number, ticket_subject, IF($billable, 1, 0) AS ticket_billable, ticket_client_id, client_name,
-            ticket_reply_created_at, TIME_TO_SEC(ticket_reply_time_worked) AS seconds
-        FROM ticket_replies JOIN tickets ON ticket_id = ticket_reply_ticket_id LEFT JOIN clients ON client_id = ticket_client_id
-        WHERE ticket_reply_archived_at IS NULL AND ticket_reply_time_worked > '00:00:00' AND ticket_reply_by = " . intval($user_id) . "
-        " . ($settings['ticket_internal'] ? '' : "AND ticket_reply_type <> 'Internal'") . "
-        AND ticket_reply_created_at >= '" . escapeSql($start) . "' AND ticket_reply_created_at < '" . escapeSql($end) . "'");
     $tickets = [];
-    while ($row = mysqli_fetch_assoc($result)) {
-        if (mitTsLocalDate($user_id, $row['ticket_reply_created_at']) !== $date) {
-            continue;
-        }
-        $id = intval($row['ticket_id']);
-        $seconds = intval($row['seconds']) + intval($tickets[$id]['seconds'] ?? 0);
-        unset($row['ticket_reply_created_at']);
-        $tickets[$id] = ['seconds' => $seconds] + $row;
+    foreach (mitTsReplyWorkRows([$user_id], $date, $date) as $row) {
+        $id = $row['ticket_id'];
+        $tickets[$id] = [
+            'seconds' => $row['seconds'] + intval($tickets[$id]['seconds'] ?? 0),
+            'ticket_id' => $id, 'ticket_prefix' => $row['ticket_prefix'], 'ticket_number' => $row['ticket_number'], 'ticket_subject' => $row['subject'],
+            'ticket_billable' => $row['billable'], 'ticket_client_id' => $row['client_id'], 'client_name' => $row['client_name'],
+        ];
     }
     usort($tickets, function ($a, $b) {
         return $b['seconds'] <=> $a['seconds'];
@@ -1803,3 +1766,4 @@ require_once __DIR__ . '/mit_ts_holidays.php';
 require_once __DIR__ . '/mit_reimbursements.php';
 require_once __DIR__ . '/mit_ts_california.php';
 require_once __DIR__ . '/mit_timesheet_view.php';
+require_once __DIR__ . '/mit_reply_times.php'; // times on ticket notes

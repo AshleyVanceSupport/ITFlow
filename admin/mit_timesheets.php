@@ -435,7 +435,8 @@ $company_week = mitTsCompanySchedule();
                             </td>
                             <td class="small"><?= $approver !== '' ? escapeHtml($approver) : '<span class="text-muted">Anyone with Full access</span>' ?></td>
                             <td class="small font-monospace"><?= escapeHtml($details['employee_id'] ?: '-') ?></td>
-                            <td class="small"><?= $details['pay_type'] === 'salary' ? 'Salaried' : 'Hourly' ?></td>
+                            <td class="small"><?= escapeHtml(MIT_TS_PAY_TYPE_SHORT[$details['pay_type']] ?? 'Hourly') ?>
+                                <?php if (mitTsCaReady() && mitTsCaOn($user_id)) { ?><span class="badge text-bg-warning ms-1" title="California non-exempt rules: times, meal periods, premiums, signing">California</span><?php } ?></td>
                             <td class="small text-nowrap">
                                 <?php foreach (mitLeaveBanksFor($user_id) as $bank) {
                                     $balance = mitLeaveBalance($user_id, $bank); ?>
