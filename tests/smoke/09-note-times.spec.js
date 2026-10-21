@@ -48,6 +48,10 @@ test('note times: required with time worked, set the length, shown on the note, 
     await page.click('label[for=public_reply_type_opt1]');
     await page.locator('#replyComposer.show').waitFor();
     test.skip(await page.locator('#mitWorkStart').count() === 0, 'needs database update M028');
+    // The footer: ITFlow's timer sits in the time strip beside the times, and the send button stays on one line
+    await expect(page.locator('[data-mit-time-slot] #startStopTimer'), 'the timer in the time strip').toHaveCount(1);
+    const send = await page.locator('#ticket_add_reply').boundingBox();
+    expect(send.height, 'send button on one line').toBeLessThan(45);
     await page.fill('#minutes', '20');
     await page.fill('#mitWorkStart', '');
     await page.click('#ticket_add_reply');

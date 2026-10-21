@@ -209,20 +209,39 @@ function mitReplyTimesText($ticket_reply_id, $ticket_id) {
     return $row ? ' <span class="text-nowrap" data-mit-reply-times title="When the work was done">(' . escapeHtml(mitReplyTimesWords($row['work_start'], $row['work_end'])) . ')</span>' : '';
 }
 
-/** The reply box: Date worked / Start / End, kept in step with the timer by agent/js/mit_reply_times.js. */
+/**
+ * The reply box: a time strip - ITFlow's timer (moved in by agent/js/mit_reply_times.js) and Date worked / Start - End -
+ * above one row of Status and the send buttons. The script keeps the times in step with the timer.
+ */
 function mitReplyTimesField() {
     if (!mitReplyTimesReady()) {
         return '';
     }
     return '<div class="col-12" data-mit-reply-times-field>'
-        . '<div class="row g-2 align-items-end">'
-        . '<div class="col-sm-4"><label class="form-label small text-secondary mb-1" for="mitWorkDate">Date worked</label>'
-        . '<input type="date" class="form-control" id="mitWorkDate" name="mit_work_date"></div>'
-        . '<div class="col-6 col-sm-3"><label class="form-label small text-secondary mb-1" for="mitWorkStart">Start</label>'
-        . '<input type="time" step="60" class="form-control" id="mitWorkStart" name="mit_work_start"></div>'
-        . '<div class="col-6 col-sm-3"><label class="form-label small text-secondary mb-1" for="mitWorkEnd">End</label>'
-        . '<input type="time" step="60" class="form-control" id="mitWorkEnd" name="mit_work_end"></div>'
-        . '<div class="col-sm-2 small text-secondary pb-2" data-mit-times-mode>Follows the timer</div>'
+        . '<style>
+            .mit-reply-foot { --bs-gutter-y: .6rem; }
+            .mit-reply-foot > [data-mit-reply-times-field] { order: -1; }
+            .mit-reply-foot > .mit-status-col { flex: 1 1 11rem; width: auto; max-width: 22rem; }
+            .mit-reply-foot > .mit-send-col { flex: 0 0 auto; width: auto; margin-left: auto; }
+            .mit-reply-foot > .mit-send-col .btn { white-space: nowrap; }
+            .mit-time-strip { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem 1rem; padding: .6rem .75rem; border: 1px solid var(--bs-border-color); border-radius: .6rem; background: var(--bs-body-bg); }
+            .mit-time-strip .mit-strip-part { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+            .mit-time-strip .mit-strip-label { font-size: .75rem; color: var(--bs-secondary-color); }
+            .mit-time-strip #hours, .mit-time-strip #minutes, .mit-time-strip #seconds { flex: 0 0 3.1rem; width: 3.1rem; text-align: center; padding-left: .25rem; padding-right: .25rem; }
+            .mit-time-strip #mitWorkDate { flex: 0 0 9.5rem; width: 9.5rem; }
+            .mit-time-strip #mitWorkStart, .mit-time-strip #mitWorkEnd { flex: 0 0 7.5rem; width: 7.5rem; }
+            .mit-time-strip [data-mit-times-mode] { font-size: .75rem; color: var(--bs-secondary-color); align-self: center; }
+          </style>'
+        . '<div class="mit-time-strip">'
+        . '<div class="mit-strip-part" data-mit-time-slot><span class="mit-strip-label">Time worked</span></div>'
+        . '<div class="mit-strip-part"><span class="mit-strip-label">When</span>'
+        . '<div class="input-group">'
+        . '<input type="date" class="form-control" id="mitWorkDate" name="mit_work_date" aria-label="Date worked" title="Date worked">'
+        . '<input type="time" step="60" class="form-control" id="mitWorkStart" name="mit_work_start" aria-label="Start" title="Start">'
+        . '<span class="input-group-text px-2">-</span>'
+        . '<input type="time" step="60" class="form-control" id="mitWorkEnd" name="mit_work_end" aria-label="End" title="End">'
+        . '</div></div>'
+        . '<span data-mit-times-mode></span>'
         . '</div>'
         . '<div class="small text-danger mt-1" data-mit-times-error hidden></div>'
         . '</div><script src="' . mitAsset('/agent/js/mit_reply_times.js') . '"></script>';

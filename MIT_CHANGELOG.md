@@ -4,6 +4,9 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.90 - 2026-10-20
+- Ticket note box tidied: the timer and Date worked / Start - End sit together in one strip at the top ("From the timer" or "Typed by you" under it), then Status and the Add note button on one line below it - the button no longer wraps.
+
 ## 26.10.89 - 2026-10-20
 - Ticket notes now record when the work was done: Date worked, Start and End sit under the time worked in the reply box. They follow the timer (ending now) until you type them; typing them sets the length. A note with time can't be sent without them, and they show on the note ("Tue Oct 20, 9:10 - 9:40 AM"). Edit reply has them too - change only the length and the start moves.
 - Timesheets count ticket time on the day it was worked, not the day the note was posted. The day panel lists each ticket entry with its times, and warns when two overlap or (on California / time-clock days) when one falls outside your clocked times.

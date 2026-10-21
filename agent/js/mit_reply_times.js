@@ -16,6 +16,23 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!field || !send || !h || !m) {
         return;
     }
+    // The layout: ITFlow's timer moves into the time strip, its old column goes, and the row below is Status | send buttons
+    const row = field.parentElement;
+    const timer = h.closest('.input-group');
+    const timeCol = timer && timer.parentElement && timer.parentElement.closest('[class*="col-"]');
+    const statusSelect = document.getElementById('ticket_reply_status');
+    if (row && timer && timeCol && timeCol !== field) {
+        row.classList.add('mit-reply-foot');
+        field.querySelector('[data-mit-time-slot]').appendChild(timer);
+        timeCol.remove();
+        if (statusSelect && statusSelect.closest('[class*="col-"]')) {
+            statusSelect.closest('[class*="col-"]').classList.add('mit-status-col');
+        }
+        if (send.closest('[class*="col-"]')) {
+            send.closest('[class*="col-"]').classList.add('mit-send-col');
+        }
+    }
+
     const date = document.getElementById('mitWorkDate');
     const start = document.getElementById('mitWorkStart');
     const end = document.getElementById('mitWorkEnd');
@@ -77,7 +94,7 @@ document.addEventListener('DOMContentLoaded', function () {
         end.value = hm(now);
     }
     function showMode() {
-        mode.innerHTML = typed ? 'Set by you · <a href="#" data-mit-times-follow>follow the timer</a>' : 'Follows the timer';
+        mode.innerHTML = typed ? 'Typed by you · <a href="#" data-mit-times-follow>use the timer</a>' : '<i class="fas fa-link me-1"></i>From the timer';
     }
     function problem() {
         if (!worked()) {

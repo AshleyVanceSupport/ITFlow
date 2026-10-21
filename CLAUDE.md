@@ -336,7 +336,9 @@ model: see DEPLOYMENT.md.
   `mit_reply_times` (reply_id FK ticket_replies CASCADE, work_start / work_end as the person's clock read them). The reply box
   (`mitReplyTimesField`, one line in `agent/ticket.php` after the send buttons) asks for Date worked / Start / End whenever time is
   logged - they follow ITFlow's timer (#hours / #minutes / #seconds; end = now) until typed, typed times pause the timer and set
-  the length, a missing / bad time stops the send (capture-phase click on `#ticket_add_reply`). Hooks in `agent/post/ticket.php`:
+  the length, a missing / bad time stops the send (capture-phase click on `#ticket_add_reply`). The script also lays the footer out:
+  ITFlow's timer input-group (`#hours`'s `.input-group`) moves into our time strip beside the times, its old column is removed, and
+  the row gets `mit-reply-foot` (strip first, then Status `mit-status-col` and the send buttons `mit-send-col`, right, one line). Hooks in `agent/post/ticket.php`:
   add_ticket_reply `mitReplyTimesFromPost` (after the time is built; typed times win unless within a minute; a submitted /
   approved day drops the times with a warning) + `mitReplyTimesSavePending` after the INSERT; edit_ticket_reply
   `mitReplyTimesFromEdit` (only the length changed -> the start moves; moving onto / off a locked day refused) +
