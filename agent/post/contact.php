@@ -540,14 +540,26 @@ if (isset($_POST['send_bulk_mail_now'])) {
 
     validateCSRFToken();
 
-    enforceUserPermission('module_client');
+    enforceUserPermission('module_client', 2);
 
     if (isset($_POST['contact_ids'])) {
 
         $count = count($_POST['contact_ids']);
 
-        $mail_from = escapeSql($_POST['mail_from']);
-        $mail_from_name = escapeSql($_POST['mail_from_name']);
+        // Send only from one of the configured sender addresses (the ones the modal offers)
+        $mail_senders = [
+            $config_mail_from_email => $config_mail_from_name,
+            $config_invoice_from_email => $config_invoice_from_name,
+            $config_quote_from_email => $config_quote_from_name,
+            $config_ticket_from_email => $config_ticket_from_name,
+        ];
+        $mail_from = $_POST['mail_from'] ?? '';
+        if (empty($mail_from) || !array_key_exists($mail_from, $mail_senders)) {
+            $mail_from = $config_mail_from_email;
+        }
+        $mail_from_name = trim($_POST['mail_from_name'] ?? '') ?: $mail_senders[$mail_from];
+        $mail_from = escapeSql($mail_from);
+        $mail_from_name = escapeSql($mail_from_name);
         $subject = escapeSql($_POST['subject']);
         $body = mysqli_escape_string($mysqli, $_POST['body']);
         $queued_at = escapeSql($_POST['queued_at']);
@@ -612,12 +624,12 @@ if (isset($_POST['bulk_archive_contacts'])) {
 
             enforceClientAccess();
 
-            // Archive Contact User
-            if ($contact_user_id > 0) {
-                mysqli_query($mysqli,"UPDATE users SET user_archived_at = NOW() WHERE user_id = $contact_user_id");
-            }
-
             if($contact_primary == 0) {
+                // Archive Contact User
+                if ($contact_user_id > 0) {
+                    mysqli_query($mysqli,"UPDATE users SET user_archived_at = NOW() WHERE user_id = $contact_user_id");
+                }
+
                 mysqli_query($mysqli,"UPDATE contacts SET contact_important = 0, contact_billing = 0, contact_technical = 0, contact_archived_at = NOW() WHERE contact_id = $contact_id");
 
                 // Individual Contact logging
@@ -742,10 +754,8 @@ if (isset($_GET['anonymize_contact'])) {
     $row = mysqli_fetch_assoc($sql);
 
     $contact_name = escapeSql($row['contact_name']);
-    $contact_first_name = explode(" ", $contact_name)[0];
-    $contact_email = escapeSql($row['contact_email']);
-    $contact_phone = escapeSql($row['contact_phone']);
-    $info_to_redact = array($contact_name, $contact_first_name, $contact_email, $contact_phone);
+    // Redact the values as stored, not SQL-escaped (a name with an apostrophe would be missed)
+    $info_to_redact = array_filter(array_map('strval', array($row['contact_name'], explode(" ", (string) $row['contact_name'])[0], $row['contact_email'], $row['contact_phone'])));
 
     $client_id = intval($row['contact_client_id']);
     $contact_user_id = intval($row['contact_user_id']);
@@ -946,10 +956,20 @@ if (isset($_POST['link_contact_to_asset'])) {
     // Get Asset Name and Client ID for logging
     $sql_asset = mysqli_query($mysqli,"SELECT asset_name, asset_client_id FROM assets WHERE asset_id = $asset_id");
     $row = mysqli_fetch_assoc($sql_asset);
+    if (!$row) {
+        flashAlert("That asset no longer exists", 'error');
+        redirect();
+    }
     $asset_name = escapeSql($row['asset_name']);
     $client_id = intval($row['asset_client_id']);
 
     enforceClientAccess();
+
+    // Only to one of the same client's people
+    if (!assetClientOwnedId('contact', $contact_id, $client_id)) {
+        flashAlert("That contact isn't one of this client's", 'error');
+        redirect();
+    }
 
     // Get Contact Name for logging
     $contact_name = escapeSql(getFieldById('contacts', $contact_id, 'contact_name'));

@@ -85,7 +85,9 @@ if (isset($_POST['edit_expense'])) {
             move_uploaded_file($file_tmp_path, $dest_path);
 
             //Delete old file
-            unlink("../uploads/expenses/$existing_file_name");
+            if (!empty($existing_file_name)) {
+                unlink("../uploads/expenses/$existing_file_name");
+            }
 
             mysqli_query($mysqli,"UPDATE expenses SET expense_receipt = '$new_file_name' WHERE expense_id = $expense_id");
             $extended_alert_description = '. File successfully uploaded.';
@@ -120,7 +122,11 @@ if (isset($_GET['delete_expense'])) {
         enforceClientAccess();
     }
 
-    unlink("../uploads/expenses/$expense_receipt");
+    if (!empty($expense_receipt)) {
+
+        unlink("../uploads/expenses/$expense_receipt");
+
+    }
 
     mysqli_query($mysqli,"DELETE FROM expenses WHERE expense_id = $expense_id");
 
@@ -293,7 +299,11 @@ if (isset($_POST['bulk_delete_expenses'])) {
                 enforceClientAccess();
             }
 
-            unlink("../uploads/expenses/$expense_receipt");
+            if (!empty($expense_receipt)) {
+
+                unlink("../uploads/expenses/$expense_receipt");
+
+            }
 
             mysqli_query($mysqli, "DELETE FROM expenses WHERE expense_id = $expense_id");
 

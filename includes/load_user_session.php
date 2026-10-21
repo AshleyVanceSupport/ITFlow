@@ -58,6 +58,17 @@ if (function_exists('mitSessionCheck') && !mitSessionCheck($session_user_id)) {
     redirect("/login.php");
 }
 
+// MFA required but not set up yet - only the set up page, enabling MFA and logging out are allowed
+if ($session_user_config_force_mfa === 1 && trim((string) $session_token) === '') {
+    $mfa_script = $_SERVER['SCRIPT_NAME'] ?? '';
+    $mfa_allowed = $mfa_script === '/agent/user/mfa_enforcement.php'
+        || ($mfa_script === '/agent/user/post.php' && (isset($_POST['enable_mfa']) || isset($_GET['logout'])))
+        || ($mfa_script === '/agent/post.php' && isset($_GET['logout']));
+    if (!$mfa_allowed) {
+        redirect("/agent/user/mfa_enforcement.php");
+    }
+}
+
 // Load user client permissions (allow + deny lists)
 $user_client_access_sql = "SELECT client_id, permission_type FROM user_client_permissions WHERE user_id = $session_user_id";
 $user_client_access_result = mysqli_query($mysqli, $user_client_access_sql);

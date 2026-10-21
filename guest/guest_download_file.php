@@ -18,17 +18,17 @@ if (isset($_GET['id']) && isset($_GET['key'])) {
     $sql = mysqli_query($mysqli, "SELECT item_active, item_client_id, item_related_id, item_type, item_view_limit, item_views FROM shared_items WHERE item_id = $item_id AND item_key = '$item_key' AND item_expire_at > NOW() LIMIT 1");
     $row = mysqli_fetch_assoc($sql);
 
+    // Check result
+    if (mysqli_num_rows($sql) !== 1 || !$row) {
+        exit("Item cannot be viewed at this time (disabled or invalid).");
+    }
+
     $item_active = intval($row['item_active']);
     $item_type = escapeSql($row['item_type']);
     $item_views = intval($row['item_views']);
     $item_view_limit = intval($row['item_view_limit']);
     $item_related_id = intval($row['item_related_id']);
     $client_id = intval($row['item_client_id']);
-
-    // Check result
-    if (mysqli_num_rows($sql) !== 1 || !$row) {
-        exit("Item cannot be viewed at this time (disabled or invalid).");
-    }
 
     // Check it is a file
     if ($item_type !== "File") {
@@ -75,7 +75,9 @@ if (isset($_GET['id']) && isset($_GET['key'])) {
     // Display file as download
     $mime_type = mime_content_type($file_path);
     header('Content-type: '.$mime_type);
-    header('Content-Disposition: attachment; filename=' . $file_name);
+    // Strip characters that would break the Content-Disposition header
+    $safe_file_name = str_replace(array('"', "\r", "\n"), "", basename($file_row['file_name']));
+    header('Content-Disposition: attachment; filename="' . $safe_file_name . '"');
     readfile($file_path);
 
     //Logging

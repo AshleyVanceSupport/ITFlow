@@ -415,11 +415,27 @@ if (isset($_POST['add_payment_stripe'])) {
         redirect();
     }
 
+    // One payment per invoice at a time (a double click was two charges) - then read the invoice again inside the lock
+    if (!mitLock("invoice_pay_$invoice_id", 30)) {
+        flashAlert("A payment for this invoice is already going through - check it in a moment", 'error');
+        redirect();
+    }
+    $sql = mysqli_query($mysqli, "SELECT invoice_amount, invoice_status FROM invoices WHERE invoice_id = $invoice_id");
+    $row = mysqli_fetch_assoc($sql);
+    $invoice_status = $row['invoice_status'];
+    $invoice_amount = floatval($row['invoice_amount']);
+    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT SUM(payment_amount) AS amount_paid FROM payments WHERE payment_invoice_id = $invoice_id"));
+    $balance_to_pay = round($invoice_amount - floatval($row['amount_paid']), 2);
+    if (($invoice_status !== 'Sent' && $invoice_status !== 'Viewed') || $balance_to_pay <= 0) {
+        mitUnlock("invoice_pay_$invoice_id");
+        flashAlert("This invoice is already paid or no longer open for payment", 'error');
+        redirect();
+    }
+
     // Initialize Stripe
     require_once __DIR__ . '/../../includes/stripe_init.php';
     $stripe = new \Stripe\StripeClient($private_key);
 
-    $balance_to_pay = round($invoice_amount, 2);
     $pi_description = "ITFlow: $client_name payment of $invoice_currency_code $balance_to_pay for $invoice_prefix$invoice_number";
 
     // Create a payment intent
@@ -438,7 +454,8 @@ if (isset($_POST['add_payment_stripe'])) {
                 'itflow_invoice_number' => $invoice_prefix . $invoice_number,
                 'itflow_invoice_id' => $invoice_id,
             ]
-        ]);
+        // Stripe answers the same request (within a day) with the same payment instead of charging again
+        ], ['idempotency_key' => "itflow-saved-card-$invoice_id-" . intval(round($balance_to_pay * 100)) . '-' . $saved_payment_method]);
 
         // Get details from PI
         $pi_id = escapeSql($payment_intent->id);
@@ -453,19 +470,20 @@ if (isset($_POST['add_payment_stripe'])) {
         logApp("Stripe", "error", "Exception during PI for invoice ID $invoice_id: $error");
     }
 
-    if ($payment_intent->status == "succeeded" && intval($balance_to_pay) == intval($pi_amount_paid)) {
-
-        // Update Invoice Status
-        mysqli_query($mysqli, "UPDATE invoices SET invoice_status = 'Paid' WHERE invoice_id = $invoice_id");
+    if (isset($payment_intent) && $payment_intent->status == "succeeded" && intval(round($balance_to_pay * 100)) == intval($payment_intent->amount_received)) {
 
         // Add Payment to History
         mysqli_query($mysqli, "INSERT INTO payments SET payment_date = '$pi_date', payment_amount = $pi_amount_paid, payment_currency_code = '$pi_currency', payment_account_id = $account_id, payment_method = 'Stripe', payment_reference = 'Stripe - $pi_id', payment_invoice_id = $invoice_id");
-        mysqli_query($mysqli, "INSERT INTO history SET history_status = 'Paid', history_description = 'Online Payment added (agent)', history_invoice_id = $invoice_id");
+
+        // Update Invoice Status
+        $invoice_status = updateInvoiceStatusFromPayments($invoice_id);
+        mysqli_query($mysqli, "INSERT INTO history SET history_status = '$invoice_status', history_description = 'Online Payment added (agent)', history_invoice_id = $invoice_id");
+        mitUnlock("invoice_pay_$invoice_id");
 
         // Email receipt
         if (!empty($config_smtp_provider)) {
             $subject = "Payment Received - Invoice $invoice_prefix$invoice_number";
-            $body = "Hello $contact_name,<br><br>We have received online payment for the amount of " . numfmt_format_currency($currency_format, $invoice_amount, $invoice_currency_code) . " for invoice <a href=\'https://$config_base_url/guest/guest_view_invoice.php?invoice_id=$invoice_id&url_key=$invoice_url_key\'>$invoice_prefix$invoice_number</a>. Please keep this email as a receipt for your records.<br><br>Amount Paid: " . numfmt_format_currency($currency_format, $invoice_amount, $invoice_currency_code) . "<br><br>Thank you for your business!<br><br><br>--<br>$company_name - Billing Department<br>$config_invoice_from_email<br>$company_phone";
+            $body = "Hello $contact_name,<br><br>We have received online payment for the amount of " . numfmt_format_currency($currency_format, $pi_amount_paid, $invoice_currency_code) . " for invoice <a href=\'https://$config_base_url/guest/guest_view_invoice.php?invoice_id=$invoice_id&url_key=$invoice_url_key\'>$invoice_prefix$invoice_number</a>. Please keep this email as a receipt for your records.<br><br>Amount Paid: " . numfmt_format_currency($currency_format, $pi_amount_paid, $invoice_currency_code) . "<br><br>Thank you for your business!<br><br><br>--<br>$company_name - Billing Department<br>$config_invoice_from_email<br>$company_phone";
 
             // Queue Mail
             $data = [
@@ -482,7 +500,7 @@ if (isset($_POST['add_payment_stripe'])) {
             // Email the internal notification address too
             if (!empty($config_invoice_paid_notification_email)) {
                 $subject = "Payment Received - $client_name - Invoice $invoice_prefix$invoice_number";
-                $body = "Hello, <br><br>This is a notification that an invoice has been paid in ITFlow. Below is a copy of the receipt sent to the client:-<br><br>--------<br><br>Hello $contact_name,<br><br>We have received online payment for the amount of " . numfmt_format_currency($currency_format, $invoice_amount, $invoice_currency_code) . " for invoice <a href=\'https://$config_base_url/guest/guest_view_invoice.php?invoice_id=$invoice_id&url_key=$invoice_url_key\'>$invoice_prefix$invoice_number</a>. Please keep this email as a receipt for your records.<br><br>Amount Paid: " . numfmt_format_currency($currency_format, $invoice_amount, $invoice_currency_code) . "<br><br>Thank you for your business!<br><br><br>--<br>$company_name - Billing Department<br>$config_invoice_from_email<br>$company_phone";
+                $body = "Hello, <br><br>This is a notification that an invoice has been paid in ITFlow. Below is a copy of the receipt sent to the client:-<br><br>--------<br><br>Hello $contact_name,<br><br>We have received online payment for the amount of " . numfmt_format_currency($currency_format, $pi_amount_paid, $invoice_currency_code) . " for invoice <a href=\'https://$config_base_url/guest/guest_view_invoice.php?invoice_id=$invoice_id&url_key=$invoice_url_key\'>$invoice_prefix$invoice_number</a>. Please keep this email as a receipt for your records.<br><br>Amount Paid: " . numfmt_format_currency($currency_format, $pi_amount_paid, $invoice_currency_code) . "<br><br>Thank you for your business!<br><br><br>--<br>$company_name - Billing Department<br>$config_invoice_from_email<br>$company_phone";
 
                 $data[] = [
                     'from' => $config_invoice_from_email,
@@ -510,14 +528,15 @@ if (isset($_POST['add_payment_stripe'])) {
 
         // Notify/log
         appNotify("Invoice Paid", "Invoice $invoice_prefix$invoice_number automatically paid", "/agent/invoice.php?invoice_id=$invoice_id", $client_id);
-        logAudit("Invoice", "Payment", "$session_name initiated Stripe payment amount of " . numfmt_format_currency($currency_format, $invoice_amount, $invoice_currency_code) . " added to invoice $invoice_prefix$invoice_number - $pi_id $extended_log_desc", $client_id, $invoice_id);
+        logAudit("Invoice", "Payment", "$session_name initiated Stripe payment amount of " . numfmt_format_currency($currency_format, $pi_amount_paid, $invoice_currency_code) . " added to invoice $invoice_prefix$invoice_number - $pi_id $extended_log_desc", $client_id, $invoice_id);
         triggerCustomAction('invoice_pay', $invoice_id);
 
-        flashAlert("Payment amount <strong>" . numfmt_format_currency($currency_format, $invoice_amount, $invoice_currency_code) . "</strong> added");
+        flashAlert("Payment amount <strong>" . numfmt_format_currency($currency_format, $pi_amount_paid, $invoice_currency_code) . "</strong> added");
 
         redirect();
 
     } else {
+        mitUnlock("invoice_pay_$invoice_id");
         mysqli_query($mysqli, "INSERT INTO history SET history_status = 'Payment failed', history_description = 'Stripe pay failed due to payment error', history_invoice_id = $invoice_id");
 
         logAudit("Invoice", "Payment", "Failed online payment amount of invoice $invoice_prefix$invoice_number due to Stripe payment error", $client_id, $invoice_id);
@@ -549,7 +568,7 @@ if (isset($_POST['add_bulk_payment'])) {
     enforceClientAccess();
 
     // Check if bulk_payment_amount exceeds total_account_balance
-    if ($bulk_payment_amount > $total_account_balance) {
+    if (round($bulk_payment_amount * 100) > round($total_account_balance * 100)) {
         flashAlert("Payment exceeds Client Balance.", 'error');
         redirect();
     }
@@ -559,6 +578,7 @@ if (isset($_POST['add_bulk_payment'])) {
         WHERE invoice_status != 'Draft'
         AND invoice_status != 'Paid'
         AND invoice_status != 'Cancelled'
+        AND invoice_status != 'Non-Billable'
         AND invoice_client_id = $client_id
         ORDER BY invoice_number ASC";
     $result_invoices = mysqli_query($mysqli, $sql_invoices);
@@ -576,20 +596,23 @@ if (isset($_POST['add_bulk_payment'])) {
         $amount_paid = floatval($row_amount_paid['amount_paid']);
         $invoice_balance = $invoice_amount - $amount_paid;
 
-        if ($bulk_payment_amount <= 0) {
+        // Compare money in whole cents
+        $invoice_balance_cents = intval(round($invoice_balance * 100));
+        $bulk_payment_cents = intval(round($bulk_payment_amount * 100));
+
+        if ($bulk_payment_cents <= 0) {
             break; // Exit the loop if no payment amount is left
         }
 
-        if ($bulk_payment_amount >= $invoice_balance) {
-            $payment_amount = $invoice_balance;
-            $invoice_status = "Paid";
-        } else {
-            $payment_amount = $bulk_payment_amount;
-            $invoice_status = "Partial";
+        if ($invoice_balance_cents <= 0) {
+            continue; // Nothing owed on this invoice
         }
 
+        $payment_cents = min($bulk_payment_cents, $invoice_balance_cents);
+        $payment_amount = $payment_cents / 100;
+
         // Subtract the payment amount from the bulk payment amount
-        $bulk_payment_amount -= $payment_amount;
+        $bulk_payment_amount = ($bulk_payment_cents - $payment_cents) / 100;
 
         // Get Invoice Remain Balance
         $remaining_invoice_balance = $invoice_balance - $payment_amount;
@@ -600,8 +623,7 @@ if (isset($_POST['add_bulk_payment'])) {
         $payment_id = mysqli_insert_id($mysqli);
 
         // Update Invoice Status
-        $update_invoice_query = "UPDATE invoices SET invoice_status = '{$invoice_status}' WHERE invoice_id = {$invoice_id}";
-        mysqli_query($mysqli, $update_invoice_query);
+        $invoice_status = updateInvoiceStatusFromPayments($invoice_id);
 
         // Add Payment to History
         $history_description = "Payment added";

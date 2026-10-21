@@ -41,6 +41,7 @@ ob_start();
     <input type="hidden" name="account" value="<?= $expense_account_id ?>">
     <input type="hidden" name="vendor" value="<?= $expense_vendor_id ?>">
     <input type="hidden" name="category" value="<?= $expense_category_id ?>">
+    <input type="hidden" name="client_id" value="<?= $client_id ?>">
 
     <div class="modal-body">
 

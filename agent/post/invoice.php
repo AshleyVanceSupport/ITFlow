@@ -85,6 +85,11 @@ if (isset($_POST['edit_invoice'])) {
 
     mysqli_query($mysqli,"UPDATE invoices SET invoice_scope = '$scope', invoice_date = '$date', invoice_due = '$due', invoice_category_id = $category, invoice_discount_amount = '$invoice_discount', invoice_amount = '$invoice_amount' WHERE invoice_id = $invoice_id");
 
+    // A paid or part-paid invoice follows its new total
+    if (in_array(getFieldById('invoices', $invoice_id, 'invoice_status'), ['Paid', 'Partial'])) {
+        updateInvoiceStatusFromPayments($invoice_id);
+    }
+
     logAudit("Invoice", "Edit", "$session_name edited Invoice $invoice_prefix$invoice_number - $scope", $client_id, $invoice_id);
 
     flashAlert("Invoice <strong>$invoice_prefix$invoice_number</strong> edited");
@@ -157,11 +162,11 @@ if (isset($_POST['add_invoice_copy'])) {
         mysqli_query($mysqli,"INSERT INTO invoice_items SET item_name = '$item_name', item_description = '$item_description', item_quantity = $item_quantity, item_price = $item_price, item_subtotal = $item_subtotal, item_tax = $item_tax, item_total = $item_total, item_order = $item_order, item_tax_id = $tax_id, item_invoice_id = $new_invoice_id");
     }
 
-    logAudit("Invoice", "Create", "$session_name created new Invoice $config_invoice_prefix$new_invoice_number from $old_invoice_prefix$old_invoice_prefix", $client_id, $new_invoice_id);
+    logAudit("Invoice", "Create", "$session_name created new Invoice $config_invoice_prefix$new_invoice_number from $old_invoice_prefix$old_invoice_number", $client_id, $new_invoice_id);
 
     triggerCustomAction('invoice_create', $new_invoice_id);
 
-    flashAlert("Created new Invoice <strong>$config_invoice_prefix$new_invoice_number</strong> from <strong>$old_invoice_prefix$old_invoice_prefix</strong>");
+    flashAlert("Created new Invoice <strong>$config_invoice_prefix$new_invoice_number</strong> from <strong>$old_invoice_prefix$old_invoice_number</strong>");
 
     redirect("invoice.php?invoice_id=$new_invoice_id");
 
@@ -405,6 +410,11 @@ if (isset($_POST['add_invoice_item'])) {
 
     mysqli_query($mysqli,"UPDATE invoices SET invoice_amount = $new_invoice_amount WHERE invoice_id = $invoice_id");
 
+    // A paid or part-paid invoice follows its new total
+    if (in_array(getFieldById('invoices', $invoice_id, 'invoice_status'), ['Paid', 'Partial'])) {
+        updateInvoiceStatusFromPayments($invoice_id);
+    }
+
     logAudit("Invoice", "Edit", "$session_name added item $name to invoice $invoice_prefix$invoice_number", $client_id, $invoice_id);
 
     flashAlert("Item <strong>$name</strong> added to invoice");
@@ -481,6 +491,11 @@ if (isset($_POST['edit_invoice_item'])) {
 
     mysqli_query($mysqli,"UPDATE invoices SET invoice_amount = $new_invoice_amount WHERE invoice_id = $invoice_id");
 
+    // A paid or part-paid invoice follows its new total
+    if (in_array(getFieldById('invoices', $invoice_id, 'invoice_status'), ['Paid', 'Partial'])) {
+        updateInvoiceStatusFromPayments($invoice_id);
+    }
+
     logAudit("Invoice", "Edit", "$session_name edited item $name on invoice $invoice_prefix$invoice_number", $client_id, $invoice_id);
 
     flashAlert("Item <strong>$name</strong> updated");
@@ -520,6 +535,11 @@ if (isset($_GET['delete_invoice_item'])) {
     $new_invoice_amount = floatval($row['invoice_amount']) - $item_total;
 
     mysqli_query($mysqli,"UPDATE invoices SET invoice_amount = $new_invoice_amount WHERE invoice_id = $invoice_id");
+
+    // A paid or part-paid invoice follows its new total
+    if (in_array(getFieldById('invoices', $invoice_id, 'invoice_status'), ['Paid', 'Partial'])) {
+        updateInvoiceStatusFromPayments($invoice_id);
+    }
 
     mysqli_query($mysqli,"DELETE FROM invoice_items WHERE item_id = $item_id");
 
@@ -1023,28 +1043,6 @@ if (isExportRequest('export_invoices')) {
     logAudit("Invoice", "Export", "$session_name exported $num_rows invoice(s) to a " . strtoupper($format) . " file", $client_id);
 
     exit;
-
-}
-
-// TODO: This should probably be removed as we now allow multiple invoices to be linked to a single ticket
-if (isset($_POST['link_invoice_to_ticket'])) {
-
-    validateCSRFToken();
-
-    enforceUserPermission('module_sales', 2);
-
-    $invoice_id = intval($_POST['invoice_id']);
-    $ticket_id = intval($_POST['ticket_id']);
-
-    $client_id = intval(getFieldById('invoices', $invoice_id, 'invoice_client_id'));
-
-    enforceClientAccess();
-
-    mysqli_query($mysqli,"UPDATE invoices SET invoice_ticket_id = $ticket_id WHERE invoice_id = $invoice_id");
-
-    flashAlert("Invoice linked to ticket");
-
-    redirect();
 
 }
 

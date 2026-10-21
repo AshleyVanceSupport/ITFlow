@@ -1003,7 +1003,7 @@ if (isset($_POST['bulk_send_client_email']) && isset($_POST['client_ids'])) {
 
     validateCSRFToken();
 
-    enforceUserPermission('module_client', 1);
+    enforceUserPermission('module_client', 2);
 
     $client_ids = array_map('intval', $_POST['client_ids']);
     $count = count($client_ids);
@@ -1014,8 +1014,20 @@ if (isset($_POST['bulk_send_client_email']) && isset($_POST['client_ids'])) {
     }
 
     // Email metadata
-    $mail_from = escapeSql($_POST['mail_from']);
-    $mail_from_name = escapeSql($_POST['mail_from_name']);
+    // Send only from one of the configured sender addresses (the ones the modal offers)
+    $mail_senders = [
+        $config_mail_from_email => $config_mail_from_name,
+        $config_invoice_from_email => $config_invoice_from_name,
+        $config_quote_from_email => $config_quote_from_name,
+        $config_ticket_from_email => $config_ticket_from_name,
+    ];
+    $mail_from = $_POST['mail_from'] ?? '';
+    if (empty($mail_from) || !array_key_exists($mail_from, $mail_senders)) {
+        $mail_from = $config_mail_from_email;
+    }
+    $mail_from_name = trim($_POST['mail_from_name'] ?? '') ?: $mail_senders[$mail_from];
+    $mail_from = escapeSql($mail_from);
+    $mail_from_name = escapeSql($mail_from_name);
     $subject = escapeSql($_POST['subject']);
     $body = mysqli_real_escape_string($mysqli, $_POST['body']);
     $queued_at = escapeSql($_POST['queued_at']);

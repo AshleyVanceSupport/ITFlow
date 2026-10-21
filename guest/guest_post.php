@@ -29,10 +29,10 @@ if (isset($_GET['accept_quote'], $_GET['url_key'])) {
 
         // Claim the response - only a quote still awaiting one can be accepted,
         // and only the first request through wins
-        mysqli_query($mysqli, "UPDATE quotes SET quote_status = 'Accepted' WHERE quote_id = $quote_id AND quote_status IN ('Sent', 'Viewed')");
+        mysqli_query($mysqli, "UPDATE quotes SET quote_status = 'Accepted' WHERE quote_id = $quote_id AND quote_status IN ('Sent', 'Viewed') AND (quote_expire IS NULL OR quote_expire >= CURDATE())");
 
         if (mysqli_affected_rows($mysqli) !== 1) {
-            flashAlert("This quote is no longer awaiting a response", 'error');
+            flashAlert("This quote has expired or is no longer awaiting a response", 'error');
             redirect();
         }
 
@@ -174,6 +174,8 @@ if (isset($_GET['reopen_ticket'], $_GET['url_key'])) {
     if (mysqli_num_rows($sql) == 1) {
         // Update the ticket
         mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 2, ticket_resolved_at = NULL WHERE ticket_id = $ticket_id AND ticket_url_key = '$url_key'");
+        resetTicketResolutionSla($ticket_id);
+        syncTicketSlaClock($ticket_id);
         logTicketHistory($ticket_id, "The client reopened the ticket from the guest link");
 
         // Add reply
@@ -203,6 +205,7 @@ if (isset($_GET['close_ticket'], $_GET['url_key'])) {
 
         // Update the ticket
         mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 5, ticket_closed_at = NOW() WHERE ticket_id = $ticket_id AND ticket_url_key = '$url_key'");
+        syncTicketSlaClock($ticket_id);
         logTicketHistory($ticket_id, "The client closed the ticket from the guest link");
 
         // Add reply

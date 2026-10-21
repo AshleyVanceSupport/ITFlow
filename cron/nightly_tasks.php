@@ -534,9 +534,7 @@ $sql_recurring_invoices = mysqli_query($mysqli, "SELECT client_name, client_net_
     recurring_invoice_discount_amount, recurring_invoice_email_notify,
     recurring_invoice_frequency, recurring_invoice_id, recurring_invoice_last_sent,
     recurring_invoice_next_date, recurring_invoice_note, recurring_invoice_scope,
-    recurring_invoice_status, recurring_invoice_auto_send, recurring_payment_account_id, recurring_payment_currency_code,
-    recurring_payment_method, recurring_payment_recurring_invoice_id FROM recurring_invoices
-    LEFT JOIN recurring_payments ON recurring_invoice_id = recurring_payment_recurring_invoice_id
+    recurring_invoice_status, recurring_invoice_auto_send FROM recurring_invoices
     LEFT JOIN clients ON client_id = recurring_invoice_client_id
     WHERE recurring_invoice_next_date = CURDATE()
     AND recurring_invoice_status = 1
@@ -559,11 +557,6 @@ while ($row = mysqli_fetch_assoc($sql_recurring_invoices)) {
     $client_id = intval($row['recurring_invoice_client_id']);
     $client_name = escapeSql($row['client_name']);
     $client_net_terms = intval($row['client_net_terms']);
-
-    $recurring_payment_recurring_invoice_id = intval($row['recurring_payment_recurring_invoice_id']);
-    $recurring_payment_currency_code = escapeSql($row['recurring_payment_currency_code']);
-    $recurring_payment_method = escapeSql($row['recurring_payment_method']);
-    $recurring_payment_account_id = intval($row['recurring_payment_account_id']);
 
     // Atomically increment and get the new invoice number
     mysqli_query($mysqli, "
@@ -641,7 +634,15 @@ while ($row = mysqli_fetch_assoc($sql_recurring_invoices)) {
     $contact_email = escapeSql($row['contact_email']);
 
     // Send invoice email if: (1) Global recurring auto-send is on, (2) the recurring invoice is set to auto-send (than just be a draft), and (3) the recurring invoice is opted in for the client to be notified
-    if ($config_recurring_auto_send_invoice == 1 && $recurring_invoice_auto_send == 1 && $recurring_invoice_email_notify == 1) {
+    $email_recurring_invoice = $config_recurring_auto_send_invoice == 1 && $recurring_invoice_auto_send == 1 && $recurring_invoice_email_notify == 1;
+
+    // Auto-send without an email still sends the invoice (marks it Sent) rather than leaving it a draft
+    if ($recurring_invoice_auto_send == 1 && !$email_recurring_invoice) {
+        mysqli_query($mysqli, "UPDATE invoices SET invoice_status = 'Sent' WHERE invoice_id = $new_invoice_id");
+        mysqli_query($mysqli, "INSERT INTO history SET history_status = 'Sent', history_description = 'Invoice marked sent (not emailed)', history_invoice_id = $new_invoice_id");
+    }
+
+    if ($email_recurring_invoice) {
 
         $subject = "Invoice $invoice_prefix$invoice_number";
         $body = "Hello $contact_name,<br><br>An invoice regarding \"$invoice_scope\" has been generated. Please view the details below.<br><br>Invoice: $invoice_prefix$invoice_number<br>Issue Date: $invoice_date<br>Total: " . numfmt_format_currency($currency_format, $invoice_amount, $recurring_invoice_currency_code) . "<br>Due Date: $invoice_due<br><br><br>To view your invoice, please click <a href=\'https://$config_base_url/guest/guest_view_invoice.php?invoice_id=$new_invoice_id&url_key=$invoice_url_key\'>here</a>.<br><br><br>--<br>$company_name - Billing<br>$config_invoice_from_email<br>$company_phone";
@@ -769,6 +770,14 @@ while ($row = mysqli_fetch_assoc($sql_recurring_payments)) {
     if (cronInvoiceHistoryToday($invoice_id, 'Stripe autopay failed')) {
         continue;
     }
+
+    // Read the invoice again right before charging - it may have been paid since the list above was read
+    // (an invoice can be listed more than once when its recurring invoice has several recurring payments)
+    $invoice_now = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT invoice_status, invoice_amount - (SELECT IFNULL(SUM(payment_amount), 0) FROM payments WHERE payment_invoice_id = invoice_id) AS invoice_balance FROM invoices WHERE invoice_id = $invoice_id"));
+    if (!$invoice_now || !in_array($invoice_now['invoice_status'], ['Sent', 'Viewed', 'Partial']) || round(floatval($invoice_now['invoice_balance']), 2) <= 0) {
+        continue;
+    }
+    $invoice_amount = round(floatval($invoice_now['invoice_balance']), 2);
 
     // Only attempt autopay if a saved payment method is set
     if ($recurring_payment_saved_payment_id) {

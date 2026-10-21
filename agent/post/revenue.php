@@ -11,6 +11,7 @@ if (isset($_POST['add_revenue'])) {
     validateCSRFToken();
 
     enforceUserPermission('module_sales', 2);
+    enforceUserPermission('module_financial', 2);
 
     $date = escapeSql($_POST['date']);
     $amount = floatval($_POST['amount']);
@@ -37,6 +38,7 @@ if (isset($_POST['edit_revenue'])) {
     validateCSRFToken();
 
     enforceUserPermission('module_sales', 2);
+    enforceUserPermission('module_financial', 2);
 
     $revenue_id = intval($_POST['revenue_id']);
 
@@ -68,6 +70,7 @@ if (isset($_GET['delete_revenue'])) {
     validateCSRFToken();
 
     enforceUserPermission('module_sales', 3);
+    enforceUserPermission('module_financial', 3);
 
     $revenue_id = intval($_GET['delete_revenue']);
 

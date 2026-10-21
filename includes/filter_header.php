@@ -78,7 +78,7 @@ if (empty($_GET['canned_date'])) {
 // Date Filter
 if ($_GET['canned_date'] == "custom" && !empty($_GET['dtf'])) {
     $dtf = escapeSql($_GET['dtf']);
-    $dtt = escapeSql($_GET['dtt']);
+    $dtt = !empty($_GET['dtt']) ? escapeSql($_GET['dtt']) : '2099-12-31'; // No end date - open ended, like all time
 } elseif ($_GET['canned_date'] == "today") {
     $dtf = date('Y-m-d');
     $dtt = date('Y-m-d');

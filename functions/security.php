@@ -199,6 +199,11 @@ function apiEncryptCredentialEntry(#[\SensitiveParameter]$credential_cleartext, 
     // Decrypt the api hash to get the master key
     $site_encryption_master_key = decryptUserSpecificKey($api_key_decrypt_hash, $api_key_decrypt_password);
 
+    // Wrong decrypt password - never encrypt with an empty key
+    if (empty($site_encryption_master_key)) {
+        return false;
+    }
+
     // Encrypt the credential using the master key
     $ciphertext = openssl_encrypt($credential_cleartext, 'aes-128-cbc', $site_encryption_master_key, 0, $iv);
 

@@ -28,6 +28,11 @@ if (!empty($ticket_id)) {
         if ($update_sql) {
             $update_count = mysqli_affected_rows($mysqli);
 
+            // A new priority can mean a different SLA
+            if ($priority !== $ticket_row['ticket_priority']) {
+                applyTicketSla($ticket_id);
+            }
+
             logTicketHistory($ticket_id, "Edited via the API ($api_key_name)");
             logAudit("Ticket", "Edit", "$ticket_prefix$ticket_number ticket via API ($api_key_name)", $client_id, $ticket_id);
             logAudit("API", "Success", "Edited ticket $ticket_prefix$ticket_number via API ($api_key_name)", $client_id, $ticket_id);

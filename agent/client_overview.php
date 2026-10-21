@@ -423,7 +423,8 @@ $money_format = function ($amount) use ($currency_format, $client_currency_code,
                             $item_views = intval($item['item_views']);
                             $item_limit = intval($item['item_view_limit']);
                             $item_related_id = intval($item['item_related_id']);
-                            $item_label = escapeHtml($item['item_name'] ?: $item['item_type']);
+                            // A credential's name only for those who may see credentials
+                            $item_label = escapeHtml(($item['item_type'] === 'Credential' && !$access['credentials'] ? '' : $item['item_name']) ?: $item['item_type']);
                             // Documents and files look and open as they do everywhere else
                             if ($item['item_type'] === 'Document') {
                                 $item_tile = documentTile('sm');
@@ -431,10 +432,10 @@ $money_format = function ($amount) use ($currency_format, $client_currency_code,
                             } elseif ($item['item_type'] === 'File') {
                                 $item_tile = fileTypeTile($item['file_ext'], 'sm');
                                 $item_label = "<a class=\"ajax-modal\" href=\"#\" data-modal-size=\"lg\" data-modal-url=\"modals/file/file.php?id=$item_related_id\">$item_label</a>";
-                            } elseif ($item['item_type'] === 'Credential' && $item['item_name']) {
+                            } elseif ($item['item_type'] === 'Credential' && $item['item_name'] && $access['credentials']) {
                                 // Its tile, opening its quick look - with the password and 2FA there for whoever may see them
                                 $item_tile = credentialTile(['credential_name' => $item['item_name'], 'credential_uri' => $item['credential_uri'], 'credential_description' => $item['credential_description']], 'sm');
-                                $item_label = $access['credentials'] ? "<a class=\"ajax-modal\" href=\"#\" data-modal-url=\"modals/credential/credential.php?id=$item_related_id\">$item_label</a>" : $item_label;
+                                $item_label = "<a class=\"ajax-modal\" href=\"#\" data-modal-url=\"modals/credential/credential.php?id=$item_related_id\">$item_label</a>";
                             } else {
                                 $item_tile = '<span class="itflow-link-icon" title="' . escapeHtml($item['item_type']) . '" aria-hidden="true"><i class="fas fa-fw fa-' . ($item['item_type'] === 'Credential' ? 'key' : 'share-square') . '"></i></span>';
                             }

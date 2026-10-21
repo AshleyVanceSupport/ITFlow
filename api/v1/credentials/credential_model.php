@@ -66,6 +66,13 @@ if (isset($_POST['credential_uri_2'])) {
 if (isset($_POST['credential_username'])) {
     $username = $_POST['credential_username'];
     $username = apiEncryptCredentialEntry($username, $api_key_decrypt_hash, $api_key_decrypt_password);
+    if ($username === false) {
+        // Wrong decrypt password - don't store a value nobody can decrypt
+        $return_arr['success'] = "False";
+        $return_arr['message'] = "Incorrect or missing api_key_decrypt_password.";
+        echo json_encode($return_arr);
+        exit();
+    }
 } elseif (isset($credential_row) && isset($credential_row['credential_username'])) {
     $username = $credential_row['credential_username'];
 } else {
@@ -75,6 +82,13 @@ if (isset($_POST['credential_username'])) {
 if (isset($_POST['credential_password'])) {
     $password = $_POST['credential_password'];
     $password = apiEncryptCredentialEntry($password, $api_key_decrypt_hash, $api_key_decrypt_password);
+    if ($password === false) {
+        // Wrong decrypt password - don't store a value nobody can decrypt
+        $return_arr['success'] = "False";
+        $return_arr['message'] = "Incorrect or missing api_key_decrypt_password.";
+        echo json_encode($return_arr);
+        exit();
+    }
     $password_changed = true;
 } elseif (isset($credential_row) && isset($credential_row['credential_password'])) {
     $password = $credential_row['credential_password'];

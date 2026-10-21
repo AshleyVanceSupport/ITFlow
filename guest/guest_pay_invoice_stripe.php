@@ -5,7 +5,7 @@ require_once 'includes/inc_all_guest.php';
 DEFINE("WORDING_PAYMENT_FAILED", "<br><h2>There was an error verifying your payment. Please contact us for more information before attempting payment again.</h2>");
 
 // --- Get Stripe config from payment_providers table ---
-$stripe_provider = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT payment_provider_account, payment_provider_private_key, payment_provider_public_key FROM payment_providers WHERE payment_provider_name = 'Stripe' LIMIT 1"));
+$stripe_provider = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT payment_provider_account, payment_provider_private_key, payment_provider_public_key, payment_provider_active, payment_provider_threshold FROM payment_providers WHERE payment_provider_name = 'Stripe' LIMIT 1"));
 
 
 $stripe_publishable      = escapeHtml($stripe_provider['payment_provider_public_key']);
@@ -51,6 +51,14 @@ if (isset($_GET['invoice_id'], $_GET['url_key']) && !isset($_GET['payment_intent
     $invoice_currency_code = escapeHtml($row['invoice_currency_code']);
     $client_id             = intval($row['client_id']);
     $client_name           = escapeHtml($row['client_name']);
+
+    // Same rules as the Pay button on the invoice: Stripe switched on, invoice under its threshold
+    $stripe_threshold = floatval($stripe_provider['payment_provider_threshold'] ?? 0);
+    if (empty($stripe_provider['payment_provider_active']) || ($stripe_threshold > 0 && $stripe_threshold <= $invoice_amount)) {
+        echo "<br><h2>Online payment is not available for this invoice. Please contact us for other ways to pay.</h2>";
+        require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/footer.php';
+        exit();
+    }
 
     // Company info for currency formatting, etc
     $sql_company = mysqli_query($mysqli, "SELECT * FROM companies WHERE company_id = 1");

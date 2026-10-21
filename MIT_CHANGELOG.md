@@ -4,6 +4,14 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.95 - 2026-10-21
+Code review of ITFlow's own code - fixes:
+- Security: credential 2FA codes can no longer be reached through a share link by agents without credential access, and shared 2FA codes stop once a one-time link is used; "Require MFA" is now enforced on every page; an existing MFA can't be replaced without turning it off first; the portal password reset no longer emails anyone for an empty or unknown link and is rate-limited; saving a card in the portal only accepts the checkout the person started; bulk email needs edit rights and a configured From address; read-only and wrong-client gaps closed (revenues, transfers, contact links, export list).
+- Money: the agent "Pay with saved card" can no longer charge twice and charges the balance; Paid / Partial invoices follow changes to their total; converting a quote twice no longer makes two invoices; bulk payments round correctly and skip Non-Billable invoices; recurring invoices set to send automatically become Sent even when no email goes out, so autopay and reminders run; autopay never charges an invoice twice in a run; online payment respects the Stripe on/off switch and threshold, and small balances can be paid; portal saved cards work on part-paid invoices.
+- Tickets: replying to a Resolved ticket with Open really reopens it (and its SLA); editing a ticket keeps a hand-picked SLA and no longer re-sends breach alerts; "Mark all complete" leaves tasks waiting for approval; merged replies keep their attachments; very long email subjects become tickets; accented text can't break the ticket history; portal close / resolve follow the same rules as the agent side.
+- Quotes: expired quotes can't be accepted.
+- Smaller: guest ticket avatars, shared-file download names, API key log names, date filters, expense refunds and receipts, portal document authors.
+
 ## 26.10.94 - 2026-10-21
 Code review of all our additions - fixes:
 - Timesheets: an overnight California shift on a clock-change night (Nov 1 / Mar 14) no longer gains or loses an hour each time it is saved; overnight note times the same.

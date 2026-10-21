@@ -372,13 +372,14 @@ if (isset($_GET['force_recurring'])) {
         recurring_invoice_client_id, recurring_invoice_currency_code,
         recurring_invoice_discount_amount, recurring_invoice_frequency, recurring_invoice_id,
         recurring_invoice_last_sent, recurring_invoice_next_date, recurring_invoice_note,
-        recurring_invoice_scope, recurring_invoice_auto_send, recurring_invoice_status FROM recurring_invoices, clients WHERE client_id = recurring_invoice_client_id AND recurring_invoice_id = $recurring_invoice_id");
+        recurring_invoice_scope, recurring_invoice_auto_send, recurring_invoice_email_notify, recurring_invoice_status FROM recurring_invoices, clients WHERE client_id = recurring_invoice_client_id AND recurring_invoice_id = $recurring_invoice_id");
 
     $row = mysqli_fetch_assoc($sql_recurring_invoices);
     $recurring_invoice_id = intval($row['recurring_invoice_id']);
     $recurring_invoice_scope = escapeSql($row['recurring_invoice_scope']);
     $recurring_invoice_frequency = validateRecurringFrequency($row['recurring_invoice_frequency']);
     $recurring_invoice_auto_send = intval($row['recurring_invoice_auto_send']);
+    $recurring_invoice_email_notify = intval($row['recurring_invoice_email_notify']);
     $recurring_invoice_status = escapeSql($row['recurring_invoice_status']);
     $recurring_invoice_last_sent = escapeSql($row['recurring_invoice_last_sent']);
     $recurring_invoice_next_date = escapeSql($row['recurring_invoice_next_date']);
@@ -459,9 +460,11 @@ if (isset($_GET['force_recurring'])) {
     // Only send the invoice if the recurring invoice is set to auto-send, otherwise just leave as draft for manual sending
     if ($recurring_invoice_auto_send == 1) {
 
+        mysqli_query($mysqli,"UPDATE invoices SET invoice_status = 'Sent' WHERE invoice_id = $new_invoice_id");
         mysqli_query($mysqli,"INSERT INTO history SET history_status = 'Sent', history_description = 'Invoice Sent from Recurring!', history_invoice_id = $new_invoice_id");
 
-        if ($config_recurring_auto_send_invoice == 1) {
+        // Email it only when recurring auto-send is on globally and the client is to be notified
+        if ($config_recurring_auto_send_invoice == 1 && $recurring_invoice_email_notify == 1) {
             $sql = mysqli_query($mysqli,"SELECT * FROM invoices
                 LEFT JOIN clients ON invoice_client_id = client_id
                 LEFT JOIN contacts ON clients.client_id = contacts.contact_client_id AND contact_primary = 1

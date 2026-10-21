@@ -821,7 +821,12 @@ if (isset($_GET['share_generate_link'])) {
     $item_encrypted_credential = '';  // Default empty
 
     $client_id = intval($_GET['client_id']);
-    $item_type = escapeSql($_GET['type']);
+    $item_type = $_GET['type'] ?? '';
+    // Only the types the share modals send - matched exactly, as the guest pages do
+    if (!in_array($item_type, ['Document', 'File', 'Credential'], true)) {
+        http_response_code(400);
+        exit(json_encode(['error' => 'Invalid item type']));
+    }
     $item_id = intval($_GET['id']);
     $item_email = escapeSql($_GET['contact_email']);
     $item_note = escapeSql($_GET['note']);
@@ -831,6 +836,11 @@ if (isset($_GET['share_generate_link'])) {
         $item_view_limit_wording = " and may only be viewed <strong>once</strong>, before the link is destroyed.";
     }
     $item_expires = intval($_GET['expires']);
+    // Only the lifetimes the share modals offer
+    if (!in_array($item_expires, [1, 24, 168, 730], true)) {
+        http_response_code(400);
+        exit(json_encode(['error' => 'Invalid expiry']));
+    }
     $item_expires_friendly = "never"; // default never
     if ($item_expires == 1) {
         $item_expires_friendly = "1 hour";
@@ -845,6 +855,7 @@ if (isset($_GET['share_generate_link'])) {
     enforceClientAccess($client_id);
 
     $item_key = randomString(32);
+    $row = null;
 
     if ($item_type == "Document") {
         $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT document_name FROM documents WHERE document_id = $item_id AND document_client_id = $client_id LIMIT 1"));
@@ -879,6 +890,11 @@ if (isset($_GET['share_generate_link'])) {
         $iv = randomString();
         $password_ciphertext = openssl_encrypt($credential_password_cleartext, 'aes-128-cbc', $credential_encryption_key, 0, $iv);
         $item_encrypted_credential = $iv . $password_ciphertext;
+    }
+
+    if (empty($row)) {
+        http_response_code(404);
+        exit(json_encode(['error' => 'Item not found']));
     }
 
     // Insert entry into DB

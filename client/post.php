@@ -62,7 +62,8 @@ if (isset($_POST['add_ticket'])) {
         $client_name = escapeSql($session_client_name);
 
         $email_subject = "ITFlow - New Ticket - $client_name: $subject";
-        $email_body = "Hello, <br><br>This is a notification that a new ticket has been raised in ITFlow. <br>Client: $client_name<br>Priority: $priority<br>Link: https://$config_base_url/agent/ticket.php?ticket_id=$ticket_id&client_id=$session_client_id <br><br><b>$subject</b><br>$details";
+        $email_details = mysqli_real_escape_string($mysqli, mitPurifyHtml($_POST['details']));
+        $email_body = "Hello, <br><br>This is a notification that a new ticket has been raised in ITFlow. <br>Client: $client_name<br>Priority: $priority<br>Link: https://$config_base_url/agent/ticket.php?ticket_id=$ticket_id&client_id=$session_client_id <br><br><b>$subject</b><br>$email_details";
 
         // Queue Mail
         $data = [
@@ -109,10 +110,15 @@ if (isset($_POST['add_ticket_comment'])) {
         $ticket_reply_id = mysqli_insert_id($mysqli);
 
         // Update Ticket Last Response Field & set ticket to open as client has replied
-        $original_row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT ticket_status FROM tickets WHERE ticket_id = $ticket_id LIMIT 1"));
+        $original_row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT ticket_status, ticket_resolved_at FROM tickets WHERE ticket_id = $ticket_id LIMIT 1"));
         $original_ticket_status = intval($original_row['ticket_status'] ?? 0);
 
-        mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 2 WHERE ticket_id = $ticket_id AND ticket_client_id = $session_client_id LIMIT 1");
+        mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 2, ticket_resolved_at = NULL WHERE ticket_id = $ticket_id AND ticket_client_id = $session_client_id LIMIT 1");
+
+        // A reply to a resolved ticket reopens it - back on the resolution clock
+        if (!empty($original_row['ticket_resolved_at'])) {
+            resetTicketResolutionSla($ticket_id);
+        }
         syncTicketSlaClock($ticket_id);
 
         // Only record the reopen when the ticket was not already open
@@ -360,6 +366,14 @@ if (isset($_GET['resolve_ticket'])) {
     // Verify the contact has access to the provided ticket ID
     if (verifyContactTicketAccess($ticket_id, "Open")) {
 
+        // Only an unresolved ticket with all its tasks complete, as the ticket page offers
+        $resolvable = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT ticket_resolved_at FROM tickets WHERE ticket_id = $ticket_id LIMIT 1"));
+        $open_tasks = mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM tasks WHERE task_ticket_id = $ticket_id AND task_completed_at IS NULL"));
+        if (!$resolvable || !empty($resolvable['ticket_resolved_at']) || $open_tasks > 0) {
+            flashAlert("This ticket can't be resolved yet", 'error');
+            redirect("ticket.php?id=" . $ticket_id);
+        }
+
         // Resolve the ticket
         mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 4, ticket_resolved_at = NOW() WHERE ticket_id = $ticket_id AND ticket_client_id = $session_client_id");
         setTicketResolutionSlaMet($ticket_id);
@@ -435,6 +449,13 @@ if (isset($_GET['close_ticket'])) {
 
     // Verify the contact has access to the provided ticket ID
     if (verifyContactTicketAccess($ticket_id, "Open")) {
+
+        // Only a resolved ticket can be closed, as the ticket page offers
+        $closable = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT ticket_resolved_at FROM tickets WHERE ticket_id = $ticket_id LIMIT 1"));
+        if (!$closable || empty($closable['ticket_resolved_at'])) {
+            flashAlert("Only a resolved ticket can be closed", 'error');
+            redirect("ticket.php?id=" . $ticket_id);
+        }
 
         // Fully close ticket
         mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 5, ticket_closed_at = NOW() WHERE ticket_id = $ticket_id AND ticket_client_id = $session_client_id");
@@ -874,8 +895,8 @@ if (isset($_GET['add_payment_by_provider'])) {
     } elseif (!$payment_provider_client || !$saved_payment_method) {
         flashAlert("Stripe not enabled or no client card saved", 'error');
         redirect();
-    } elseif ($invoice_status !== 'Sent' && $invoice_status !== 'Viewed') {
-        flashAlert("Invalid invoice state (draft/partial/paid/not billable)", 'error');
+    } elseif ($invoice_status !== 'Sent' && $invoice_status !== 'Viewed' && $invoice_status !== 'Partial') {
+        flashAlert("Invalid invoice state (draft/paid/not billable)", 'error');
         redirect();
     } elseif ($invoice_amount == 0) {
         flashAlert("Invalid invoice amount", 'error');
@@ -889,8 +910,16 @@ if (isset($_GET['add_payment_by_provider'])) {
         redirect();
     }
     $invoice_status_now = (string) getFieldById('invoices', $invoice_id, 'invoice_status');
-    if ($invoice_status_now !== 'Sent' && $invoice_status_now !== 'Viewed') {
+    if ($invoice_status_now !== 'Sent' && $invoice_status_now !== 'Viewed' && $invoice_status_now !== 'Partial') {
         flashAlert("This invoice is already paid or no longer open for payment", 'error');
+        redirect();
+    }
+
+    // Charge what is left to pay - a Partial invoice has payments already
+    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COALESCE(SUM(payment_amount), 0) AS amount_paid FROM payments WHERE payment_invoice_id = $invoice_id"));
+    $balance_to_pay = round($invoice_amount - floatval($row['amount_paid']), 2);
+    if ($balance_to_pay <= 0) {
+        flashAlert("This invoice has nothing left to pay", 'error');
         redirect();
     }
 
@@ -898,7 +927,6 @@ if (isset($_GET['add_payment_by_provider'])) {
     require_once __DIR__ . '/../includes/stripe_init.php';
     $stripe = new \Stripe\StripeClient($private_key);
 
-    $balance_to_pay = round($invoice_amount, 2);
     $pi_description = "ITFlow: $client_name payment of $invoice_currency_code $balance_to_pay for $invoice_prefix$invoice_number";
 
     // Create a payment intent
@@ -933,7 +961,7 @@ if (isset($_GET['add_payment_by_provider'])) {
         logApp("Stripe", "error", "Exception during PI for invoice ID $invoice_id: $error");
     }
 
-    if ($payment_intent->status == "succeeded" && intval($balance_to_pay) == intval($pi_amount_paid)) {
+    if ($payment_intent->status == "succeeded" && intval(round($balance_to_pay * 100)) == intval(round($pi_amount_paid * 100))) {
 
         // Update Invoice Status
         mysqli_query($mysqli, "UPDATE invoices SET invoice_status = 'Paid' WHERE invoice_id = $invoice_id");
@@ -945,7 +973,7 @@ if (isset($_GET['add_payment_by_provider'])) {
         // Email receipt
         if (!empty($config_smtp_host) || !empty($config_smtp_provider)) {
             $subject = "Payment Received - Invoice $invoice_prefix$invoice_number";
-            $body = "Hello $contact_name,<br><br>We have received online payment for the amount of " . numfmt_format_currency($currency_format, $invoice_amount, $invoice_currency_code) . " for invoice <a href=\'https://$config_base_url/guest/guest_view_invoice.php?invoice_id=$invoice_id&url_key=$invoice_url_key\'>$invoice_prefix$invoice_number</a>. Please keep this email as a receipt for your records.<br><br>Amount Paid: " . numfmt_format_currency($currency_format, $invoice_amount, $invoice_currency_code) . "<br><br>Thank you for your business!<br><br><br>--<br>$company_name - Billing Department<br>$config_invoice_from_email<br>$company_phone";
+            $body = "Hello $contact_name,<br><br>We have received online payment for the amount of " . numfmt_format_currency($currency_format, $balance_to_pay, $invoice_currency_code) . " for invoice <a href=\'https://$config_base_url/guest/guest_view_invoice.php?invoice_id=$invoice_id&url_key=$invoice_url_key\'>$invoice_prefix$invoice_number</a>. Please keep this email as a receipt for your records.<br><br>Amount Paid: " . numfmt_format_currency($currency_format, $balance_to_pay, $invoice_currency_code) . "<br><br>Thank you for your business!<br><br><br>--<br>$company_name - Billing Department<br>$config_invoice_from_email<br>$company_phone";
 
             // Queue Mail
             $data = [
@@ -962,7 +990,7 @@ if (isset($_GET['add_payment_by_provider'])) {
             // Email the internal notification address too
             if (!empty($config_invoice_paid_notification_email)) {
                 $subject = "Payment Received - $client_name - Invoice $invoice_prefix$invoice_number";
-                $body = "Hello, <br><br>This is a notification that an invoice has been paid in ITFlow. Below is a copy of the receipt sent to the client:-<br><br>--------<br><br>Hello $contact_name,<br><br>We have received online payment for the amount of " . numfmt_format_currency($currency_format, $invoice_amount, $invoice_currency_code) . " for invoice <a href=\'https://$config_base_url/guest/guest_view_invoice.php?invoice_id=$invoice_id&url_key=$invoice_url_key\'>$invoice_prefix$invoice_number</a>. Please keep this email as a receipt for your records.<br><br>Amount Paid: " . numfmt_format_currency($currency_format, $invoice_amount, $invoice_currency_code) . "<br><br>Thank you for your business!<br><br><br>--<br>$company_name - Billing Department<br>$config_invoice_from_email<br>$company_phone";
+                $body = "Hello, <br><br>This is a notification that an invoice has been paid in ITFlow. Below is a copy of the receipt sent to the client:-<br><br>--------<br><br>Hello $contact_name,<br><br>We have received online payment for the amount of " . numfmt_format_currency($currency_format, $balance_to_pay, $invoice_currency_code) . " for invoice <a href=\'https://$config_base_url/guest/guest_view_invoice.php?invoice_id=$invoice_id&url_key=$invoice_url_key\'>$invoice_prefix$invoice_number</a>. Please keep this email as a receipt for your records.<br><br>Amount Paid: " . numfmt_format_currency($currency_format, $balance_to_pay, $invoice_currency_code) . "<br><br>Thank you for your business!<br><br><br>--<br>$company_name - Billing Department<br>$config_invoice_from_email<br>$company_phone";
 
                 $data[] = [
                     'from' => $config_invoice_from_email,
@@ -990,10 +1018,10 @@ if (isset($_GET['add_payment_by_provider'])) {
 
         // Notify/log
         appNotify("Invoice Paid", "Invoice $invoice_prefix$invoice_number automatically paid", "/agent/invoice.php?invoice_id=$invoice_id", $client_id);
-        logAudit("Invoice", "Payment", "$session_contact_name initiated Stripe payment amount of " . numfmt_format_currency($currency_format, $invoice_amount, $invoice_currency_code) . " added to invoice $invoice_prefix$invoice_number - $pi_id $extended_log_desc", $client_id, $invoice_id);
+        logAudit("Invoice", "Payment", "$session_contact_name initiated Stripe payment amount of " . numfmt_format_currency($currency_format, $balance_to_pay, $invoice_currency_code) . " added to invoice $invoice_prefix$invoice_number - $pi_id $extended_log_desc", $client_id, $invoice_id);
         triggerCustomAction('invoice_pay', $invoice_id);
 
-        flashAlert("The amount " . numfmt_format_currency($currency_format, $invoice_amount, $invoice_currency_code) . " paid Invoice $invoice_prefix$invoice_number");
+        flashAlert("The amount " . numfmt_format_currency($currency_format, $balance_to_pay, $invoice_currency_code) . " paid Invoice $invoice_prefix$invoice_number");
 
         redirect();
 
@@ -1166,6 +1194,9 @@ if (isset($_GET['create_stripe_checkout'])) {
         }
         $checkout_session = $stripe->checkout->sessions->create($session_params);
 
+        // Only the session made here can be saved when Stripe returns (see stripe_save_card)
+        $_SESSION['stripe_checkout_session_id'] = $checkout_session->id;
+
         echo json_encode(['clientSecret' => $checkout_session->client_secret]);
 
     } catch (Exception $e) {
@@ -1223,8 +1254,15 @@ if (isset($_GET['stripe_save_card'])) {
         redirect("saved_payment_methods.php");
     }
 
-    // Get session ID from URL
-    $checkout_session_id = escapeSql($_GET['session_id']);
+    // Get session ID from URL - it must be the checkout session this login started
+    $checkout_session_id = strval($_GET['session_id'] ?? '');
+    $expected_session_id = strval($_SESSION['stripe_checkout_session_id'] ?? '');
+    unset($_SESSION['stripe_checkout_session_id']);
+
+    if (empty($checkout_session_id) || empty($expected_session_id) || !hash_equals($expected_session_id, $checkout_session_id)) {
+        flashAlert("This card setup has expired - please try again.", 'danger');
+        redirect("saved_payment_methods.php");
+    }
 
     try {
         require_once '../includes/stripe_init.php';
@@ -1232,6 +1270,13 @@ if (isset($_GET['stripe_save_card'])) {
 
         // Retrieve checkout session & setup intent
         $checkout_session = $stripe->checkout->sessions->retrieve($checkout_session_id, []);
+
+        // The card must be set up for this client's own Stripe customer
+        if ($checkout_session->customer !== $stripe_customer_id) {
+            flashAlert("This card setup does not belong to your account.", 'danger');
+            redirect("saved_payment_methods.php");
+        }
+
         $setup_intent_id = $checkout_session->setup_intent;
         $setup_intent = $stripe->setupIntents->retrieve($setup_intent_id, []);
         $payment_method_id = escapeSql($setup_intent->payment_method);
@@ -1499,7 +1544,7 @@ if (isset($_POST['client_add_document'])) {
         document_content_raw = '$document_content_raw',
         document_client_visible = 1,
         document_client_id = $session_client_id,
-        document_created_by = $session_contact_id");
+        document_created_by = $session_user_id");
 
     $document_id = mysqli_insert_id($mysqli);
 
@@ -1574,7 +1619,7 @@ if (isset($_POST['client_upload_document'])) {
                     document_content_raw = '$document_content_raw',
                     document_client_visible = 1,
                     document_client_id = $session_client_id,
-                    document_created_by = $session_contact_id");
+                    document_created_by = $session_user_id");
 
                 $document_id = mysqli_insert_id($mysqli);
 
@@ -1586,7 +1631,7 @@ if (isset($_POST['client_upload_document'])) {
                     file_ext = '$file_extension',
                     file_mime_type = '$file_mime_type',
                     file_size = $file_size,
-                    file_created_by = $session_contact_id,
+                    file_created_by = $session_user_id,
                     file_client_id = $session_client_id");
 
                 $file_id = mysqli_insert_id($mysqli);

@@ -147,7 +147,7 @@ if ($ticket_row) {
     <br>
 
     <?php
-    $sql = mysqli_query($mysqli, "SELECT contact_name, contact_photo, ticket_reply, ticket_reply_by, ticket_reply_created_at,
+    $sql = mysqli_query($mysqli, "SELECT contact_client_id, contact_name, contact_photo, ticket_reply, ticket_reply_by, ticket_reply_created_at,
         ticket_reply_id, ticket_reply_type, ticket_reply_updated_at, user_avatar, user_id,
         user_name FROM ticket_replies LEFT JOIN users ON ticket_reply_by = user_id LEFT JOIN contacts ON ticket_reply_by = contact_id WHERE ticket_reply_ticket_id = $ticket_id AND ticket_reply_archived_at IS NULL AND ticket_reply_type != 'Internal' ORDER BY ticket_reply_id DESC");
 
@@ -163,7 +163,8 @@ if ($ticket_row) {
             $ticket_reply_by_display = escapeHtml($row['contact_name']);
             $user_initials = initials($row['contact_name']);
             $user_avatar = $row['contact_photo'];
-            $avatar_link = "../uploads/clients/$ticket_reply_by/$user_avatar";
+            $contact_client_id = intval($row['contact_client_id']);
+            $avatar_link = "../uploads/clients/$contact_client_id/$user_avatar";
         } else {
             $ticket_reply_by_display = escapeHtml($row['user_name']);
             $user_id = intval($row['user_id']);

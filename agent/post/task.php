@@ -118,6 +118,12 @@ if (isset($_GET['complete_task']) || isset($_GET['undo_complete_task'])) {
     $ticket_id = intval($row['ticket_id']);
     $task_name = escapeSql($task['task_name']);
 
+    // A task waiting on an approval (or declined) is not done until it is approved
+    if ($complete && mysqli_num_rows(mysqli_query($mysqli, "SELECT approval_id FROM task_approvals WHERE approval_task_id = $task_id AND approval_status IN ('pending','declined') LIMIT 1"))) {
+        flashAlert("Task <strong>" . escapeHtml($task['task_name']) . "</strong> is waiting for approval.", 'error');
+        redirect();
+    }
+
     if ($complete) {
         mysqli_query($mysqli, "UPDATE tasks SET task_completed_at = NOW(), task_completed_by = $session_user_id WHERE task_id = $task_id AND task_completed_at IS NULL");
     } else {
@@ -394,7 +400,10 @@ if (isset($_GET['complete_all_tasks']) || isset($_GET['undo_complete_all_tasks']
     $ticket_id = intval($row['ticket_id']);
 
     if ($complete) {
-        mysqli_query($mysqli, "UPDATE tasks SET task_completed_at = NOW(), task_completed_by = $session_user_id WHERE task_ticket_id = $ticket_id AND task_completed_at IS NULL");
+        // Tasks waiting on an approval (or declined) are left open
+        mysqli_query($mysqli, "UPDATE tasks SET task_completed_at = NOW(), task_completed_by = $session_user_id WHERE task_ticket_id = $ticket_id AND task_completed_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM task_approvals WHERE approval_task_id = task_id AND approval_status IN ('pending','declined'))");
+        $skipped = mysqli_num_rows(mysqli_query($mysqli, "SELECT task_id FROM tasks WHERE task_ticket_id = $ticket_id AND task_completed_at IS NULL"));
     } else {
         mysqli_query($mysqli, "UPDATE tasks SET task_completed_at = NULL, task_completed_by = NULL WHERE task_ticket_id = $ticket_id AND task_completed_at IS NOT NULL");
     }
@@ -403,7 +412,11 @@ if (isset($_GET['complete_all_tasks']) || isset($_GET['undo_complete_all_tasks']
 
     logAudit("Ticket", "Edit", "$session_name marked all tasks " . ($complete ? 'complete' : 'as incomplete') . " for ticket " . escapeSql(ticketReference($row)), $client_id, $ticket_id);
 
-    flashAlert($complete ? "All tasks marked complete" : "All tasks marked not done", $complete ? 'success' : 'error');
+    if ($complete && $skipped) {
+        flashAlert("Tasks marked complete - <strong>$skipped</strong> waiting for approval left open", 'warning');
+    } else {
+        flashAlert($complete ? "All tasks marked complete" : "All tasks marked not done", $complete ? 'success' : 'error');
+    }
 
     redirect();
 

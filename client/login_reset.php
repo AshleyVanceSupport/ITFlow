@@ -48,17 +48,28 @@ DEFINE("WORDING_ERROR", "Something went wrong! Your link may have expired. Pleas
 
 if ($_SERVER['REQUEST_METHOD'] == "POST") {
 
+    // Rate limit per IP, as login.php does: reset requests and failed reset links in the last 10 minutes
+    $reset_lock_name = 'itflow_portal_reset_ip_' . md5($ip);
+    mysqli_query($mysqli, "SELECT GET_LOCK('$reset_lock_name', 10)");
+
+    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COUNT(log_id) AS reset_count FROM logs WHERE log_ip = '$ip' AND log_type = 'Portal Reset' AND log_created_at > (NOW() - INTERVAL 10 MINUTE)"));
+    if (intval($row['reset_count']) >= 10) {
+        header("HTTP/1.1 429 Too Many Requests");
+        exit("Too many password reset attempts from your IP address. Please try again later.");
+    }
+
     /*
      * Send password reset email
      */
     if (isset($_POST['password_reset_email_request'])) {
 
-        $email = escapeSql($_POST['email']);
+        $email = escapeSql($_POST['email'] ?? '');
+        mysqli_query($mysqli, "INSERT INTO logs SET log_type = 'Portal Reset', log_action = 'Request', log_description = 'Portal password reset requested for $email', log_ip = '$ip', log_user_agent = '$user_agent'");
 
         $sql = mysqli_query($mysqli, "SELECT contact_id, contact_name, user_email, contact_client_id, user_id FROM users LEFT JOIN contacts ON user_id = contact_user_id WHERE user_email = '$email' AND user_auth_method = 'local' AND user_type = 2 AND user_status = 1 AND user_archived_at IS NULL LIMIT 1");
         $row = mysqli_fetch_assoc($sql);
 
-        if ($row['user_email'] == $email) {
+        if (!empty($email) && $row && $row['user_email'] == $email) {
             $id = intval($row['contact_id']);
             $user_id = intval($row['user_id']);
             $name = escapeSql($row['contact_name']);
@@ -100,8 +111,16 @@ if ($_SERVER['REQUEST_METHOD'] == "POST") {
      */
     } elseif (isset($_POST['password_reset_set_password'])) {
 
-        if (!isset($_POST['new_password']) || !isset($_POST['email']) || !isset($_POST['token']) || !isset($_POST['client'])) {
+        if (empty($_POST['new_password']) || empty($_POST['email']) || empty($_POST['token']) || empty($_POST['client'])) {
             $_SESSION['login_message'] = WORDING_ERROR;
+            header("Location: login_reset.php");
+            exit();
+        }
+
+        if (strlen($_POST['new_password']) < USER_PASSWORD_MIN) {
+            $_SESSION['login_message'] = "Your new password must be at least " . USER_PASSWORD_MIN . " characters.";
+            header("Location: " . $_SERVER['REQUEST_URI']);
+            exit();
         }
 
         $token = escapeSql($_POST['token']);
@@ -116,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] == "POST") {
         $name = escapeSql($user_row['contact_name']);
 
         // Ensure the token is correct
-        if (sha1($user_row['user_password_reset_token']) == sha1($token)) {
+        if ($user_row && !empty($user_row['user_password_reset_token']) && hash_equals($user_row['user_password_reset_token'], strval($_POST['token']))) {
 
             // Set password, invalidate token, logging
             $password = password_hash($_POST['new_password'], PASSWORD_DEFAULT);
@@ -153,6 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] == "POST") {
             exit();
 
         } else {
+            mysqli_query($mysqli, "INSERT INTO logs SET log_type = 'Portal Reset', log_action = 'Failed', log_description = 'Invalid portal password reset link used for $email', log_ip = '$ip', log_user_agent = '$user_agent'");
             $_SESSION['login_message'] = WORDING_ERROR;
         }
 
@@ -213,10 +233,10 @@ if ($_SERVER['REQUEST_METHOD'] == "POST") {
                     $user_row = mysqli_fetch_assoc($sql);
 
                     // Sanity check
-                    if (sha1($user_row['user_password_reset_token']) == sha1($token)) { ?>
+                    if ($user_row && !empty($user_row['user_password_reset_token']) && hash_equals($user_row['user_password_reset_token'], strval($_GET['token']))) { ?>
 
                         <div class="input-group mb-3">
-                            <input type="password" class="form-control" placeholder="New Password" name="new_password" required minlength="8">
+                            <input type="password" class="form-control" placeholder="New Password" name="new_password" required minlength="<?= USER_PASSWORD_MIN ?>">
                                 <div class="input-group-text">
                                     <span class="fas fa-lock"></span>
                                 </div>

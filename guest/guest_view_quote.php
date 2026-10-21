@@ -282,7 +282,7 @@ if ($quote_status == "Draft" || $quote_status == "Sent" || $quote_status == "Vie
         <div class="text-center"><?= nl2br($config_quote_footer) ?></div>
         <div class="">
             <?php
-                if ($quote_status == "Sent" || $quote_status == "Viewed" && strtotime($quote_expire) > strtotime("now")) { ?>
+                if (($quote_status == "Sent" || $quote_status == "Viewed") && (empty($quote_expire) || strtotime($quote_expire) >= strtotime("today"))) { ?>
                     <a class="btn btn-success confirm-link" href="guest_post.php?accept_quote=<?= $quote_id ?>&url_key=<?= $url_key ?>">
                         <i class="fas fa-fw fa-thumbs-up me-2"></i>Accept
                     </a>

@@ -154,6 +154,13 @@ if (isset($_POST['add_quote_to_invoice'])) {
 
     enforceClientAccess();
 
+    // Claim the quote first so a double submit can't create two invoices
+    mysqli_query($mysqli,"UPDATE quotes SET quote_status = 'Invoiced' WHERE quote_id = $quote_id AND quote_status != 'Invoiced'");
+    if (mysqli_affected_rows($mysqli) !== 1) {
+        flashAlert("Quote <strong>$quote_prefix$quote_number</strong> has already been invoiced", 'error');
+        redirect();
+    }
+
     $config_invoice_prefix = escapeSql($config_invoice_prefix);
 
     // Atomically increment and get the new invoice number
@@ -193,8 +200,6 @@ if (isset($_POST['add_quote_to_invoice'])) {
         mysqli_query($mysqli,"INSERT INTO invoice_items SET item_name = '$item_name', item_description = '$item_description', item_quantity = $item_quantity, item_price = $item_price, item_subtotal = $item_subtotal, item_tax = $item_tax, item_total = $item_total, item_order = $item_order, item_tax_id = $tax_id, item_invoice_id = $new_invoice_id");
         mitProcFromQuoteLine($item_id, mysqli_insert_id($mysqli), $new_invoice_id, $client_id, $_POST); // Mountaineer IT: ticked to order
     }
-
-    mysqli_query($mysqli,"UPDATE quotes SET quote_status = 'Invoiced' WHERE quote_id = $quote_id");
 
     mysqli_query($mysqli,"INSERT INTO history SET history_status = 'Invoiced', history_description = 'Quote invoiced as $config_invoice_prefix$invoice_number', history_quote_id = $quote_id");
 

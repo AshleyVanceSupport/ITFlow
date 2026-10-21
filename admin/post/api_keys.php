@@ -61,9 +61,9 @@ if (isset($_GET['revoke_api_key'])) {
 
     mysqli_query($mysqli,"UPDATE api_keys SET api_key_expire = NOW() WHERE api_key_id = $api_key_id");
 
-    logAudit("API Key", "Revoke", "$session_name revoked API key $name", 0);
+    logAudit("API Key", "Revoke", "$session_name revoked API key $api_key_name", 0, $api_key_id);
 
-    flashAlert("API Key <strong>$name</strong> revoked", 'error');
+    flashAlert("API Key <strong>$api_key_name</strong> revoked", 'error');
 
     redirect();
 
@@ -81,9 +81,9 @@ if (isset($_GET['delete_api_key'])) {
 
     mysqli_query($mysqli,"DELETE FROM api_keys WHERE api_key_id = $api_key_id");
 
-    logAudit("API Key", "Delete", "$session_name deleted API key $name", 0);
+    logAudit("API Key", "Delete", "$session_name deleted API key $api_key_name", 0);
 
-    flashAlert("API Key <strong>$name</strong> deleted", 'error');
+    flashAlert("API Key <strong>$api_key_name</strong> deleted", 'error');
 
     redirect();
 
@@ -108,7 +108,7 @@ if (isset($_POST['bulk_delete_api_keys'])) {
 
             mysqli_query($mysqli, "DELETE FROM api_keys WHERE api_key_id = $api_key_id");
 
-            logAudit("API Key", "Delete", "$session_name deleted API key $name", 0);
+            logAudit("API Key", "Delete", "$session_name deleted API key $api_key_name", 0);
 
         }
 

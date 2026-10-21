@@ -25,9 +25,9 @@ function appNotify($type, $details, $action = null, $client_id = 0, $entity_id =
     $client_id = intval($client_id);
     $entity_id = intval($entity_id);
 
-    $type = substr($type, 0, 200);
-    $details = substr($details, 0, 1000);
-    $action = substr($action, 0, 250);
+    $type = mb_strcut($type, 0, 200, 'UTF-8');
+    $details = mb_strcut($details, 0, 1000, 'UTF-8');
+    $action = mb_strcut($action, 0, 250, 'UTF-8');
 
     // Callers pass values that are already SQL-safe, but cutting at a fixed
     // length (or an escaper that leaves backslashes, e.g. escapeHtml) can leave
@@ -64,9 +64,9 @@ function logAudit($type, $action, $description, $client_id = 0, $entity_id = 0) 
         $session_user_id = 0;
     }
 
-    $type = substr($type, 0, 200);
-    $action = substr($action, 0, 255);
-    $description = substr($description, 0, 1000);
+    $type = mb_strcut($type, 0, 200, 'UTF-8');
+    $action = mb_strcut($action, 0, 255, 'UTF-8');
+    $description = mb_strcut($description, 0, 1000, 'UTF-8');
 
     // Callers pass values that are already SQL-safe, but cutting at a fixed
     // length (or an escaper that leaves backslashes, e.g. escapeHtml) can leave
@@ -101,7 +101,7 @@ function logTicketHistory($ticket_id, $description) {
 
     // ticket_history_description is varchar(255) and NOT NULL, so an over-long
     // description would be an error under strict mode rather than a truncation
-    $description = substr($description, 0, 255);
+    $description = mb_strcut($description, 0, 255, 'UTF-8');
 
     // The description arrives already escaped, and cutting it at 255 can split a
     // \' pair - the leftover backslash would escape this query's closing quote
@@ -142,11 +142,11 @@ function logHistory($status, $description, $invoice_id = 0, $quote_id = 0, $recu
     $quote_id = intval($quote_id);
     $recurring_invoice_id = intval($recurring_invoice_id);
 
-    $status = substr($status, 0, 200);
+    $status = mb_strcut($status, 0, 200, 'UTF-8');
 
     // history_description is text as of db 2.7.7, so this cap is about keeping
     // the trail readable rather than avoiding an overflow
-    $description = substr($description, 0, 1000);
+    $description = mb_strcut($description, 0, 1000, 'UTF-8');
 
     // Both arrive already escaped, and cutting at a fixed length can split a \'
     // pair - the leftover backslash would escape this query's closing quote
@@ -163,8 +163,8 @@ function logHistory($status, $description, $invoice_id = 0, $quote_id = 0, $recu
 function logApp($category, $type, $details) {
     global $mysqli;
 
-    $category = mysqli_real_escape_string($mysqli, substr($category, 0, 200));
-    $details = mysqli_real_escape_string($mysqli, substr($details, 0, 1000));
+    $category = mysqli_real_escape_string($mysqli, mb_strcut($category, 0, 200, 'UTF-8'));
+    $details = mysqli_real_escape_string($mysqli, mb_strcut($details, 0, 1000, 'UTF-8'));
 
     mysqli_query($mysqli, "INSERT INTO app_logs SET app_log_category = '$category', app_log_type = '$type', app_log_details = '$details'");
 }

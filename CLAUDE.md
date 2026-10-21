@@ -100,6 +100,35 @@ model: see DEPLOYMENT.md.
   shrank Admin > Settings > Theme's colour cards, `label.itflow-theme-swatch`; `css/mit_theme.css` repeats the correction
   because browsers keep itflow_custom.css - it has no version in its address). Not changed (noted): logout by GET, the unlinked `admin/settings_custom_fields.php`, setup's telemetry step,
   tag / category creation rights, `Auto-Submitted` on queued mail, installer passwords in `ps`.
+  Code review stage 2 (Oct 21, 26.10.95): tickets - a reply / bulk reply taking a Resolved ticket back to work clears
+  ticket_resolved_at and resets the resolution SLA, edit_ticket re-applies the SLA only when the priority changed,
+  `ticketMergeInto` moves the moved replies' attachments (rows + files) (all `agent/post/ticket.php`); `agent/post/task.php`
+  leaves tasks with a pending / declined approval open; `ticket_export.php` client list scoped; `api/v1/tickets/update.php`
+  re-applies the SLA on a priority change; `functions/logging.php` cuts text with mb_strcut; parser addTicket cuts the subject
+  to 500 and attachment names to 255 (escaped once). Billing - agent saved-card payment (`agent/post/payment.php`) under
+  `mitLock("invoice_pay_<id>")`, re-read, charges the balance, Stripe idempotency key; bulk payment in cents, skips
+  Non-Billable / nothing owed; Paid / Partial follow total changes (`agent/post/invoice.php`, dead link_invoice_to_ticket
+  removed); add_quote_to_invoice claims the quote first; force_recurring and the nightly job mark an auto-send invoice Sent
+  even without email (email only with global auto-send + email_notify); nightly recurring query without the recurring_payments
+  join, autopay re-reads before charging; revenue needs Financial; edit_transfer takes ids from the transfer; expense refund
+  keeps the client, no unlink of an empty receipt. Clients - `agent/ajax.php` share_generate_link: types Document / File /
+  Credential exactly, expiries 1/24/168/730 h, item must be the client's; `guest/guest_ajax.php` TOTP needs BINARY
+  'Credential' and stops 10 min after the last logged view once the view limit is used, Stripe intent needs Stripe active and
+  under its threshold, balance in cents, JSON errors (same check in `guest_pay_invoice_stripe.php`); `functions/security.php`
+  apiEncryptCredentialEntry refuses an empty key (API credential create / update say so); `agent/post/contact.php`
+  link_contact_to_asset same-client check, bulk mail needs client edit and a configured From address (also
+  `agent/post/client.php`), bulk archive leaves a primary contact's login, anonymize redacts the raw values;
+  `agent/post/asset.php` transfer log name; client overview hides credential share names without credential access. Sign-in -
+  `includes/load_user_session.php` enforces "Require MFA" on every agent / admin page (only `agent/user/mfa_enforcement.php`,
+  enable_mfa and logout get through); enable_mfa won't replace an existing secret; `cron/mail_queue.php` refreshes an OAuth
+  token once per run; `admin/post/api_keys.php` log names; `includes/filter_header.php` custom range without dtt = open end.
+  Portal / guest - expired quotes can't be accepted (`guest_view_quote.php` precedence, `guest_post.php` claim); guest
+  reopen / close sync the SLA clock; `client/login_reset.php` refuses empty / unknown tokens (hash_equals), USER_PASSWORD_MIN,
+  per-IP limit 10 per 10 min (logs type 'Portal Reset', GET_LOCK like login.php); `client/post.php` new-ticket mail details via
+  mitPurifyHtml, close needs resolved / resolve needs unresolved with tasks done / a comment on a resolved ticket reopens it
+  properly, saved card allows Partial and charges the balance, stripe_save_card only takes this login's checkout session for the
+  client's own customer, portal documents / files record the portal user id; `guest_view_ticket.php` avatar path;
+  `guest_download_file.php` checks the item first, quoted filename.
   These fixes carry no "Mountaineer IT" marker (they are plain bug fixes, meant to match upstream's
   eventual fix) - find them with `git log`.
   When an upstream release fixes the same thing, resolve conflicts in favour of upstream.

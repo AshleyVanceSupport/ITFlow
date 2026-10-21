@@ -60,6 +60,29 @@ function ticketMergeInto($child, $parent, $comment, $move_replies = false) {
     $parent_url = escapeSql(ticketUrl($parent_id, $parent['ticket_client_id']));
 
     if ($move_replies) {
+        // The replies' attachments go with them - rows and files (uploads/tickets/<ticket id>/)
+        $sql_attachments = mysqli_query($mysqli, "SELECT ticket_attachment_id, ticket_attachment_reference_name FROM ticket_attachments
+            INNER JOIN ticket_replies ON ticket_reply_id = ticket_attachment_reply_id AND ticket_reply_ticket_id = $ticket_id
+            WHERE ticket_attachment_ticket_id = $ticket_id");
+        if (mysqli_num_rows($sql_attachments)) {
+            $from_dir = __DIR__ . "/../../uploads/tickets/$ticket_id/";
+            $to_dir = __DIR__ . "/../../uploads/tickets/$parent_id/";
+            mkdirMissing(__DIR__ . "/../../uploads/tickets/");
+            mkdirMissing($to_dir);
+            while ($attachment = mysqli_fetch_assoc($sql_attachments)) {
+                $attachment_id = intval($attachment['ticket_attachment_id']);
+                $reference_name = basename($attachment['ticket_attachment_reference_name']);
+                // Never overwrite a file already there - give it a new reference name
+                if (file_exists($to_dir . $reference_name)) {
+                    $reference_name = randomString(32) . '.' . strtolower(pathinfo($reference_name, PATHINFO_EXTENSION));
+                }
+                if ($reference_name !== '' && is_file($from_dir . basename($attachment['ticket_attachment_reference_name']))) {
+                    rename($from_dir . basename($attachment['ticket_attachment_reference_name']), $to_dir . $reference_name);
+                }
+                $reference_name = escapeSql($reference_name);
+                mysqli_query($mysqli, "UPDATE ticket_attachments SET ticket_attachment_ticket_id = $parent_id, ticket_attachment_reference_name = '$reference_name' WHERE ticket_attachment_id = $attachment_id");
+            }
+        }
         mysqli_query($mysqli, "UPDATE ticket_replies SET ticket_reply_ticket_id = $parent_id WHERE ticket_reply_ticket_id = $ticket_id");
     }
     if (empty($child['ticket_first_response_at'])) {
@@ -266,7 +289,11 @@ if (isset($_POST['edit_ticket'])) {
     }
 
     mysqli_query($mysqli, "UPDATE tickets SET $set WHERE ticket_id = $ticket_id");
-    applyTicketSla($ticket_id);
+    // Only a new priority picks the SLA again (as the priority picker does) - otherwise a hand-picked
+    // plan would be dropped and the alert stages reset, so the breach mails went out again
+    if ($row['ticket_priority'] !== $priority) {
+        applyTicketSla($ticket_id);
+    }
     if ($ticket_status !== intval($row['ticket_status'])) {
         syncTicketSlaClock($ticket_id);
     }
@@ -844,8 +871,13 @@ if (isset($_POST['bulk_ticket_reply'])) {
 
         mysqli_query($mysqli, "INSERT INTO ticket_replies SET ticket_reply = '$reply', ticket_reply_time_worked = '$time_worked', ticket_reply_type = '$reply_type', ticket_reply_by = $session_user_id, ticket_reply_ticket_id = $ticket_id");
 
-        mysqli_query($mysqli, "UPDATE tickets SET ticket_status = $ticket_status, ticket_updated_at = NOW() WHERE ticket_id = $ticket_id");
+        // Out of Resolved into a working status is a reopen
+        $reopen = $original_status === TICKET_STATUS_RESOLVED && $ticket_status !== TICKET_STATUS_RESOLVED && $ticket_status !== TICKET_STATUS_CLOSED;
+        mysqli_query($mysqli, "UPDATE tickets SET ticket_status = $ticket_status, ticket_updated_at = NOW()" . ($reopen ? ", ticket_resolved_at = NULL" : "") . " WHERE ticket_id = $ticket_id");
         syncTicketSlaClock($ticket_id);
+        if ($reopen) {
+            resetTicketResolutionSla($ticket_id);
+        }
 
         if ($ticket_status !== $original_status && $ticket_status !== TICKET_STATUS_RESOLVED) {
             logTicketHistory($ticket_id, "$session_name set the status to " . escapeSql(getTicketStatusName($ticket_status)));
@@ -1042,9 +1074,13 @@ if (isset($_POST['add_ticket_reply'])) {
     }
     $ticket_reply = mysqli_real_escape_string($mysqli, $ticket_reply);
 
-    // Update Ticket Status & updated at (in case status didn't change)
-    mysqli_query($mysqli, "UPDATE tickets SET ticket_status = $ticket_status, ticket_updated_at = NOW() WHERE ticket_id = $ticket_id");
+    // Update Ticket Status & updated at (in case status didn't change) - out of Resolved into a working status is a reopen
+    $reopen = $original_ticket_status === TICKET_STATUS_RESOLVED && $ticket_status !== TICKET_STATUS_RESOLVED && $ticket_status !== TICKET_STATUS_CLOSED;
+    mysqli_query($mysqli, "UPDATE tickets SET ticket_status = $ticket_status, ticket_updated_at = NOW()" . ($reopen ? ", ticket_resolved_at = NULL" : "") . " WHERE ticket_id = $ticket_id");
     syncTicketSlaClock($ticket_id);
+    if ($reopen) {
+        resetTicketResolutionSla($ticket_id);
+    }
 
     // Resolve the ticket, if it is actually moving into Resolved - replying on an
     // already-resolved ticket must not restamp resolved_at or re-log the resolve

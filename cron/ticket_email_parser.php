@@ -106,7 +106,14 @@ function addTicket($contact_id, $contact_name, $contact_email, $client_id, $date
 
     $url_key = randomString(32);
 
-    mysqli_query($mysqli, "INSERT INTO tickets SET ticket_prefix = '$ticket_prefix_esc', ticket_number = $ticket_number, ticket_source = 'Email', ticket_subject = '$subject', ticket_details = '$message_esc', ticket_priority = 'Medium', ticket_status = 1, ticket_billable = $config_ticket_default_billable, ticket_created_by = 0, ticket_contact_id = $contact_id, ticket_url_key = '$url_key', ticket_client_id = $client_id");
+    // ticket_subject is varchar(500) - a longer subject would fail the insert and leave the mail flagged. $subject arrives
+    // escaped, so cut it there and drop an odd trailing backslash the cut leaves
+    $subject_sql = mb_substr($subject, 0, 500);
+    if ((strlen($subject_sql) - strlen(rtrim($subject_sql, '\\'))) % 2 === 1) {
+        $subject_sql = substr($subject_sql, 0, -1);
+    }
+
+    mysqli_query($mysqli, "INSERT INTO tickets SET ticket_prefix = '$ticket_prefix_esc', ticket_number = $ticket_number, ticket_source = 'Email', ticket_subject = '$subject_sql', ticket_details = '$message_esc', ticket_priority = 'Medium', ticket_status = 1, ticket_billable = $config_ticket_default_billable, ticket_created_by = 0, ticket_contact_id = $contact_id, ticket_url_key = '$url_key', ticket_client_id = $client_id");
     $id = mysqli_insert_id($mysqli);
     applyTicketSla($id);
     if (function_exists('mitBoardRoute')) { mitBoardRoute($id, $GLOBALS['mit_board_addresses'] ?? []); } // Mountaineer IT: service boards (by the address it was sent to)
@@ -136,7 +143,12 @@ function addTicket($contact_id, $contact_name, $contact_email, $client_id, $date
             $ticket_attachment_name = escapeSql($att_name);
             $ticket_attachment_reference_name = escapeSql($att_saved_filename);
 
-            $ticket_attachment_name_esc = mysqli_real_escape_string($mysqli, $ticket_attachment_name);
+            // Escaped once (escapeSql already did) and cut to the column's 255 characters - an odd trailing backslash
+            // left by the cut would escape the closing quote
+            $ticket_attachment_name_esc = mb_substr($ticket_attachment_name, 0, 255);
+            if ((strlen($ticket_attachment_name_esc) - strlen(rtrim($ticket_attachment_name_esc, '\\'))) % 2 === 1) {
+                $ticket_attachment_name_esc = substr($ticket_attachment_name_esc, 0, -1);
+            }
             $ticket_attachment_reference_name_esc = mysqli_real_escape_string($mysqli, $ticket_attachment_reference_name);
             mysqli_query($mysqli, "INSERT INTO ticket_attachments SET ticket_attachment_name = '$ticket_attachment_name_esc', ticket_attachment_reference_name = '$ticket_attachment_reference_name_esc', ticket_attachment_ticket_id = $id");
         } else {
@@ -336,7 +348,12 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
                 $ticket_attachment_name = escapeSql($att_name);
                 $ticket_attachment_reference_name = escapeSql($att_saved_filename);
 
-                $ticket_attachment_name_esc = mysqli_real_escape_string($mysqli, $ticket_attachment_name);
+                // Escaped once (escapeSql already did) and cut to the column's 255 characters - an odd trailing backslash
+                // left by the cut would escape the closing quote
+                $ticket_attachment_name_esc = mb_substr($ticket_attachment_name, 0, 255);
+                if ((strlen($ticket_attachment_name_esc) - strlen(rtrim($ticket_attachment_name_esc, '\\'))) % 2 === 1) {
+                    $ticket_attachment_name_esc = substr($ticket_attachment_name_esc, 0, -1);
+                }
                 $ticket_attachment_reference_name_esc = mysqli_real_escape_string($mysqli, $ticket_attachment_reference_name);
                 mysqli_query($mysqli, "INSERT INTO ticket_attachments SET ticket_attachment_name = '$ticket_attachment_name_esc', ticket_attachment_reference_name = '$ticket_attachment_reference_name_esc', ticket_attachment_reply_id = $reply_id, ticket_attachment_ticket_id = $ticket_id");
             } else {
