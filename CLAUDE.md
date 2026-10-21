@@ -557,9 +557,10 @@ model: see DEPLOYMENT.md.
   (`admin/settings_theme.php`). Per agent:
   `mit_user_preferences` ui.look (modern - the default - | classic). Hooks: one line in `includes/header.php` after
   itflow_custom.css (`mitThemeHead()` - which also loads `js/mit_time_inputs.js` for every look: a time field's clock icon puts in
-  the time now - the icon gets `pointer-events: none`, a click near the right edge is ours -, an empty time / datetime-local field
-  starts from now when focused so typing the hour and minutes keeps now's AM / PM and date, and goes back to empty when left
-  still holding just that; rounded to the field's step; smoke tests empty time fields with helpers.js `clearTime`), `mitThemePreferenceField` in `agent/user/user_preferences.php`, `mitThemeSavePreference`
+  the time now - the icon gets `pointer-events: none`, a click near the right edge is ours; rounded to the field's step -, and typing
+  a time into an empty time / datetime-local field fills AM / PM from now once the minutes are in (keys followed per segment the way
+  Chrome takes them, date segments in the Intl order, nothing on a 24-hour clock); a click alone fills nothing; smoke tests empty
+  time fields with helpers.js `clearTime`), `mitThemePreferenceField` in `agent/user/user_preferences.php`, `mitThemeSavePreference`
   in `agent/user/post/profile.php`, `functions.php` (require). Selectors to re-check after an upstream restyle: `.app-header`,
   `.app-sidebar .nav-link.active`, `.card-header.bg-dark`, `.itflow-dash-rail*` (items with `.itflow-dash-rail-label` get the
   one-line tile; others, like the client overview's Financial strip `.itflow-ov-stats`, stay stacked), `.itflow-client-switcher`, `btn-outline-dark`

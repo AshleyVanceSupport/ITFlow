@@ -75,7 +75,7 @@ test('note times: required with time worked, set the length, shown on the note, 
 });
 
 // js/mit_time_inputs.js, on every agent / admin page
-test('time fields: the clock icon puts in now, typing keeps the AM / PM of now, an untouched field stays empty', async ({ page }) => {
+test('time fields: the clock icon puts in now, typing the hour and minutes fills AM / PM from now, a click alone fills nothing', async ({ page }) => {
     test.skip(!made.ticketId, 'no ticket');
     await page.clock.setFixedTime(new Date('2026-10-21T21:36:00'));
     const errors = watch(page);
@@ -85,19 +85,15 @@ test('time fields: the clock icon puts in now, typing keeps the AM / PM of now, 
     test.skip(await page.locator('#mitWorkStart').count() === 0, 'needs database update M028');
     const start = page.locator('#mitWorkStart');
     const end = page.locator('#mitWorkEnd');
-    await start.evaluate((el) => { el.value = ''; });
+    await clearTime(start);
     const box = await start.boundingBox();
     await page.mouse.click(box.x + box.width - 14, box.y + box.height / 2);
     await expect(start, 'the clock icon: now').toHaveValue('21:36');
-    await end.evaluate((el) => { el.value = ''; });
+    await clearTime(end);
     await end.click({ position: { x: 12, y: box.height / 2 } });
+    await expect(end, 'clicked into: nothing filled').toHaveValue('');
     await page.keyboard.type('915');
-    await page.locator('#mitWorkDate').focus();
     await expect(end, '9:15 typed in the evening is 9:15 PM').toHaveValue('21:15');
-    await end.evaluate((el) => { el.value = ''; });
-    await end.focus();
-    await page.locator('#mitWorkDate').focus();
-    await expect(end, 'clicked into and left: still empty').toHaveValue('');
     await expectClean(page, errors);
 });
 

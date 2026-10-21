@@ -228,8 +228,8 @@ function mitReplyTimesField() {
             .mit-time-strip .mit-strip-part { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
             .mit-time-strip .mit-strip-label { font-size: .75rem; color: var(--bs-secondary-color); }
             .mit-time-strip #hours, .mit-time-strip #minutes, .mit-time-strip #seconds { flex: 0 0 3.1rem; width: 3.1rem; text-align: center; padding-left: .25rem; padding-right: .25rem; }
-            .mit-time-strip #mitWorkDate { flex: 0 0 9.5rem; width: 9.5rem; }
-            .mit-time-strip #mitWorkStart, .mit-time-strip #mitWorkEnd { flex: 0 0 7.5rem; width: 7.5rem; }
+            .mit-time-strip #mitWorkDate { flex: 0 0 10rem; width: 10rem; }
+            .mit-time-strip #mitWorkStart, .mit-time-strip #mitWorkEnd { flex: 0 0 8.75rem; width: 8.75rem; }
             .mit-time-strip [data-mit-times-mode] { font-size: .75rem; color: var(--bs-secondary-color); align-self: center; }
           </style>'
         . '<div class="mit-time-strip">'
