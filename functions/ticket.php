@@ -274,6 +274,7 @@ function ticketDeleteForGood($ticket_id) {
     if (!$ticket_id) {
         return;
     }
+    if (function_exists('mitTsDeleteGuard')) { mitTsDeleteGuard($ticket_id); } // Mountaineer IT: not while its time is on a submitted timesheet
     mitTicketPartsDeleting($ticket_id); // Mountaineer IT: put unbilled stock parts back
     mysqli_query($mysqli, "DELETE FROM task_approvals WHERE approval_task_id IN (SELECT task_id FROM tasks WHERE task_ticket_id = $ticket_id)");
     mysqli_query($mysqli, "DELETE FROM tasks WHERE task_ticket_id = $ticket_id");

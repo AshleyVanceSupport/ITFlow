@@ -294,12 +294,20 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
         // Mountaineer IT: a sender who is not a contact of this client, a watcher or one of our agents is a stranger - anyone
         // can put [TCK-n] in a subject (the numbers count up). Their mail is still kept as an internal note, but it does not
         // reopen the ticket, its attachments are held back (left in the mailbox) and the agent's email is text only.
+        // An active agent's mail (e.g. answering an "Internal note for you" email) is their internal note: no reopen, no
+        // mismatch warning and no "ticket updated" email.
         $stranger = false;
+        $agent_reply = false;
         if (empty($ticket_contact_email) || $ticket_contact_email !== $from_email) {
             $from_email_esc2 = mysqli_real_escape_string($mysqli, $from_email);
             $row2 = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT contact_id FROM contacts WHERE contact_email = '$from_email_esc2' AND contact_client_id = $client_id LIMIT 1"));
+            $agent_row = $row2 ? null : mysqli_fetch_row(mysqli_query($mysqli, "SELECT user_id FROM users WHERE user_email = '$from_email_esc2' AND user_type = 1 AND user_status = 1 AND user_archived_at IS NULL LIMIT 1"));
             if ($row2) {
                 $ticket_reply_contact = intval($row2['contact_id']);
+            } elseif ($agent_row) {
+                $agent_reply = true;
+                $ticket_reply_type = 'Internal';
+                $ticket_reply_contact = intval($agent_row[0]);  // an agent's reply is by their user id, as on the ticket page
             } else {
                 $stranger = !mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id AND watcher_email = '$from_email_esc2'
                     UNION SELECT 1 FROM users WHERE user_email = '$from_email_esc2' AND user_type = 1 AND user_archived_at IS NULL"));
@@ -342,7 +350,7 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
             $row3 = mysqli_fetch_assoc($ticket_assigned_to_sql);
             $ticket_assigned_to = intval($row3['ticket_assigned_to']);
 
-            if ($ticket_assigned_to) {
+            if ($ticket_assigned_to && !$agent_reply) {
                 $tech_sql = mysqli_query($mysqli, "SELECT user_email, user_name FROM users WHERE user_id = $ticket_assigned_to LIMIT 1");
                 $tech_row = mysqli_fetch_assoc($tech_sql);
                 // Built from the values as stored and escaped once below (they were escaped twice, so \' showed in the mail)
@@ -371,7 +379,9 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
             }
         }
 
-        if ($stranger) {
+        if ($agent_reply) {
+            logTicketHistory($ticket_id, "$from_email_esc (an agent) emailed - added as their internal note");
+        } elseif ($stranger) {
             logTicketHistory($ticket_id, "$from_email_esc (not a contact, watcher or agent) emailed - kept as an internal note, the ticket was not reopened");
         } else {
             mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 2, ticket_resolved_at = NULL WHERE ticket_id = $ticket_id AND ticket_client_id = $client_id LIMIT 1");
@@ -383,8 +393,10 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
             }
         }
 
-        logAudit("Ticket", "Edit", "Email parser: Client contact $from_email_esc updated ticket $config_ticket_prefix$ticket_number_esc ($subject)", $client_id, $ticket_id);
-        triggerCustomAction('ticket_reply_client', $ticket_id);
+        logAudit("Ticket", "Edit", "Email parser: " . ($agent_reply ? 'Agent' : 'Client contact') . " $from_email_esc updated ticket $config_ticket_prefix$ticket_number_esc ($subject)", $client_id, $ticket_id);
+        if (!$agent_reply) {
+            triggerCustomAction('ticket_reply_client', $ticket_id);
+        }
         return true;
     } else {
         return false;

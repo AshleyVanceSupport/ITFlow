@@ -21,4 +21,7 @@ if (!isset($_GET['status'])) {
 }
 
 $asset_ids = array_slice(array_map('intval', explode(',', (string) $_GET['status'])), 0, 50);
+// The NinjaOne calls below can take a while: let the agent's other requests through, and don't wait long for each
+session_write_close();
+$GLOBALS['mit_ninja_timeout'] = 5;
 echo json_encode((object) mitNinjaAssetDevices($asset_ids, true));

@@ -55,7 +55,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const from = new Date(date.value + 'T' + start.value);
         let to = new Date(date.value + 'T' + end.value);
         if (to <= from) {
-            to = new Date(to.getTime() + 86400000);
+            // The next calendar day - adding 24 hours is an hour off on the nights the clocks change
+            to.setDate(to.getDate() + 1);
         }
         const secs = (to - from) / 1000;
         return secs > 0 && secs < 86400 ? secs : null;

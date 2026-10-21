@@ -17,7 +17,7 @@ if (!$invoice || !hasClientAccess($invoice['invoice_client_id'])) {
     exit(json_encode(['error' => 'That invoice does not exist, or it is for a client you cannot see.']));
 }
 $client_id = intval($invoice['invoice_client_id']);
-$lines = mysqli_fetch_all(mysqli_query($mysqli, "SELECT item_id, item_name, item_quantity, item_product_id FROM invoice_items WHERE item_invoice_id = $invoice_id ORDER BY item_order, item_id"), MYSQLI_ASSOC);
+$lines = mitProcInvoiceLineProducts(mysqli_fetch_all(mysqli_query($mysqli, "SELECT item_id, item_name, item_quantity, item_product_id FROM invoice_items WHERE item_invoice_id = $invoice_id ORDER BY item_order, item_id"), MYSQLI_ASSOC));
 $products = mitProductsInfo(array_column($lines, 'item_product_id'));
 $queued = mitProcInvoiceQueued($invoice_id);
 

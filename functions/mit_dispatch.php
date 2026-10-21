@@ -252,11 +252,11 @@ function mitDispatchBook($ticket_id, $tech_id, $start, $minutes, $onsite, $tell_
         return [false, mitDispatchTechs()[$tech_id]['name'] . ' does not have access to this client.', []];
     }
     if ($tech_id !== intval($row['ticket_assigned_to'])) {
-        mitScheduleLeadChanging($row, $tech_id);
         [$assigned_ok, $assigned_message] = ticketChangeAssignee($row['ticket_id'], $tech_id);
         if (!$assigned_ok) {
             return [false, strip_tags($assigned_message), []];
         }
+        mitScheduleLeadChanging($row, $tech_id); // the old lead's invite is cancelled, once the new one has it
         $row = ticketRow($ticket_id);
     }
     $minutes = max(15, min(1440, intval($minutes)));
@@ -420,13 +420,31 @@ function mitDispatchSaveDetails($ticket_id, array $post) {
     $client_id = intval($post['detail_client_id']);
     $changed = [];
 
-    // Subject - checked before anything is saved; as ITFlow's Edit ticket keeps it (500 characters, no tags)
-    if (isset($post['detail_subject'])) {
-        $subject_input = trim((string) $post['detail_subject']);
-        if ($subject_input === '') {
-            return [false, 'A ticket needs a subject.'];
+    // What can refuse is checked before anything is saved, so a refusal leaves the ticket as it was: the subject, the
+    // client and the SLA plan
+    if (isset($post['detail_subject']) && trim((string) $post['detail_subject']) === '') {
+        return [false, 'A ticket needs a subject.'];
+    }
+    $client_name = '';
+    if ($client_id && $client_id !== $old_client_id) {
+        $client_name = (string) getFieldById('clients', $client_id, 'client_name');
+        if ($client_name === '' || !hasClientAccess($client_id)) {
+            return [false, 'You do not have access to that client.'];
         }
-        $subject = escapeSql(mb_substr($subject_input, 0, 500));
+    }
+    $old_sla_id = intval($row['ticket_sla_id']);
+    $sla = (string) ($post['detail_sla'] ?? $old_sla_id);
+    $sla_name = 'None';
+    if ($sla !== 'auto' && intval($sla) && intval($sla) !== $old_sla_id) {
+        $sla_name = (string) (mysqli_fetch_row(mysqli_query($mysqli, "SELECT sla_name FROM slas WHERE sla_id = " . intval($sla) . " AND sla_archived_at IS NULL"))[0] ?? '');
+        if ($sla_name === '') {
+            return [false, 'That SLA plan is not available.'];
+        }
+    }
+
+    // Subject - as ITFlow's Edit ticket keeps it (500 characters, no tags)
+    if (isset($post['detail_subject'])) {
+        $subject = escapeSql(mb_substr(trim((string) $post['detail_subject']), 0, 500));
         if ($subject !== escapeSql($row['ticket_subject'])) {
             mysqli_query($mysqli, "UPDATE tickets SET ticket_subject = '$subject' WHERE ticket_id = $ticket_id");
             logTicketHistory($ticket_id, "$session_name changed the subject to $subject");
@@ -436,10 +454,6 @@ function mitDispatchSaveDetails($ticket_id, array $post) {
 
     // Client
     if ($client_id && $client_id !== $old_client_id) {
-        $client_name = (string) getFieldById('clients', $client_id, 'client_name');
-        if ($client_name === '' || !hasClientAccess($client_id)) {
-            return [false, 'You do not have access to that client.'];
-        }
         $vendor_id = ticketClientOwnedId('vendor', $row['ticket_vendor_id'], 0) ?: ticketClientOwnedId('vendor', $row['ticket_vendor_id'], $client_id);
         $project_id = ticketClientOwnedId('project', $row['ticket_project_id'], $client_id);
         mysqli_query($mysqli, "UPDATE ticket_replies SET ticket_reply_type = 'Internal' WHERE ticket_reply_ticket_id = $ticket_id AND ticket_reply_type = 'Public'");
@@ -494,8 +508,6 @@ function mitDispatchSaveDetails($ticket_id, array $post) {
 
     // SLA: the dialog starts on the ticket's own. "Automatic" works it out from the client and priority; a different
     // one pins it; left as it was, a new client works it out again (a new priority already did, above)
-    $old_sla_id = intval($row['ticket_sla_id']);
-    $sla = (string) ($post['detail_sla'] ?? $old_sla_id);
     if ($sla === 'auto') {
         applyTicketSla($ticket_id);
         $new_sla_id = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT ticket_sla_id FROM tickets WHERE ticket_id = $ticket_id"))[0] ?? 0);
@@ -504,13 +516,6 @@ function mitDispatchSaveDetails($ticket_id, array $post) {
         }
     } elseif (intval($sla) !== $old_sla_id) {
         $sla_id = intval($sla);
-        $sla_name = 'None';
-        if ($sla_id) {
-            $sla_name = (string) (mysqli_fetch_row(mysqli_query($mysqli, "SELECT sla_name FROM slas WHERE sla_id = $sla_id AND (sla_archived_at IS NULL OR sla_id = $old_sla_id)"))[0] ?? '');
-            if ($sla_name === '') {
-                return [false, 'That SLA plan is not available.'];
-            }
-        }
         applyTicketSla($ticket_id, $sla_id);
         $old_sla_name = $old_sla_id ? (string) getFieldById('slas', $old_sla_id, 'sla_name') : 'None';
         logTicketHistory($ticket_id, "$session_name changed SLA from " . escapeSql($old_sla_name) . " to " . escapeSql($sla_name));

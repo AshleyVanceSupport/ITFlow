@@ -6,7 +6,8 @@
  */
 
 if (function_exists('mitUnbilledPartsCount') && mitProcOn() && mitTicketPartsReady()) {
-    $mit_unbilled = mitUnbilledPartsCount(); ?>
+    $mit_unbilled = mitNavCachedCount('unbilled_parts:' . clientScopeSql(defined('MIT_PART_CLIENT_SQL') ? MIT_PART_CLIENT_SQL : 'client_id'), 'mitUnbilledPartsCount',
+        basename($_SERVER['PHP_SELF']) === 'mit_unbilled_parts.php'); ?>
     <li class="nav-item">
         <a href="/agent/mit_unbilled_parts.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'mit_unbilled_parts.php' ? 'active' : '' ?>">
             <i class="nav-icon fas fa-file-invoice-dollar"></i>

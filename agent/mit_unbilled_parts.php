@@ -10,12 +10,14 @@ require_once "includes/inc_all.php";
 
 mitModuleRequire('procurement');
 
-// A billing page: Sales View to see it, Sales Edit to bill (the Procurement permission is not needed)
+// A billing page: Sales View to see it (the Procurement permission is not needed). Billing opens the ticket's own
+// Bill parts window, which takes Sales Edit and Support Edit; ticket subjects and links only with Support View.
 enforceUserPermission('module_sales');
 
 $client_filter = intval($_GET['client'] ?? 0);
 $parts = mitUnbilledParts($client_filter);
-$can_bill = lookupUserPermission('module_sales') >= 2;
+$can_see_tickets = lookupUserPermission('module_support') >= 1;
+$can_bill = lookupUserPermission('module_sales') >= 2 && lookupUserPermission('module_support') >= 2;
 $today = strtotime(date('Y-m-d'));
 
 // By client, then ticket
@@ -88,13 +90,13 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT DISTINCT clients.clien
                                 <tr>
                                     <?php if ($i === 0) { ?>
                                         <td rowspan="<?= count($ticket_parts) ?>" class="align-top" style="max-width: 280px">
-                                            <?php if ($part['ticket_number'] !== null) { ?>
+                                            <?php if ($can_see_tickets) { ?>
                                                 <a href="ticket.php?client_id=<?= intval($part['client_id']) ?>&ticket_id=<?= $ticket_id ?>" class="fw-semibold"><?= escapeHtml(ticketReference($part)) ?></a>
                                                 <div class="small text-muted text-truncate" title="<?= escapeHtml($part['ticket_subject']) ?>"><?= escapeHtml($part['ticket_subject']) ?></div>
-                                                <?php if ($closed) { ?><span class="badge text-bg-warning">Ticket <?= $part['ticket_closed_at'] ? 'closed' : 'resolved' ?></span><?php } ?>
                                             <?php } else { ?>
-                                                <span class="text-muted">Ticket deleted</span>
+                                                <span class="fw-semibold"><?= escapeHtml(ticketReference($part)) ?></span>
                                             <?php } ?>
+                                            <?php if ($closed) { ?><span class="badge text-bg-warning">Ticket <?= $part['ticket_closed_at'] ? 'closed' : 'resolved' ?></span><?php } ?>
                                         </td>
                                     <?php } ?>
                                     <td><?= mitQty($part['quantity']) ?> × <?= escapeHtml($part['name']) ?></td>
@@ -105,7 +107,7 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT DISTINCT clients.clien
                                     <td class="text-end text-nowrap"><?= mitMoney($part['quantity'] * $part['unit_price']) ?></td>
                                     <?php if ($i === 0) { ?>
                                         <td rowspan="<?= count($ticket_parts) ?>" class="text-end align-top">
-                                            <?php if ($can_bill && $client_id && $part['ticket_number'] !== null) { ?>
+                                            <?php if ($can_bill && $client_id) { ?>
                                                 <button type="button" class="btn btn-sm btn-outline-success ajax-modal" data-modal-url="modals/mit_procurement/parts_bill.php?ticket_id=<?= $ticket_id ?>">
                                                     <i class="fas fa-file-invoice-dollar me-1"></i>Bill parts
                                                 </button>
@@ -121,7 +123,7 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT DISTINCT clients.clien
         <?php } ?>
 
         <?php if ($parts && !$can_bill) { ?>
-            <p class="small text-muted mt-3 mb-0">Billing parts takes Sales edit access - ask someone who invoices.</p>
+            <p class="small text-muted mt-3 mb-0">Billing parts takes Sales edit and Support edit access - ask someone who invoices.</p>
         <?php } ?>
     </div>
 </div>

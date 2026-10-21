@@ -151,7 +151,10 @@ function mitNinjaToken($fresh = false) {
     return $json['access_token'];
 }
 
-/** One HTTP request: [status, decoded JSON or null, raw body / error]. $form is sent as a form, $token as a bearer. */
+/**
+ * One HTTP request: [status, decoded JSON or null, raw body / error]. $form is sent as a form, $token as a bearer.
+ * $GLOBALS['mit_ninja_timeout'] (seconds) shortens the wait for page requests (default 60).
+ */
 function mitNinjaHttp($method, $url, ?array $form, $token) {
     $ch = curl_init($url);
     $headers = ['Accept: application/json'];
@@ -159,7 +162,7 @@ function mitNinjaHttp($method, $url, ?array $form, $token) {
         $headers[] = 'Authorization: Bearer ' . $token;
     }
     curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 60, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => intval($GLOBALS['mit_ninja_timeout'] ?? 60), CURLOPT_CONNECTTIMEOUT => min(10, intval($GLOBALS['mit_ninja_timeout'] ?? 60)), CURLOPT_FOLLOWLOCATION => false,
         CURLOPT_CUSTOMREQUEST => $method, CURLOPT_HTTPHEADER => $headers, CURLOPT_PROTOCOLS => CURLPROTO_HTTPS | CURLPROTO_HTTP,
     ]);
     if ($form !== null) {
@@ -763,7 +766,9 @@ function mitNinjaSyncRun() {
             $done['failed'][] = ['device_id' => intval($device['id']), 'name' => $step['want']['name'] ?? '', 'error' => $e->getMessage()];
             $asset_id = $step['asset_id'];
         }
-        mitNinjaRememberDevice($device, $asset_id);
+        // A create that failed is not recorded as synced (asset_id NULL + synced_at would read as "deleted in ITFlow"),
+        // so the next run tries again
+        mitNinjaRememberDevice($device, $asset_id ?: false);
     }
     // Devices of ignored / unmapped orgs are remembered too (status for the buttons, counts for the mapping)
     $planned = [];
@@ -997,19 +1002,24 @@ function mitNinjaAssetDevices(array $asset_ids, $refresh = false) {
     $result = mysqli_query($mysqli, "SELECT d.device_id, d.asset_id, d.name, d.offline, d.last_contact, d.status_checked_at, a.asset_client_id
         FROM mit_ninja_devices d JOIN assets a ON a.asset_id = d.asset_id WHERE d.asset_id IN (" . implode(',', $asset_ids) . ")" . clientScopeSql('a.asset_client_id'));
     $asked = 0;
+    $started = microtime(true);
+    $ninja_down = false;
     while ($row = mysqli_fetch_assoc($result)) {
         $stale = !$row['status_checked_at'] || strtotime($row['status_checked_at']) < time() - 300;
-        if ($refresh && $stale && $asked < 10 && mitNinjaConfigured()) {
+        // At most 10 asks and about 10 seconds a call; one that gets no answer stops the rest
+        if ($refresh && $stale && $asked < 10 && !$ninja_down && microtime(true) - $started < 10 && mitNinjaConfigured()) {
             $asked++;
             try {
                 $device = mitNinjaGet('/v2/device/' . intval($row['device_id']));
-                $row['offline'] = empty($device['offline']) ? 0 : 1;
+                // Same rule as mitNinjaRememberDevice: no offline field = not known
+                $row['offline'] = !array_key_exists('offline', $device) || $device['offline'] === null ? null : (empty($device['offline']) ? 0 : 1);
                 $row['last_contact'] = isset($device['lastContact']) ? mitNinjaDateTime($device['lastContact']) : $row['last_contact'];
                 $row['status_checked_at'] = date('Y-m-d H:i:s');
-                mysqli_query($mysqli, "UPDATE mit_ninja_devices SET offline = " . intval($row['offline']) . ", last_contact = " . ($row['last_contact'] ? "'" . escapeSql($row['last_contact']) . "'" : 'NULL')
+                mysqli_query($mysqli, "UPDATE mit_ninja_devices SET offline = " . ($row['offline'] === null ? 'NULL' : intval($row['offline'])) . ", last_contact = " . ($row['last_contact'] ? "'" . escapeSql($row['last_contact']) . "'" : 'NULL')
                     . ", status_checked_at = NOW() WHERE device_id = " . intval($row['device_id']));
             } catch (Throwable $e) {
                 // NinjaOne did not answer - show what we last knew
+                $ninja_down = true;
             }
         }
         $out[intval($row['asset_id'])] = [

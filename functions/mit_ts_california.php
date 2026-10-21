@@ -197,10 +197,26 @@ function mitTsCaIssueText($n, $status) {
 
 /**
  * California days for people on the rules: [user_id][date] => ['clocked', 'meals', 'issues' => [n => status],
- * 'unanswered' => [n...], 'meal_premium', 'rest_premium' (minutes), 'periods'].
+ * 'unanswered' => [n...], 'meal_premium', 'rest_premium' (minutes), 'periods']. On a day approved since the pay figures
+ * were stored (mitTsStoredRules) whether it is a California day and its premiums are as they were approved; other days
+ * follow the person's setting now.
  */
 function mitTsCaDays(array $user_ids, $from, $to) {
-    $ca_users = array_values(array_filter(array_map('intval', $user_ids), 'mitTsCaOn'));
+    $user_ids = array_values(array_unique(array_filter(array_map('intval', $user_ids))));
+    sort($user_ids);
+    return mitTsMemo('ca_days', [$user_ids, $from, $to], function () use ($user_ids, $from, $to) {
+        return mitTsCaDaysRead($user_ids, $from, $to);
+    });
+}
+
+/** mitTsCaDays() worked out. */
+function mitTsCaDaysRead(array $user_ids, $from, $to) {
+    $stored = mitTsStoredRules($user_ids, $from, $to);
+    $live = array_filter($user_ids, 'mitTsCaOn');
+    // On the rules now, or with approved California days in these dates
+    $ca_users = array_values(array_filter($user_ids, function ($user_id) use ($live, $stored) {
+        return in_array($user_id, $live, true) || in_array(true, array_column($stored[$user_id] ?? [], 'ca'), true);
+    }));
     $days = [];
     if (!$ca_users) {
         return $days;
@@ -209,7 +225,11 @@ function mitTsCaDays(array $user_ids, $from, $to) {
     $answers = mitTsCaAnswers($ca_users, $from, $to);
     $first = mitTsCaStart();
     foreach ($ca_users as $user_id) {
-        foreach (mitTsDates(['start' => max($from, $first), 'end' => $to]) as $date) {
+        foreach (mitTsDateRange($from, $to) as $date) {
+            $kept = $stored[$user_id][$date] ?? null;
+            if ($kept ? !$kept['ca'] : (!in_array($user_id, $live, true) || $date < $first)) {
+                continue;
+            }
             $day_periods = $periods[$user_id][$date] ?? [];
             $a = mitTsCaAnalyze($day_periods);
             $answer = $answers[$user_id][$date] ?? ['meal1' => '', 'meal2' => '', 'rest_missed' => 0];
@@ -227,7 +247,8 @@ function mitTsCaDays(array $user_ids, $from, $to) {
                 $premium = $premium || $given !== 'chose';
             }
             $days[$user_id][$date] = ['clocked' => $a['worked'], 'meals' => $a['meals'], 'issues' => $issues, 'unanswered' => $unanswered,
-                'answers' => $answer, 'meal_premium' => $premium ? 60 : 0, 'rest_premium' => $answer['rest_missed'] ? 60 : 0, 'periods' => $day_periods];
+                'answers' => $answer, 'meal_premium' => $kept ? $kept['meal_premium'] : ($premium ? 60 : 0),
+                'rest_premium' => $kept ? $kept['rest_premium'] : ($answer['rest_missed'] ? 60 : 0), 'periods' => $day_periods];
         }
     }
     return $days;
@@ -330,26 +351,32 @@ function mitTsCaParseBlocks($date, array $blocks) {
     $day = 0;
     $first = null;
     $last_end = null;
+    // A wall-clock time on the day, or a calendar day or more later - never 86400 seconds, which is an hour off on the
+    // nights the clocks change
+    $at = function ($time, $days) use ($date) {
+        return strtotime("$date $time" . ($days ? " +$days day" : ''));
+    };
     foreach ($rows as $i => [$start_time, $end_time, $gap]) {
-        $start = strtotime("$date $start_time") + $day * 86400;
+        $start = $at($start_time, $day);
         if ($last_end !== null && $start < $last_end) {
             // After midnight, or typed out of order
             $day++;
-            $start += 86400;
+            $start = $at($start_time, $day);
             if ($start - $last_end > 12 * 3600) {
                 return [[], 'blocks go in time order - ' . date('g:i A', $start) . ' starts before the block above it ends'];
             }
         }
-        $end = strtotime("$date $end_time") + $day * 86400;
+        $end = $at($end_time, $day);
         if ($end === $start) {
             return [[], 'a block cannot start and end at the same time'];
         }
         if ($end < $start) {
             $day++;
-            $end += 86400;
+            $end = $at($end_time, $day);
         }
         $first = $first ?? $start;
-        if ($end - $first > 86400 || $day > 1) {
+        // At most 24 hours by the clock: up to the first start's time on the next day
+        if ($end > strtotime(date('Y-m-d H:i:s', $first) . ' +1 day') || $day > 1) {
             return [[], 'spans more than 24 hours'];
         }
         $periods[] = ['start' => date('Y-m-d H:i:s', $start), 'end' => date('Y-m-d H:i:s', $end), 'gap' => $i ? $gap : ''];
@@ -373,7 +400,8 @@ function mitTsCaSave(array $sheet, array $period, array $times, array $answers, 
     $user_id = intval($sheet['user_id']);
     $own = $user_id === intval($session_user_id);
     $reason = trim((string) $reason);
-    $dates = array_diff_key(array_flip(mitTsDates($period)), mitTsApprovedDates($user_id, $period['start'], $period['end']));
+    // Days another timesheet holds that is submitted or approved (from before a pay period change) are left as they are
+    $dates = array_diff_key(array_flip(mitTsDates($period)), mitTsLockedDates($user_id, $period['start'], $period['end'], ['submitted', 'approved'], $period['start']));
     $current = mitTsCaPeriods([$user_id], $period['start'], $period['end'])[$user_id] ?? [];
     $wanted = [];
     $problems = [];
@@ -441,6 +469,9 @@ function mitTsCaSave(array $sheet, array $period, array $times, array $answers, 
         }
     }
     if ($wanted || $answered) {
+        mitTsForget();
+        // Changed after they signed: the signature no longer covers it - they sign again
+        mitTsCaChangedAfterSigning($sheet, $period);
         mitTsSheetSaved($user_id, $period);
         if (!$own && $wanted) {
             logAudit('Timesheet', 'Edit', escapeSql("$who changed the work times of user $user_id on " . count($wanted) . ' day(s) for ' . $period['label'] . " - $reason"), 0, $user_id);
@@ -513,6 +544,27 @@ function mitTsCaAttestation($sheet_id) {
     }
     return mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT attest_id, sheet_id, user_id, attested_at, signature_name, ip, text_version, statement, breaks_ok, exceptions, snapshot
         FROM mit_ts_attestations WHERE sheet_id = " . intval($sheet_id) . " AND superseded_at IS NULL ORDER BY attest_id DESC LIMIT 1")) ?: null;
+}
+
+/**
+ * After a change to the times, answers or hours of a signed timesheet: the signature no longer covers what is there, so it
+ * is set aside and the person signs again - a submitted one goes back to them (sent back, saying why).
+ */
+function mitTsCaChangedAfterSigning(array $sheet, array $period) {
+    global $mysqli, $session_user_id;
+    if (!intval($sheet['sheet_id']) || !mitTsCaAttestation($sheet['sheet_id'])) {
+        return;
+    }
+    mitTsCaSupersede($sheet['sheet_id']);
+    $note = 'Changed after it was signed by ' . mitTsWho() . ' - check it and sign it again';
+    mysqli_query($mysqli, "UPDATE mit_timesheets SET status = 'returned', decided_by = " . intval($session_user_id) . ", decided_at = NOW(),
+        decision_note = '" . escapeSql(mb_substr($note, 0, 255)) . "' WHERE sheet_id = " . intval($sheet['sheet_id']) . " AND status = 'submitted'");
+    $returned = mysqli_affected_rows($mysqli) === 1;
+    logAudit('Timesheet', 'Edit', escapeSql(mitTsWho() . ' changed the signed timesheet of user ' . intval($sheet['user_id']) . ' for ' . $period['label'] . ' - the signature was set aside'
+        . ($returned ? ' and it went back to them' : '')), 0, intval($sheet['user_id']));
+    if (intval($sheet['user_id']) !== intval($session_user_id)) {
+        mitTsNotify($sheet['user_id'], 'Your timesheet for ' . $period['label'] . ' was changed after you signed it - please check it and sign it again', mitTsLink($sheet['user_id'], $period), $sheet['sheet_id'], true);
+    }
 }
 
 /** Set a timesheet's signature aside (taken back, sent back, reopened). */

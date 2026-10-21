@@ -69,8 +69,10 @@ foreach ($mit_outlook_users as $mit_outlook_user_id) {
         }
     } catch (Throwable $e) {
         // Kept on the person's link and shown on their Outlook calendar page; written to App Logs only when the
-        // problem is new (a failing sync is retried every 15 minutes, which would otherwise fill the log)
-        if ($e->getMessage() !== $mit_outlook_before) {
+        // problem is new (a failing sync is retried every 15 minutes, which would otherwise fill the log). Compared as stored:
+        // with several problems the message thrown lists up to three, the stored one the first and "(and n more)"
+        $mit_outlook_after = (string) (mitOutlookLink($mit_outlook_user_id)['last_error'] ?? '');
+        if (($mit_outlook_after !== '' ? $mit_outlook_after : $e->getMessage()) !== $mit_outlook_before) {
             logApp('Outlook', 'warning', "Outlook sync for user $mit_outlook_user_id failed: " . $e->getMessage());
         }
         echo "Outlook sync user $mit_outlook_user_id failed: " . $e->getMessage() . "\n";

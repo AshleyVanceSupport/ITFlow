@@ -253,6 +253,7 @@ if (isset($_GET['delete_client'])) {
     $client_id = intval($_GET['delete_client']);
 
     enforceClientAccess();
+    if (function_exists('mitTsDeleteGuard')) { mitTsDeleteGuard(0, $client_id); } // Mountaineer IT: not while its ticket time is on a submitted timesheet
 
     // Get Client Name
     $client_name = escapeSql(getFieldById('clients', $client_id, 'client_name'));

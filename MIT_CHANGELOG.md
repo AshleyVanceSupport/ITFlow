@@ -4,6 +4,23 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.94 - 2026-10-21
+Code review of all our additions - fixes:
+- Timesheets: an overnight California shift on a clock-change night (Nov 1 / Mar 14) no longer gains or loses an hour each time it is saved; overnight note times the same.
+- Timesheets: approving a period now stores its overtime, double time, meal / rest premiums and California status, so later changes to settings or someone's pay type no longer change periods already paid.
+- Timesheets: editing an old ticket note no longer moves its time to another day; archiving a note, or deleting a ticket or client, with time on a submitted timesheet is refused; note times follow the auto-lock and can't be in the future.
+- Timesheets: after a pay-period change, the older period's days stay locked and its stored figures are left alone; changes after a California signature ask for a new signature; holidays no longer fill submitted sheets; submit / take back can't race an approval; the timesheet page is much quicker.
+- Boards: a board name with an apostrophe no longer breaks moving, escalating or New Ticket; names like O'Brien show without a backslash.
+- Projects: closed project tickets keep their SLA results (only open ones are changed).
+- Additional agents: helpers who can't see a ticket's client stop getting its emails and are taken off when the ticket moves client; a helper made lead gets the booking invite.
+- Dispatch: booking cancels the old lead's invite only after the reassign works; the Schedule dialog checks everything before saving; "This week" and the auto-assign sweep are much lighter.
+- Procurement: long part names no longer leave a half-made invoice (billing is all or nothing); received stock can't be counted twice when its invoice line is later deleted; quote lines keep their product, so "Send to procurement" picks hardware and the vendor; Create PO reports a failure; Bill parts shows only to people who can use it; better asset-type guesses.
+- Microsoft 365: the calendar app gets the sign-in permissions Outlook connections ask for (an "Update permissions" button for existing apps); secrets are moved to the new key daily.
+- NinjaOne: a device whose asset could not be made is tried again next run; unknown status shows as unknown; the "Offline in NinjaOne" client tile works.
+- Mail: an agent replying to a ticket email is filed as their internal note without reopening the ticket.
+- Signing in as another account in the same browser no longer bounces back to sign-in.
+- Speed: side-menu counts are kept for a minute; fewer queries on the ticket page and Tickets list; new indexes for timesheets (database update M029).
+
 ## 26.10.93 - 2026-10-21
 - Time fields: clicking into one no longer fills it - only the clock icon puts in the time now. Typing the hour and minutes fills in AM / PM to match the time now (type A or P to pick the other); date-and-time fields the same once the date and time are typed.
 - Ticket notes: the Start / End boxes are wider, so times like 09:59 PM are no longer cut off.

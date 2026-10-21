@@ -6,9 +6,11 @@
  */
 
 if (function_exists('mitDispatchCan') && mitDispatchCan()) {
-    $mit_dispatch_waiting = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COUNT(*) FROM tickets WHERE ticket_assigned_to = 0
+    $mit_dispatch_sql = "SELECT COUNT(*) FROM tickets WHERE ticket_assigned_to = 0
         AND ticket_resolved_at IS NULL AND ticket_closed_at IS NULL AND ticket_archived_at IS NULL" . clientScopeSql('ticket_client_id') . mitServiceTicketsAnd()
-        . (function_exists('mitBoardWhere') ? mitBoardWhere('mine', $session_user_id) : '')))[0]); ?>
+        . (function_exists('mitBoardWhere') ? mitBoardWhere('mine', $session_user_id) : '');
+    $mit_dispatch_waiting = mitNavCachedCount("dispatch:$mit_dispatch_sql", fn() => intval(mysqli_fetch_row(mysqli_query($mysqli, $mit_dispatch_sql))[0]),
+        basename($_SERVER['PHP_SELF']) === 'mit_dispatch.php'); ?>
     <li class="nav-item">
         <a href="/agent/mit_dispatch.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'mit_dispatch.php' ? 'active' : '' ?>">
             <i class="nav-icon fas fa-people-arrows"></i>

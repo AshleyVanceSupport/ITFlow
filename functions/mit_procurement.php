@@ -55,10 +55,12 @@ function mitProcOn() {
 
 /** The signed-in agent's procurement level: 0 none (or switched off), 1 view, 2 edit, 3 full (approves). */
 function mitProcLevel() {
-    if (!mitProcOn()) {
-        return 0;
+    // Asked once per row on some pages (ticket parts, invoice lines) - the same answer all request
+    static $level = null;
+    if ($level === null) {
+        $level = mitProcOn() ? intval(lookupUserPermission('module_procurement')) : 0;
     }
-    return intval(lookupUserPermission('module_procurement'));
+    return $level;
 }
 
 /** The PO settings: prefix, next (the lowest next number), approval_over (float, 0 = every PO), ship_to (our address, text). */
@@ -102,8 +104,7 @@ function mitTrackingUrl($carrier, $number) {
 
 /** A posted money / quantity value ("1,200", "$40"), rounded to cents, or null when blank or not a number. */
 function mitProcNumber($value) {
-    $value = trim(str_replace([',', '$'], '', (string) $value));
-    return $value === '' || !is_numeric($value) ? null : round((float) $value, 2);
+    return mitPostedNumber($value); // functions/mit_quotes.php - the same reading
 }
 
 /** Money in the company currency. */

@@ -1244,6 +1244,7 @@ if (isset($_GET['archive_ticket_reply'])) {
 
     [$reply, $row] = ticketReplyForRequest($_GET['archive_ticket_reply'], 2);
     $ticket_reply_id = intval($reply['ticket_reply_id']);
+    if (function_exists('mitTsReplyTimeGuard')) { mitTsReplyTimeGuard($ticket_reply_id, '00:00:00'); } // Mountaineer IT: time on a submitted timesheet stays
 
     mysqli_query($mysqli, "UPDATE ticket_replies SET ticket_reply_archived_at = NOW() WHERE ticket_reply_id = $ticket_reply_id");
 

@@ -38,20 +38,23 @@ function mitTicketTechsTidy() {
     static $done = false;
     if (!$done && mitTicketTechsReady()) {
         $done = true;
-        // A helper booking they were sent an invite for is cancelled first - as the lead they get the ticket's own
+        // A helper booking they were sent an invite for is cancelled first, and as the lead they are sent the ticket's own
+        // (ITFlow's plain reassign sends none - the schedule modal and Dispatch did already, so it is not sent twice)
         $booked = mysqli_query($mysqli, "SELECT tt.ticket_id, tt.user_id, " . MIT_HELPER_START_SQL . " AS start FROM mit_ticket_techs tt
             JOIN tickets ON tickets.ticket_id = tt.ticket_id WHERE tt.user_id = tickets.ticket_assigned_to AND " . MIT_HELPER_START_SQL . " IS NOT NULL");
         while ($row = mysqli_fetch_assoc($booked)) {
             mitTicketTechMail($row['ticket_id'], $row['user_id'], $row['start'], null, 'cancelled');
+            mitTicketLeadInvite($row['ticket_id']);
         }
         mysqli_query($mysqli, "DELETE tt FROM mit_ticket_techs tt JOIN tickets ON tickets.ticket_id = tt.ticket_id WHERE tt.user_id = tickets.ticket_assigned_to");
     }
 }
 
 /**
- * Hook before a booked ticket gets a new lead (agent/post/ticket.php edit_ticket_schedule, mitDispatchBook): the old
- * lead's calendar invite is cancelled - the new lead is then sent the booking by ticketSetSchedule(). Nothing for an
- * unbooked ticket, or a lead whose Outlook is synced (the sync takes it off their calendar).
+ * Hook after a booked ticket got a new lead (agent/post/ticket.php edit_ticket_schedule, mitDispatchBook - once the
+ * reassign succeeded; $row is the ticket as it was before it): the old lead's calendar invite is cancelled - the new lead
+ * is then sent the booking by ticketSetSchedule(). Nothing for an unbooked ticket, or a lead whose Outlook is synced (the
+ * sync takes it off their calendar).
  */
 function mitScheduleLeadChanging(array $row, $new_user_id) {
     global $mysqli, $config_smtp_provider, $config_ticket_from_email, $config_ticket_from_name, $config_base_url, $session_company_name;
@@ -75,6 +78,44 @@ function mitScheduleLeadChanging(array $row, $new_user_id) {
         'recipient' => escapeSql($old['user_email']), 'recipient_name' => escapeSql($old['user_name']),
         'subject' => escapeSql("Ticket Schedule Cancelled - [$reference] - " . $row['ticket_subject']), 'body' => mitMailBody($body), 'cal_str' => $cal_str,
     ]]);
+}
+
+/**
+ * A scheduled open ticket's own booking invite, for its lead only (ticketMailSchedule with the contact and watchers left
+ * out) - unless the same "Ticket Scheduled" email to them was queued in the last 10 minutes.
+ */
+function mitTicketLeadInvite($ticket_id) {
+    global $mysqli, $config_smtp_provider, $config_base_url;
+    $ticket_id = intval($ticket_id);
+    if (empty($config_smtp_provider)) {
+        return;
+    }
+    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT tickets.ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_details, ticket_client_id, client_name,
+            ticket_schedule, ticket_schedule_end, ticket_resolved_at, ticket_closed_at, user_name, user_email, location_address
+        FROM tickets
+        LEFT JOIN clients ON ticket_client_id = client_id
+        LEFT JOIN contacts ON ticket_contact_id = contact_id
+        LEFT JOIN locations ON location_id = IF(ticket_location_id > 0, ticket_location_id, contact_location_id)
+        LEFT JOIN users ON ticket_assigned_to = user_id
+        WHERE tickets.ticket_id = $ticket_id"));
+    if (!$row || empty($row['ticket_schedule']) || !ticketIsOpen($row) || !filter_var($row['user_email'], FILTER_VALIDATE_EMAIL)) {
+        return;
+    }
+    // The same subject ticketMailSchedule() gives it
+    $subject = mysqli_real_escape_string($mysqli, 'Ticket Scheduled - [' . ticketReference($row) . '] - ' . $row['ticket_subject']);
+    $email = mysqli_real_escape_string($mysqli, $row['user_email']);
+    if (mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM email_queue WHERE email_recipient = '$email' AND email_subject = '$subject'
+        AND email_queued_at >= DATE_SUB(NOW(), INTERVAL 10 MINUTE) LIMIT 1"))) {
+        return;
+    }
+    $end = mitTicketScheduleEnd($row['ticket_schedule'], $row['ticket_schedule_end']);
+    $cal_str = createiCalStr($row['ticket_schedule'], intval($row['ticket_number']) . ": " . $row['client_name'] . " - " . $row['ticket_subject'],
+        mb_substr(strip_tags((string) $row['ticket_details']), 0, 100) . " - https://$config_base_url/client/ticket.php?id=$ticket_id",
+        (string) $row['location_address'], getTicketCalendarUid($ticket_id), $end);
+    $skip = $GLOBALS['mit_schedule_skip_contact'] ?? false;
+    $GLOBALS['mit_schedule_skip_contact'] = true;
+    ticketMailSchedule($row, $cal_str, false, mitScheduleWhenText($row['ticket_schedule'], $end));
+    $GLOBALS['mit_schedule_skip_contact'] = $skip;
 }
 
 /** Helpers' bookings for the dashboard's "My schedule" (functions/dashboard.php dashboardSchedule), in its item shape. */
@@ -382,6 +423,10 @@ function mitTicketTechMail($ticket_id, $user_id, $start, $end, $kind) {
     if (!$row || !$tech || !filter_var($tech['user_email'], FILTER_VALIDATE_EMAIL)) {
         return;
     }
+    // Nothing new about a ticket of a client they can no longer see (a cancellation still goes, to clear their calendar)
+    if ($kind !== 'cancelled' && !mitAgentCanSeeClient($user_id, $row['ticket_client_id'])) {
+        return;
+    }
     $html = function ($value) {
         return escapeHtml((string) $value);
     };
@@ -424,18 +469,25 @@ function mitTicketTechMail($ticket_id, $user_id, $start, $end, $kind) {
 
 /**
  * A client replied (cron/ticket_email_parser.php, client/post.php): the same email the lead was
- * queued, for each helper. $mail is the lead's queued row, already escaped for the queue. A ticket
- * with no lead sends no email to copy, so its helpers are not emailed either (as ITFlow does for it).
+ * queued, for each helper who can see the client. $mail is the lead's queued row, already escaped for
+ * the queue. A ticket with no lead sends no email to copy, so its helpers are not emailed either (as
+ * ITFlow does for it).
  */
 function mitTicketTechsCopyMail($ticket_id, array $mail) {
+    global $mysqli;
+    $client_id = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT ticket_client_id FROM tickets WHERE ticket_id = " . intval($ticket_id)))[0] ?? 0);
+    // The lead's body greets them by name ("Hello <name>,") - the parser writes the name as HTML, the portal as it is
+    $lead = stripslashes((string) $mail['recipient_name']);
+    $greetings = ['Hello ' . mitSqlHtml(escapeHtml($lead)) . ',', 'Hello ' . $mail['recipient_name'] . ','];
     $copies = [];
-    foreach (mitTicketTechs($ticket_id) as $tech) {
-        if (!filter_var($tech['user_email'], FILTER_VALIDATE_EMAIL) || strcasecmp($tech['user_email'], stripslashes((string) $mail['recipient'])) === 0) {
+    foreach (mitTicketTechs($ticket_id) as $user_id => $tech) {
+        if (!filter_var($tech['user_email'], FILTER_VALIDATE_EMAIL) || strcasecmp($tech['user_email'], stripslashes((string) $mail['recipient'])) === 0
+            || !mitAgentCanSeeClient($user_id, $client_id)) {
             continue;
         }
-        // The lead's body greets them by name ("Hello <name>,"): the same greeting with the helper's name
+        // The same greeting with the helper's name, written the same way
         $copies[] = ['recipient' => escapeSql($tech['user_email']), 'recipient_name' => escapeSql($tech['user_name']),
-            'body' => str_replace('Hello ' . $mail['recipient_name'] . ',', 'Hello ' . mitSqlHtml(escapeHtml($tech['user_name'])) . ',', (string) $mail['body'])] + $mail;
+            'body' => str_replace($greetings, ['Hello ' . mitSqlHtml(escapeHtml($tech['user_name'])) . ',', 'Hello ' . escapeSql($tech['user_name']) . ','], (string) $mail['body'])] + $mail;
     }
     if ($copies) {
         addToMailQueue($copies);

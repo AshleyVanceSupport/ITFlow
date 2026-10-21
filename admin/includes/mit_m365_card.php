@@ -100,6 +100,16 @@ $mit_m365_cert_expired = $mit_m365_app && $mit_m365_app['cert_expires'] !== '' &
             <?php if (mitM365CalendarApp()) { ?>
                 <div class="small text-body-secondary mb-2"><i class="fas fa-calendar-check me-2 text-success"></i>Staff Outlook calendars connect through their own
                     calendar-only app (<code><?= escapeHtml(mitM365CalendarApp()['client_id']) ?></code>) - their sign-ins cannot reach their mail.</div>
+                <?php if (mitM365CalendarApp()['permissions_version'] < MIT_M365_CAL_PERMISSIONS_VERSION) { ?>
+                    <div class="alert alert-warning">
+                        <strong>Update the calendar app's permissions</strong> - it was made without the sign-in permissions
+                        (<code>offline_access, openid, profile, email</code>), so Microsoft may ask staff to approve them when they connect Outlook.
+                        Sign in once as a <strong>Global Administrator</strong>; Outlook connections keep working.
+                        <div class="mt-2">
+                            <button type="button" class="btn btn-sm btn-primary js-mit-m365-start" data-purpose="calendar_update"><i class="fab fa-microsoft me-2"></i>Update permissions</button>
+                        </div>
+                    </div>
+                <?php } ?>
             <?php } elseif ($mit_m365_app['setup'] === 'automatic') { ?>
                 <div class="alert alert-warning">
                     <strong>Give Outlook calendars their own app.</strong> Staff Outlook sign-ins go through this app, which also has the Mail

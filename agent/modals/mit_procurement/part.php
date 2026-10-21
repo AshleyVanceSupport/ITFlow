@@ -67,7 +67,7 @@ ob_start();
 
         <div class="mb-3">
             <label class="form-label">Part <strong class="text-danger">*</strong></label>
-            <input type="text" class="form-control" name="name" maxlength="255" required value="<?= $value('name') ?>" data-mit-part-name>
+            <input type="text" class="form-control" name="name" maxlength="200" required value="<?= $value('name') ?>" data-mit-part-name>
         </div>
 
         <div class="mb-3">

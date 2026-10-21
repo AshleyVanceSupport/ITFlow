@@ -26,6 +26,20 @@ if (intval($row['config_enable_cron']) === 0) {
     cronJobStop("Cron: is not enabled -- Quitting..");
 }
 
+// Secrets still under the old derived key move to config.php's key (mitUpgradeSecrets) - this job always runs, the
+// Outlook one only with Microsoft 365 set up; once a day is plenty
+try {
+    if (mitSetting('secrets_upgraded_on', '') !== date('Y-m-d')) {
+        mitSetSetting('secrets_upgraded_on', date('Y-m-d'));
+        $mit_upgraded = mitUpgradeSecrets();
+        if ($mit_upgraded) {
+            echo "Re-encrypted $mit_upgraded secret(s) with config.php's key\n";
+        }
+    }
+} catch (Throwable $e) {
+    echo "Secret upgrade failed: " . $e->getMessage() . "\n";
+}
+
 foreach (mitCronWatch() as $mit_watch_line) {
     echo "$mit_watch_line\n";
 }

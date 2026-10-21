@@ -15,24 +15,25 @@
 
 /** An asset type for an item, from its name - the receiving page offers it as the default. */
 function mitProcGuessAssetType($name) {
-    $name = strtolower((string) $name);
+    $name = mb_strtolower((string) $name);
     $guesses = [
         'Laptop' => ['laptop', 'notebook', 'latitude', 'thinkpad', 'macbook', 'elitebook', 'probook'],
-        'Desktop' => ['desktop', 'optiplex', 'workstation', 'thinkcentre', 'imac', 'mini pc', ' tower'],
+        'Desktop' => ['desktop', 'optiplex', 'workstation', 'thinkcentre', 'imac', 'mini pc', 'tower'],
         'Server' => ['server', 'poweredge', 'proliant', 'nas', 'synology', 'qnap'],
-        'Display' => ['monitor', 'display', ' tv', 'screen'],
+        'Display' => ['monitor', 'display', 'tv', 'screen'],
         'Switch' => ['switch'],
         'Firewall/Router' => ['firewall', 'router', 'gateway', 'fortigate', 'sonicwall', 'meraki mx', 'udm'],
-        'Access Point' => ['access point', 'wap', ' ap ', 'wifi', 'wi-fi'],
+        'Access Point' => ['access point', 'wap', 'ap', 'wifi', 'wi-fi'],
         'Printer' => ['printer', 'copier', 'mfp', 'laserjet', 'officejet'],
         'Mobile Phone' => ['iphone', 'galaxy', 'pixel', 'mobile phone', 'smartphone'],
         'Tablet' => ['ipad', 'tablet', 'surface go'],
-        'Phone' => ['phone', 'yealink', 'polycom', 'poly ', 'handset'],
+        'Phone' => ['phone', 'yealink', 'polycom', 'poly', 'handset'],
         'Camera' => ['camera', 'nvr', 'webcam'],
     ];
     foreach ($guesses as $type => $words) {
         foreach ($words as $word) {
-            if (strpos(' ' . $name . ' ', $word) !== false) {
+            // Whole words only (plurals too) - "nas" is not in "Panasonic", "ap" not in "laptop"
+            if (preg_match('/(?<![a-z0-9])' . preg_quote($word, '/') . '(?:s|es)?(?![a-z0-9])/u', $name)) {
                 return $type;
             }
         }
@@ -98,18 +99,29 @@ function mitProcAfterReceive(array $line, $qty, $serials, $receipt_id, array $op
         }
     }
 
-    // Our stock: into the product's stock
-    if (!empty($options['stock']) && !$client_id && $proc && intval($proc['product_id']) && getFieldById('products', intval($proc['product_id']), 'product_type') === 'product') {
+    // Our stock: into the product's stock (not a ticket's part - that goes to the ticket, even one without a client)
+    if (!empty($options['stock']) && !$client_id && $proc && $proc['source'] !== 'ticket' && intval($proc['product_id']) && getFieldById('products', intval($proc['product_id']), 'product_type') === 'product') {
         mysqli_query($mysqli, "INSERT INTO product_stock SET stock_qty = " . intval(round($qty)) . ", stock_note = '" . escapeSql("Received on $po_reference") . "', stock_product_id = " . intval($proc['product_id']));
         logAudit('Product', 'Edit', escapeSql(mitProcWho() . ' added ' . intval(round($qty)) . " to stock, received on $po_reference"), 0, intval($proc['product_id']));
         $done['stock'] += intval(round($qty));
     }
 
-    // Ordered for an invoice line ITFlow had already taken from stock: that stock goes back
-    if ($proc && $proc['source'] === 'invoice' && intval($proc['invoice_item_id'])) {
-        $invoice_product = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT item_product_id FROM invoice_items WHERE item_id = " . intval($proc['invoice_item_id'])))[0] ?? 0);
-        if (mitProductIsTangible($invoice_product)) {
-            mysqli_query($mysqli, "INSERT INTO product_stock SET stock_qty = " . intval(round($qty)) . ", stock_note = '" . escapeSql("Ordered on $po_reference for the invoice instead of taken from stock") . "', stock_product_id = $invoice_product");
+    /*
+     * Ordered for an invoice line ITFlow had already taken from stock: that stock goes back, and the line loses its
+     * item_product_id. ITFlow decides by item_product_id alone (agent/post/invoice.php: deleting the line or the
+     * invoice returns its quantity to stock, a quantity change moves stock), so without that it would put the same
+     * stock back a second time. The cost: once part of a line has arrived, ITFlow no longer moves stock for that line
+     * at all. The item keeps the product (product_id, set when it was sent and never edited), which is how a later
+     * item for the rest of the line still finds it (mitProcInvoiceLineProducts). A deleted line had its stock returned
+     * by ITFlow already - nothing to do then.
+     */
+    if ($proc && $proc['source'] === 'invoice' && intval($proc['invoice_item_id']) && mitProductIsTangible(intval($proc['product_id']))) {
+        $invoice_item_id = intval($proc['invoice_item_id']);
+        $product_id = intval($proc['product_id']);
+        $invoice_line = mysqli_fetch_row(mysqli_query($mysqli, "SELECT item_product_id FROM invoice_items WHERE item_id = $invoice_item_id"));
+        if ($invoice_line && in_array(intval($invoice_line[0]), [0, $product_id], true)) {
+            mysqli_query($mysqli, "INSERT INTO product_stock SET stock_qty = " . intval(round($qty)) . ", stock_note = '" . escapeSql("Ordered on $po_reference for the invoice instead of taken from stock") . "', stock_product_id = $product_id");
+            mysqli_query($mysqli, "UPDATE invoice_items SET item_product_id = 0 WHERE item_id = $invoice_item_id");
         }
     }
 

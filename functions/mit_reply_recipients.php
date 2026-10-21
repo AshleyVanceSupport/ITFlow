@@ -188,13 +188,25 @@ function mitInternalNotifyAgents($ticket_id) {
         $roles[intval($helper['user_id'])] = 'helping';
     }
     $agents = [];
-    $result = mysqli_query($mysqli, "SELECT user_id, user_name, user_email FROM users
-        WHERE user_type = 1 AND user_status = 1 AND user_archived_at IS NULL AND user_id <> " . intval($session_user_id) . " ORDER BY user_name");
-    while ($row = mysqli_fetch_assoc($result)) {
+    $rows = mysqli_fetch_all(mysqli_query($mysqli, "SELECT user_id, user_name, user_email, IFNULL(role_is_admin, 0) AS role_is_admin FROM users
+        LEFT JOIN user_roles ON role_id = user_role_id
+        WHERE user_type = 1 AND user_status = 1 AND user_archived_at IS NULL AND user_id <> " . intval($session_user_id) . " ORDER BY user_name"), MYSQLI_ASSOC);
+    // Who can see the client - mitAgentCanSeeClient's rule (admins see all; else the allow / deny lists), in one query for everyone
+    $client_id = intval($ticket['ticket_client_id']);
+    $access = $client_id ? userClientAccess(array_map(function ($r) {
+        return intval($r['user_id']);
+    }, array_filter($rows, function ($r) {
+        return intval($r['role_is_admin']) !== 1;
+    }))) : [];
+    foreach ($rows as $row) {
         $user_id = intval($row['user_id']);
-        if (function_exists('mitAgentCanSeeClient') && !mitAgentCanSeeClient($user_id, $ticket['ticket_client_id'])) {
-            continue;
+        if ($client_id && intval($row['role_is_admin']) !== 1) {
+            $a = $access[$user_id] ?? ['allow' => [], 'deny' => []];
+            if (isset($a['deny'][$client_id]) || ($a['allow'] && !isset($a['allow'][$client_id]))) {
+                continue;
+            }
         }
+        unset($row['role_is_admin']);
         $row['role'] = $roles[$user_id] ?? '';
         $agents[$user_id] = $row;
     }
@@ -269,7 +281,8 @@ function mitInternalNoteNotify(array $ticket, $reply_id, array $post) {
 /**
  * A ticket moved to another client (agent/post/ticket.php change_client_ticket, Dispatch's details save): its remembered
  * "To" choices go, and so do watchers who are neither our agents nor contacts of the new client - otherwise the next
- * email reply (with the guest link) could go to the old client's people. Returns how many watchers were taken off.
+ * email reply (with the guest link) could go to the old client's people. Helpers who cannot see the new client are taken
+ * off (mitTicketTechRemove - their booking cancelled). Returns how many watchers were taken off.
  */
 function mitTicketClientMoved($ticket_id, $client_id) {
     global $mysqli;
@@ -284,6 +297,16 @@ function mitTicketClientMoved($ticket_id, $client_id) {
     $removed = mysqli_affected_rows($mysqli);
     if ($removed > 0) {
         logTicketHistory($ticket_id, "$removed watcher(s) of the old client were taken off with the move");
+    }
+    // Helpers (functions/mit_ticket_techs.php) who cannot see the new client come off too - their booking is cancelled
+    if (function_exists('mitTicketTechs') && function_exists('mitTicketTechRemove')) {
+        $techs = mitTicketTechs($ticket_id);
+        $ticket = $techs ? mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT * FROM tickets WHERE ticket_id = $ticket_id")) : null;
+        foreach ($ticket ? $techs : [] as $user_id => $tech) {
+            if (!mitAgentCanSeeClient($user_id, $client_id)) {
+                mitTicketTechRemove($ticket, $user_id);
+            }
+        }
     }
     return $removed;
 }

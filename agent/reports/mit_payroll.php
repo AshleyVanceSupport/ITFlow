@@ -35,6 +35,7 @@ $codes = mitTsCodes(true);
 $banks = mitLeaveReady() ? mitLeaveBanks() : [];
 $totals = mitTsTotals(array_keys($people), $from, $to);
 $reimb = mitReimbOn() ? mitReimbTotals(array_keys($people), $from, $to) : [];
+$balances = $banks ? mitLeaveBalancesAt(array_keys($people), $to) : [];
 $settings = mitTsSettings();
 $approval = $settings['approval'];
 $overtime = $settings['ot_day'] || $settings['ot_week'];
@@ -94,7 +95,7 @@ foreach ($people as $user_id => $person) {
         $row["code_$code_id"] = ($t['codes'][$code_id] ?? 0) * 60;
     }
     foreach ($banks as $bank_id => $bank) {
-        $row["bank_$bank_id"] = isset(mitLeaveBanksFor($user_id)[$bank_id]) ? (mitLeaveCredited($user_id, $bank_id, $to) - mitLeaveUsed($user_id, $bank, $to)) * 60 : null;
+        $row["bank_$bank_id"] = isset($balances[$user_id][$bank_id]) ? $balances[$user_id][$bank_id] * 60 : null;
     }
     foreach ($sum as $key => $value) {
         $sum[$key] += $t[$key];
@@ -161,10 +162,11 @@ if (reportExporting('detail')) {
     $all_days = mitTsDays(array_keys($people), $from, $to);
     $entries = mitTsEntries(array_keys($people), $from, $to);
     $reimb_rows = mitReimbOn() ? mitReimbForUsers(array_keys($people), $from, $to) : [];
+    $all_ca_days = mitTsCaDays(array_keys($people), $from, $to);
     foreach ($people as $user_id => $person) {
         $days = [];
         // California non-exempt: the day's start, meal and end times, and the answers about its breaks
-        $ca_days = mitTsCaDays([$user_id], $from, $to)[$user_id] ?? [];
+        $ca_days = $all_ca_days[$user_id] ?? [];
         foreach ($ca_days as $date => $c) {
             if (!$c['periods'] && !$c['issues'] && !$c['answers']['rest_missed']) {
                 continue;

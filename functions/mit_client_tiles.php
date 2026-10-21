@@ -56,8 +56,8 @@ function mitClientTiles($kind, $client_id) {
         $tiles[] = mitTile('Warranty ends in 90 days', number_format($ending), 'hourglass-half', $ending ? '#d9930c' : $grey, '', "assets.php?$base&expire_days=90");
         $tiles[] = mitTile('Over 5 years old', number_format($old), 'recycle', $old ? '#d9930c' : $grey, 'By install or purchase date');
         // NinjaOne's last word on whether each linked device is online (functions/mit_ninjaone.php)
-        if (mitTileCount("SELECT COUNT(*) FROM mit_ninja_devices d JOIN assets ON asset_id = d.asset_id WHERE $where")) {
-            $offline = mitTileCount("SELECT COUNT(*) FROM mit_ninja_devices d JOIN assets ON asset_id = d.asset_id WHERE $where AND d.offline = 1");
+        if (mitTileCount("SELECT COUNT(*) FROM mit_ninja_devices d JOIN assets a ON a.asset_id = d.asset_id WHERE $where")) {
+            $offline = mitTileCount("SELECT COUNT(*) FROM mit_ninja_devices d JOIN assets a ON a.asset_id = d.asset_id WHERE $where AND d.offline = 1");
             $tiles[] = mitTile('Offline in NinjaOne', number_format($offline), 'plug', $offline ? '#e0484d' : '#1f9d61');
         }
     } elseif ($kind === 'licenses') {
@@ -84,7 +84,7 @@ function mitClientTiles($kind, $client_id) {
         $tiles[] = mitTile('Open', number_format($open), 'life-ring', '#2f6fde', '', "tickets.php?$base");
         $tiles[] = mitTile('Overdue', number_format($overdue), 'stopwatch', $overdue ? '#e0484d' : $grey, 'Past due or SLA breached', "tickets.php?$base&show=overdue");
         $tiles[] = mitTile('Unassigned', number_format($unassigned), 'user-slash', $unassigned ? '#d9930c' : $grey, '', "tickets.php?$base&show=unassigned");
-        $tiles[] = mitTile('Closed in 30 days', number_format($closed), 'check-circle', '#1f9d61', '', "tickets.php?$base&show=closed");
+        $tiles[] = mitTile('Closed in 30 days', number_format($closed), 'check-circle', '#1f9d61', 'Resolved or closed'); // no link: the list's date filter is on created, not closed
         $tiles[] = mitTile('Time this month', dashboardDuration($seconds), 'clock', '#7c5cd6', date('F'));
     }
     return $tiles ? '<div class="mit-tiles">' . implode('', $tiles) . '</div>' : '';

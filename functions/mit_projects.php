@@ -69,7 +69,8 @@ function mitProjectTicketsShow($base_sql) {
 
 /**
  * From applyTicketSla(): true when this ticket must have no SLA (it is in a project). Also notes when it
- * joins or leaves one, for mitProjectSlaStart().
+ * joins or leaves one, for mitProjectSlaStart(). Only an open ticket changes: a resolved or closed project
+ * ticket with no SLA keeps none, one that has an SLA is left to ITFlow, and nothing is noted.
  */
 function mitProjectSlaOff($ticket_id) {
     global $mysqli;
@@ -77,10 +78,13 @@ function mitProjectSlaOff($ticket_id) {
         return false;
     }
     $ticket_id = intval($ticket_id);
-    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT ticket_project_id, in_project FROM tickets
+    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT ticket_project_id, ticket_sla_id, in_project, " . TICKET_OPEN_SQL . " AS is_open FROM tickets
         LEFT JOIN mit_project_ticket_sla s ON s.ticket_id = tickets.ticket_id WHERE tickets.ticket_id = $ticket_id"));
     if (!$row) {
         return false;
+    }
+    if (!intval($row['is_open'])) {
+        return intval($row['ticket_project_id']) && !intval($row['ticket_sla_id']) && mitProjectTicketsApart();
     }
     if (intval($row['ticket_project_id']) && mitProjectTicketsApart()) {
         if ($row['in_project'] === null || !intval($row['in_project'])) {
@@ -115,7 +119,8 @@ function mitProjectTicketMoved($ticket_id) {
 /**
  * The cron job (cron/mit_project_tickets.php, every minute): catches the ways in and out that do not call
  * applyTicketSla (the API, deleting a project, switching the setting) - project tickets still carrying an
- * SLA, and tickets that left a project without it being noticed.
+ * SLA, and tickets that left a project without it being noticed. Open tickets only - a resolved or closed
+ * ticket's SLA data is never touched.
  */
 function mitProjectTicketsSweep() {
     global $mysqli;
@@ -124,14 +129,14 @@ function mitProjectTicketsSweep() {
     }
     $ids = [];
     if (mitProjectTicketsApart()) {
-        $sql = mysqli_query($mysqli, "SELECT ticket_id FROM tickets WHERE ticket_project_id > 0 AND ticket_sla_id > 0 LIMIT 200");
+        $sql = mysqli_query($mysqli, "SELECT ticket_id FROM tickets WHERE ticket_project_id > 0 AND ticket_sla_id > 0 AND " . TICKET_OPEN_SQL . " LIMIT 200");
         while ($row = mysqli_fetch_row($sql)) {
             $ids[] = intval($row[0]);
         }
-        mysqli_query($mysqli, "INSERT IGNORE INTO mit_project_ticket_sla (ticket_id, in_project) SELECT ticket_id, 1 FROM tickets WHERE ticket_project_id > 0");
+        mysqli_query($mysqli, "INSERT IGNORE INTO mit_project_ticket_sla (ticket_id, in_project) SELECT ticket_id, 1 FROM tickets WHERE ticket_project_id > 0 AND " . TICKET_OPEN_SQL);
     }
-    $sql = mysqli_query($mysqli, "SELECT s.ticket_id FROM mit_project_ticket_sla s JOIN tickets t ON t.ticket_id = s.ticket_id
-        WHERE s.in_project = 1" . (mitProjectTicketsApart() ? ' AND t.ticket_project_id = 0' : '') . " LIMIT 200");
+    $sql = mysqli_query($mysqli, "SELECT s.ticket_id FROM mit_project_ticket_sla s JOIN tickets ON tickets.ticket_id = s.ticket_id
+        WHERE s.in_project = 1 AND " . TICKET_OPEN_SQL . (mitProjectTicketsApart() ? ' AND tickets.ticket_project_id = 0' : '') . " LIMIT 200");
     while ($row = mysqli_fetch_row($sql)) {
         $ids[] = intval($row[0]);
     }

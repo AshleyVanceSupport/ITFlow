@@ -239,7 +239,7 @@ function reportEnforce($key) {
     }
     foreach ($report['feature'] ?? [] as $feature) {
         if (!reportFeatureOn($feature)) {
-            exit('This report needs the ' . ucfirst($feature === 'itdoc' ? 'documentation' : $feature) . ' module, which is turned off in Admin > Settings > Modules.');
+            exit('This report needs the ' . (['itdoc' => 'Documentation', 'mit_timesheets' => 'Timesheets'][$feature] ?? ucfirst($feature)) . ' module, which is turned off in Admin > Settings > Modules.');
         }
     }
     enforceUserPermission($report['module']);

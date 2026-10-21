@@ -155,10 +155,7 @@ function mitReimbWhyLocked(array $row) {
     if ($user_id !== intval($session_user_id) && !mitTsMayCorrect($user_id)) {
         return 'Only ' . ($row['user_name'] ?? 'they') . ', or whoever corrects their timesheet, can change it.';
     }
-    if (mitTsApprovedDates($user_id, $row['entry_date'], $row['entry_date'])) {
-        return 'This day is in an approved timesheet and locked.';
-    }
-    return mitTsWhyLocked(mitTsSheet($user_id, mitTsPeriodFor($row['entry_date'])));
+    return mitTsWhyDayLocked($user_id, $row['entry_date']);
 }
 
 /*
@@ -182,7 +179,7 @@ function mitReimbSave(array $ticket, ?array $row, array $post, array $files) {
         return [false, 'Pick the date.'];
     }
     // The period the entry lands in must be open to this agent - and the one it leaves, when the date moves
-    $why = mitTsWhyLocked(mitTsSheet($user_id, mitTsPeriodFor($date)));
+    $why = mitTsWhyDayLocked($user_id, $date);
     if ($why === '' && $row) {
         $why = mitReimbWhyLocked($row);
     }

@@ -53,7 +53,9 @@ const MIT_M365_EXCHANGE_SCOPES = ['IMAP.AccessAsUser.All', 'SMTP.Send'];
  * Same tenant and the same certificate as the main app; settings m365_cal_client_id / m365_cal_object_id.
  */
 const MIT_M365_CAL_APP_NAME = 'Mountaineer IT ITFlow Outlook calendars';
-const MIT_M365_CAL_SCOPES = ['User.Read', 'Calendars.ReadWrite'];
+const MIT_M365_CAL_SCOPES = ['User.Read', 'Calendars.ReadWrite', 'offline_access', 'openid', 'profile', 'email'];
+/** Bumped when MIT_M365_CAL_SCOPES changes - setting m365_cal_permissions_version; an older calendar app is offered "Update permissions". */
+const MIT_M365_CAL_PERMISSIONS_VERSION = 2;
 
 /** Bumped when the permissions above change - an app set up with fewer is offered "Update permissions". */
 const MIT_M365_PERMISSIONS_VERSION = 2;
@@ -241,8 +243,9 @@ function mitIsEncrypted($stored) {
 
 /**
  * Re-encrypt what is still under a legacy key with $config_mit_secret_key: the app certificate, a pending
- * one, the cached mail token and every Outlook sign-in. Cheap when there is nothing to do; run from the
- * Outlook cron job and the mail settings page. Returns how many values were upgraded.
+ * one, the cached mail token, the NinjaOne API secret and token, and every Outlook sign-in. Cheap when there is
+ * nothing to do; run from the Outlook cron job, the cron watch job (once a day) and the mail settings page.
+ * Returns how many values were upgraded.
  */
 function mitUpgradeSecrets() {
     global $mysqli;
@@ -250,7 +253,7 @@ function mitUpgradeSecrets() {
         return 0;
     }
     $done = 0;
-    foreach (['m365_key_pem', 'm365_pending_cert', 'm365_mail_graph_token'] as $name) {
+    foreach (['m365_key_pem', 'm365_pending_cert', 'm365_mail_graph_token', 'ninja_client_secret', 'ninja_token'] as $name) {
         $stored = (string) mitSetting($name, '');
         if (strpos($stored, 'v1:') === 0 && ($plain = mitDecryptSecret($stored)) !== '') {
             mitSetSetting($name, mitEncryptSecret($plain));
@@ -607,23 +610,28 @@ function mitM365RequiredAccess($token) {
 /** Admin consent for the whole organization, so nobody is asked to approve it - adds to or replaces earlier consent. */
 function mitM365GrantConsent($token, $sp, array $graph, array $exchange) {
     foreach ([[$graph['id'], MIT_M365_GRAPH_SCOPES], [$exchange['id'], MIT_M365_EXCHANGE_SCOPES]] as [$resource_id, $scopes]) {
-        $existing = mitGraph('GET', '/oauth2PermissionGrants?$filter=' . rawurlencode("clientId eq '$sp' and resourceId eq '$resource_id' and consentType eq 'AllPrincipals'"), $token);
-        $grant_id = $existing['json']['value'][0]['id'] ?? '';
-        if ($grant_id !== '') {
-            $grant = mitGraph('PATCH', '/oauth2PermissionGrants/' . rawurlencode($grant_id), $token, ['scope' => implode(' ', $scopes)]);
-            $ok = $grant['status'] === 204 || $grant['status'] === 200;
-        } else {
-            $grant = mitGraph('POST', '/oauth2PermissionGrants', $token, [
-                'clientId' => $sp,
-                'consentType' => 'AllPrincipals',
-                'resourceId' => $resource_id,
-                'scope' => implode(' ', $scopes),
-            ]);
-            $ok = $grant['status'] === 201;
-        }
-        if (!$ok) {
-            throw new RuntimeException(mitM365Error($grant, 'Approving the app\'s permissions'));
-        }
+        mitM365GrantScopes($token, $sp, $resource_id, $scopes);
+    }
+}
+
+/** Organization-wide consent for one app ($sp) to one resource: exactly these delegated scopes (made or replaced). Throws on failure. */
+function mitM365GrantScopes($token, $sp, $resource_id, array $scopes) {
+    $existing = mitGraph('GET', '/oauth2PermissionGrants?$filter=' . rawurlencode("clientId eq '$sp' and resourceId eq '$resource_id' and consentType eq 'AllPrincipals'"), $token);
+    $grant_id = $existing['json']['value'][0]['id'] ?? '';
+    if ($grant_id !== '') {
+        $grant = mitGraph('PATCH', '/oauth2PermissionGrants/' . rawurlencode($grant_id), $token, ['scope' => implode(' ', $scopes)]);
+        $ok = $grant['status'] === 204 || $grant['status'] === 200;
+    } else {
+        $grant = mitGraph('POST', '/oauth2PermissionGrants', $token, [
+            'clientId' => $sp,
+            'consentType' => 'AllPrincipals',
+            'resourceId' => $resource_id,
+            'scope' => implode(' ', $scopes),
+        ]);
+        $ok = $grant['status'] === 201;
+    }
+    if (!$ok) {
+        throw new RuntimeException(mitM365Error($grant, 'Approving the app\'s permissions'));
     }
 }
 
@@ -770,7 +778,49 @@ function mitM365MaybeRenewCertificate() {
 /** The calendar-only app, or null while Outlook sign-ins still go through the main app. */
 function mitM365CalendarApp() {
     $client_id = (string) mitSetting('m365_cal_client_id', '');
-    return $client_id === '' ? null : ['client_id' => $client_id, 'object_id' => (string) mitSetting('m365_cal_object_id', '')];
+    return $client_id === '' ? null : ['client_id' => $client_id, 'object_id' => (string) mitSetting('m365_cal_object_id', ''),
+        'permissions_version' => intval(mitSetting('m365_cal_permissions_version', 1))];
+}
+
+/** The calendar app's requiredResourceAccess (MIT_M365_CAL_SCOPES on Graph): [access, graph resource]. */
+function mitM365CalendarAccess($token) {
+    $graph = mitM365ResourceScopes($token, MIT_M365_GRAPH_APP_ID);
+    $entries = [];
+    foreach (MIT_M365_CAL_SCOPES as $scope) {
+        if (empty($graph['scopes'][$scope])) {
+            throw new RuntimeException("Microsoft did not list the $scope permission in this organization.");
+        }
+        $entries[] = ['id' => $graph['scopes'][$scope], 'type' => 'Scope'];
+    }
+    return [[['resourceAppId' => MIT_M365_GRAPH_APP_ID, 'resourceAccess' => $entries]], $graph];
+}
+
+/**
+ * Bring the calendar-only app up to MIT_M365_CAL_SCOPES (MIT_M365_CAL_PERMISSIONS_VERSION) with an admin's sign-in token:
+ * its permission list, sign-in address and the organization-wide consent. Existing Outlook connections keep working.
+ */
+function mitM365UpdateCalendarPermissions($token) {
+    $app = mitM365App();
+    $calendar = mitM365CalendarApp();
+    if (!$app || !$calendar || $calendar['object_id'] === '') {
+        throw new RuntimeException('There is no calendar-only app to update.');
+    }
+    if (mitM365TokenTenant($token) !== $app['tenant_id']) {
+        throw new RuntimeException('That sign-in belongs to a different Microsoft 365 organization than ITFlow\'s app.');
+    }
+    [$access, $graph] = mitM365CalendarAccess($token);
+    $patched = mitGraph('PATCH', '/applications/' . rawurlencode($calendar['object_id']), $token, ['requiredResourceAccess' => $access, 'web' => ['redirectUris' => [mitM365RedirectUris()[1]]]]);
+    if ($patched['status'] !== 204 && $patched['status'] !== 200) {
+        throw new RuntimeException(mitM365Error($patched, 'Updating the calendar app\'s permissions'));
+    }
+    $found = mitGraph('GET', '/servicePrincipals?$filter=' . rawurlencode("appId eq '{$calendar['client_id']}'") . '&$select=id', $token);
+    $sp = $found['json']['value'][0]['id'] ?? '';
+    if ($sp === '') {
+        throw new RuntimeException(mitM365Error($found, 'Finding the calendar app in your organization'));
+    }
+    mitM365GrantScopes($token, $sp, $graph['id'], MIT_M365_CAL_SCOPES);
+    mitSetSetting('m365_cal_permissions_version', MIT_M365_CAL_PERMISSIONS_VERSION);
+    return mitM365CalendarApp();
 }
 
 /** The current certificate as Graph wants it in keyCredentials (base64 DER). */
@@ -781,8 +831,9 @@ function mitM365CertDerBase64() {
 
 /**
  * Make the calendar-only app with an admin's setup token (Admin > Settings > Mail, the main app set up first): only
- * User.Read and Calendars.ReadWrite, approved for the organization, signing in with the main app's certificate. Every
- * Outlook connection made through the main app is set to Reconnect. Returns the app or throws.
+ * User.Read and Calendars.ReadWrite (plus the sign-in scopes offline_access openid profile email), approved for the
+ * organization, signing in with the main app's certificate. Every Outlook connection made through the main app is set to
+ * Reconnect. Returns the app or throws.
  */
 function mitM365ProvisionCalendar($token) {
     global $mysqli;
@@ -800,20 +851,13 @@ function mitM365ProvisionCalendar($token) {
     if ($der === '') {
         throw new RuntimeException('ITFlow has no certificate for its Microsoft 365 app - set the app up again first.');
     }
-    $graph = mitM365ResourceScopes($token, MIT_M365_GRAPH_APP_ID);
-    $entries = [];
-    foreach (MIT_M365_CAL_SCOPES as $scope) {
-        if (empty($graph['scopes'][$scope])) {
-            throw new RuntimeException("Microsoft did not list the $scope permission in this organization.");
-        }
-        $entries[] = ['id' => $graph['scopes'][$scope], 'type' => 'Scope'];
-    }
+    [$access, $graph] = mitM365CalendarAccess($token);
     $created = mitGraph('POST', '/applications', $token, [
         'displayName' => MIT_M365_CAL_APP_NAME,
         'signInAudience' => 'AzureADMyOrg',
         'notes' => 'Created by ITFlow (Mountaineer IT) for staff Outlook calendars only - no mail. Signs in with the same certificate as the email app.',
         'web' => ['redirectUris' => [mitM365RedirectUris()[1]]],
-        'requiredResourceAccess' => [['resourceAppId' => MIT_M365_GRAPH_APP_ID, 'resourceAccess' => $entries]],
+        'requiredResourceAccess' => $access,
         'keyCredentials' => [['type' => 'AsymmetricX509Cert', 'usage' => 'Verify', 'key' => $der, 'displayName' => 'ITFlow certificate ' . date('Y-m-d')]],
     ]);
     if ($created['status'] !== 201 || empty($created['json']['appId'])) {
@@ -835,17 +879,14 @@ function mitM365ProvisionCalendar($token) {
         if (!$sp) {
             throw new RuntimeException(mitM365Error($response, 'Creating the calendar app\'s service principal'));
         }
-        $grant = mitGraph('POST', '/oauth2PermissionGrants', $token, ['clientId' => $sp, 'consentType' => 'AllPrincipals',
-            'resourceId' => $graph['id'], 'scope' => implode(' ', MIT_M365_CAL_SCOPES)]);
-        if ($grant['status'] !== 201) {
-            throw new RuntimeException(mitM365Error($grant, 'Approving the calendar app\'s permissions'));
-        }
+        mitM365GrantScopes($token, $sp, $graph['id'], MIT_M365_CAL_SCOPES);
     } catch (Throwable $e) {
         mitGraph('DELETE', '/applications/' . rawurlencode($object_id), $token);
         throw $e;
     }
     mitSetSetting('m365_cal_client_id', $client_id);
     mitSetSetting('m365_cal_object_id', $object_id);
+    mitSetSetting('m365_cal_permissions_version', MIT_M365_CAL_PERMISSIONS_VERSION);
     // Sign-ins made through the main app can still reach mail - they go, and each person reconnects once
     try {
         mysqli_query($mysqli, "UPDATE mit_outlook_links SET refresh_token = '', access_token = '', access_expires_at = NULL,

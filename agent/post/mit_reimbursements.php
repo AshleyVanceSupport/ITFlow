@@ -54,6 +54,6 @@ if (isset($_GET['mit_reimb_delete'])) {
         redirect();
     }
     [$ok, $message] = mitReimbDelete($row);
-    flashAlert(escapeHtml($message), 'error');
+    flashAlert(escapeHtml($message), $ok ? 'success' : 'error');
     redirect();
 }

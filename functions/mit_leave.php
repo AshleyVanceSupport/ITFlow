@@ -116,6 +116,36 @@ function mitLeaveUsed($user_id, array $bank, $to = null) {
         AND code_id IN (" . implode(',', $bank['codes']) . ")" . ($to === null ? '' : " AND entry_date <= '" . escapeSql($to) . "'")))[0]);
 }
 
+/**
+ * Balances of several people on every bank they have, at the end of a date: [user_id][bank_id] => minutes (ledger less
+ * hours on its codes) - two queries for everyone, for reports.
+ */
+function mitLeaveBalancesAt(array $user_ids, $to) {
+    global $mysqli;
+    $user_ids = array_values(array_filter(array_map('intval', $user_ids)));
+    $balances = [];
+    if (!$user_ids || !mitLeaveReady() || !mitLeaveBanks()) {
+        return $balances;
+    }
+    $in = implode(',', $user_ids);
+    $credited = [];
+    $result = mysqli_query($mysqli, "SELECT user_id, bank_id, SUM(minutes) AS m FROM mit_leave_ledger WHERE user_id IN ($in) AND entry_date <= '" . escapeSql($to) . "' GROUP BY user_id, bank_id");
+    while ($row = mysqli_fetch_assoc($result)) {
+        $credited[intval($row['user_id'])][intval($row['bank_id'])] = intval($row['m']);
+    }
+    $used = [];  // [user_id][code_id] => minutes
+    $result = mysqli_query($mysqli, "SELECT user_id, code_id, SUM(minutes) AS m FROM mit_time_entries WHERE source = 'manual' AND user_id IN ($in) AND entry_date <= '" . escapeSql($to) . "' GROUP BY user_id, code_id");
+    while ($row = mysqli_fetch_assoc($result)) {
+        $used[intval($row['user_id'])][intval($row['code_id'])] = intval($row['m']);
+    }
+    foreach ($user_ids as $user_id) {
+        foreach (mitLeaveBanksFor($user_id) as $bank_id => $bank) {
+            $balances[$user_id][$bank_id] = ($credited[$user_id][$bank_id] ?? 0) - array_sum(array_intersect_key($used[$user_id] ?? [], array_flip($bank['codes'])));
+        }
+    }
+    return $balances;
+}
+
 /** The ledger's total for a person and bank up to a date (all of it when $to is null). */
 function mitLeaveCredited($user_id, $bank_id, $to = null) {
     global $mysqli;

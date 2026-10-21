@@ -329,19 +329,38 @@ function mitDispatchWeekStats(array $tech_ids, $first_day = 0, $board = '') {
         FROM tickets WHERE $scope"));
     $sla = array_map('intval', $sla ?: []);
 
-    // Per tech: assigned to them this week (made for them, or ITFlow's history line) against closed by them this week
+    // Per tech: assigned to them this week (made for them, or ITFlow's history line) against closed by them this week.
+    // The week's "assigned the ticket to <name>" lines are read once and shared out by name here - the longest name that
+    // fits, so "Bob Smith" is not counted for "Bob" too
     $techs = mitDispatchTechs();
-    $rows = [];
-    foreach (array_unique(array_map('intval', $tech_ids)) as $id) {
-        if (!isset($techs[$id])) {
-            continue;
+    $ids = array_values(array_filter(array_unique(array_map('intval', $tech_ids)), function ($id) use ($techs) { return isset($techs[$id]); }));
+    $assigned_to = array_fill_keys($ids, []);
+    if ($ids) {
+        $result = mysqli_query($mysqli, "SELECT ticket_id, ticket_assigned_to FROM tickets WHERE $scope AND ticket_created_at BETWEEN $start AND $end
+            AND ticket_assigned_to IN (" . implode(',', $ids) . ")");
+        while ($row = mysqli_fetch_row($result)) {
+            $assigned_to[intval($row[1])][intval($row[0])] = true;
         }
-        // LIKE's own characters escaped first, then the string for SQL (O'Brien, 50%_Tech)
-        $name = escapeSql(addcslashes((string) $techs[$id]['name'], '\\%_'));
-        $assigned = $one("SELECT COUNT(*) FROM tickets WHERE $scope AND (
-                (ticket_created_at BETWEEN $start AND $end AND ticket_assigned_to = $id)
-                OR ticket_id IN (SELECT ticket_history_ticket_id FROM ticket_history WHERE ticket_history_created_at BETWEEN $start AND $end
-                    AND (ticket_history_description LIKE '%assigned the ticket to $name' OR ticket_history_description LIKE '%assigned the ticket to $name %')))");
+        $by_name = [];
+        foreach ($ids as $id) {
+            $by_name[$id] = (string) $techs[$id]['name'];
+        }
+        uasort($by_name, function ($a, $b) { return mb_strlen($b) <=> mb_strlen($a); });
+        $result = mysqli_query($mysqli, "SELECT ticket_history_ticket_id, ticket_history_description FROM ticket_history
+            JOIN tickets ON tickets.ticket_id = ticket_history_ticket_id
+            WHERE $scope AND ticket_history_created_at BETWEEN $start AND $end AND ticket_history_description LIKE '%assigned the ticket to %'");
+        while ($row = mysqli_fetch_row($result)) {
+            foreach ($by_name as $id => $name) {
+                if ($name !== '' && preg_match('/assigned the ticket to ' . preg_quote($name, '/') . '( |$)/iu', (string) $row[1])) {
+                    $assigned_to[$id][intval($row[0])] = true;
+                    break;
+                }
+            }
+        }
+    }
+    $rows = [];
+    foreach ($ids as $id) {
+        $assigned = count($assigned_to[$id]);
         $rows[] = [
             'id' => $id,
             'name' => $techs[$id]['name'],

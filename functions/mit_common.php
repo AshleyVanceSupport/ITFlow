@@ -29,7 +29,7 @@ function mitProductIsTangible($product_id) {
 }
 
 /**
- * Is one of our modules switched on (Admin > Settings > Modules - admin/includes/mit_modules_card.php)?
+ * Is one of our modules switched on (Admin > Settings > Modules - admin/includes/mit_modules_fields.php)?
  * $name: procurement | timesheets | dispatch. On unless switched off; saved in mit_settings as module_<name>.
  * Procurement also needs ITFlow's invoicing module, and dispatch its ticketing module.
  */
@@ -108,11 +108,22 @@ function mitSessionStamp($user_id) {
     return $row ? substr(hash('sha256', (string) $row[0] . '|' . (string) $row[1]), 0, 32) : '';
 }
 
-/** True while this session's sign-in still stands (the first page after signing in takes the fingerprint). */
+/** Whose fingerprint the session holds: the user id and agent / portal (a portal sign-in carries contact_id). */
+function mitSessionStampOwner($user_id) {
+    return (isset($_SESSION['contact_id']) ? 'portal' : 'agent') . ':' . intval($user_id);
+}
+
+/**
+ * True while this session's sign-in still stands. The first page after signing in takes the fingerprint - also when the
+ * browser signed in as someone else (or the same person on the other side) without signing out first, since login.php
+ * keeps the old session's data: a fingerprint taken for another sign-in is replaced, not compared.
+ */
 function mitSessionCheck($user_id) {
     $stamp = mitSessionStamp($user_id);
-    if (!isset($_SESSION['mit_session_stamp'])) {
+    $owner = mitSessionStampOwner($user_id);
+    if (!isset($_SESSION['mit_session_stamp']) || ($_SESSION['mit_session_stamp_owner'] ?? '') !== $owner) {
         $_SESSION['mit_session_stamp'] = $stamp;
+        $_SESSION['mit_session_stamp_owner'] = $owner;
         return true;
     }
     return hash_equals((string) $_SESSION['mit_session_stamp'], $stamp);
@@ -122,6 +133,7 @@ function mitSessionCheck($user_id) {
 function mitSessionRestamp($user_id) {
     if (session_status() === PHP_SESSION_ACTIVE && intval($_SESSION['user_id'] ?? 0) === intval($user_id)) {
         $_SESSION['mit_session_stamp'] = mitSessionStamp($user_id);
+        $_SESSION['mit_session_stamp_owner'] = mitSessionStampOwner($user_id);
     }
 }
 
@@ -249,4 +261,22 @@ function mitChangelog() {
         }
     }
     return $releases;
+}
+
+/** Side-menu counts (agent/includes/mit_*_nav.php), kept per agent in the session for a minute - they ran on every page. The
+ * key carries what shapes the count (SQL / client scope); the count's own page passes $fresh so it is always worked out anew. */
+function mitNavCachedCount($key, callable $compute, $fresh = false) {
+    global $session_user_id;
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        return $compute();
+    }
+    $key = intval($session_user_id) . ':' . md5($key);
+    $hit = $_SESSION['mit_nav_counts'][$key] ?? null;
+    if (!$fresh && is_array($hit) && $hit['at'] > time() - 60) {
+        return $hit['value'];
+    }
+    $value = $compute();
+    $_SESSION['mit_nav_counts'] = array_filter($_SESSION['mit_nav_counts'] ?? [], fn($c) => is_array($c) && $c['at'] > time() - 60);
+    $_SESSION['mit_nav_counts'][$key] = ['at' => time(), 'value' => $value];
+    return $value;
 }

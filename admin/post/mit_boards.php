@@ -90,7 +90,7 @@ if (isset($_GET['mit_board_archive'])) {
     $board_id = intval($_GET['mit_board_archive']);
     $board = mitBoards()[$board_id] ?? null;
     if ($board && !intval($board['board_is_default'])) {
-        // Its tickets go back to the default board (no row), its rules go
+        // Its tickets go to the default board (their rows now point at it, logged as moves), its rules go
         $default = mitBoardDefaultId();
         $moved = 0;
         $sql = mysqli_query($mysqli, "SELECT ticket_id FROM mit_ticket_boards WHERE board_id = $board_id");

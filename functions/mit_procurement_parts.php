@@ -210,6 +210,35 @@ function mitProcInvoiceQueued($invoice_id) {
     return $queued;
 }
 
+/**
+ * An invoice's lines (rows with item_id, item_product_id) with their product filled back in where receiving took it
+ * off the line (mitProcAfterReceive) - from the items already sent for that line - so the rest of the line still
+ * orders as that product and its stock still goes back when it arrives.
+ */
+function mitProcInvoiceLineProducts(array $lines) {
+    global $mysqli;
+    $missing = [];
+    foreach ($lines as $line) {
+        if (!intval($line['item_product_id'])) {
+            $missing[] = intval($line['item_id']);
+        }
+    }
+    if ($missing) {
+        $found = [];
+        $result = mysqli_query($mysqli, "SELECT invoice_item_id, MAX(product_id) AS product_id FROM mit_procurement_items
+            WHERE source = 'invoice' AND product_id > 0 AND invoice_item_id IN (" . implode(',', $missing) . ") GROUP BY invoice_item_id");
+        while ($row = mysqli_fetch_assoc($result)) {
+            $found[intval($row['invoice_item_id'])] = intval($row['product_id']);
+        }
+        foreach ($lines as $key => $line) {
+            if (!intval($line['item_product_id']) && isset($found[intval($line['item_id'])])) {
+                $lines[$key]['item_product_id'] = $found[intval($line['item_id'])];
+            }
+        }
+    }
+    return $lines;
+}
+
 /** The invoice page's "Send to procurement" menu item (agent/invoice.php ⋮ menu). */
 function mitProcInvoiceMenuItem($invoice_id) {
     if (mitProcLevel() < 2) {
@@ -231,7 +260,7 @@ function mitTicketParts($ticket_id) {
 }
 
 /**
- * Parts on tickets not billed yet, any ticket the agent can see (Procurement > Unbilled parts), oldest first, with
+ * Parts on tickets not billed yet, any ticket the agent can see (Billing > Unbilled Parts), oldest first, with
  * their ticket and client. $client_id narrows it to one client.
  */
 function mitUnbilledParts($client_id = 0) {
@@ -240,7 +269,10 @@ function mitUnbilledParts($client_id = 0) {
         . clientScopeSql(MIT_PART_CLIENT_SQL), 'parts.created_at, parts.part_id');
 }
 
-/** A part's client: its ticket's client now, or the one it was added for when the ticket is gone. */
+/**
+ * A part's client: its ticket's client now. Parts go with their ticket (foreign key, ON DELETE CASCADE), so the ticket
+ * is always there; parts.client_id (the client when it was added) is only a fallback for a database without that key.
+ */
 const MIT_PART_CLIENT_SQL = "COALESCE(tickets.ticket_client_id, parts.client_id)";
 
 /** How many parts are not billed yet (side menu badge). */
@@ -329,7 +361,8 @@ function mitTicketPartsCard(array $ticket, $can_edit) {
     }
     $ticket_id = intval($ticket['ticket_id']);
     $parts = mitTicketParts($ticket_id);
-    $can_bill = lookupUserPermission('module_sales') >= 2 && intval($ticket['ticket_client_id']);
+    // The Bill parts window works on the ticket, so it takes Support edit as well as Sales edit
+    $can_bill = lookupUserPermission('module_sales') >= 2 && lookupUserPermission('module_support') >= 2 && intval($ticket['ticket_client_id']);
     if (!$parts && !$can_edit) {
         return '';
     }
@@ -415,7 +448,8 @@ function mitTicketPartSave(array $ticket, array $post, $part_id = 0) {
     $ticket_id = intval($ticket['ticket_id']);
     $client_id = intval($ticket['ticket_client_id']);
     $reference = ticketReference($ticket);
-    $name = trim((string) ($post['name'] ?? ''));
+    // 200 characters at most: a billed part becomes an invoice line, and invoice_items.item_name is varchar(200)
+    $name = mb_substr(trim((string) ($post['name'] ?? '')), 0, 200);
     $qty = round((float) str_replace(',', '', (string) ($post['quantity'] ?? '0')), 2);
     if ($name === '' || $qty <= 0) {
         return [false, 'A part needs a name and a quantity.'];
@@ -442,7 +476,7 @@ function mitTicketPartSave(array $ticket, array $post, $part_id = 0) {
     }
     $vendor_id = intval($post['vendor_id'] ?? 0);
     $description = trim((string) ($post['description'] ?? ''));
-    $fields = "name = '" . escapeSql(mb_substr($name, 0, 255)) . "', description = " . ($description === '' ? 'NULL' : "'" . escapeSql($description) . "'") . ",
+    $fields = "name = '" . escapeSql($name) . "', description = " . ($description === '' ? 'NULL' : "'" . escapeSql($description) . "'") . ",
         quantity = $qty, unit_cost = " . ($cost === null ? 'NULL' : $cost) . ", unit_price = $price, tax_id = $tax_id, asset_id = $asset_id";
 
     if ($part_id) {
@@ -478,7 +512,7 @@ function mitTicketPartSave(array $ticket, array $post, $part_id = 0) {
     if ($source === 'order') {
         $proc_status = $old['proc_status'] ?? null;
         if ($old && $old['source'] === 'order' && $proc_status === 'waiting') {
-            mysqli_query($mysqli, "UPDATE mit_procurement_items SET name = '" . escapeSql(mb_substr($name, 0, 255)) . "', description = " . ($description === '' ? 'NULL' : "'" . escapeSql($description) . "'") . ", quantity = $qty, unit_cost = " . ($cost === null ? 'NULL' : $cost) . ",
+            mysqli_query($mysqli, "UPDATE mit_procurement_items SET name = '" . escapeSql($name) . "', description = " . ($description === '' ? 'NULL' : "'" . escapeSql($description) . "'") . ", quantity = $qty, unit_cost = " . ($cost === null ? 'NULL' : $cost) . ",
                 vendor_id = " . (isset(mitProcVendors()[$vendor_id]) ? $vendor_id : 0) . " WHERE item_id = " . intval($old['proc_item_id']));
         } elseif (!$old || $old['source'] !== 'order' || $proc_status === 'cancelled') {
             $proc_item_id = mitProcAddItem(['source' => 'ticket', 'ticket_id' => $ticket_id, 'client_id' => $client_id, 'project_id' => intval($ticket['ticket_project_id'] ?? 0),
@@ -541,34 +575,55 @@ function mitTicketPartsBill(array $ticket, array $part_ids, array $prices, $invo
         if (!$invoice) {
             return [0, "That invoice isn't one of this client's drafts."];
         }
-    } else {
-        $date = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $date) ? $date : date('Y-m-d');
-        $net_terms = intval(getFieldById('clients', $client_id, 'client_net_terms')) ?: intval($config_default_net_terms);
-        // The same numbering ITFlow uses (agent/post/ticket.php add_invoice_from_ticket)
-        mysqli_query($mysqli, "UPDATE settings SET config_invoice_next_number = LAST_INSERT_ID(config_invoice_next_number), config_invoice_next_number = config_invoice_next_number + 1 WHERE company_id = 1");
-        $number = mysqli_insert_id($mysqli);
-        mysqli_query($mysqli, "INSERT INTO invoices SET invoice_prefix = '" . escapeSql($config_invoice_prefix) . "', invoice_number = $number, invoice_scope = '" . escapeSql('Parts for ticket ' . ticketReference($ticket)) . "',
-            invoice_date = '$date', invoice_due = DATE_ADD('$date', INTERVAL $net_terms day), invoice_currency_code = '" . escapeSql($session_company_currency) . "',
-            invoice_category_id = " . intval($category_id) . ", invoice_status = 'Draft', invoice_url_key = '" . randomString(32) . "', invoice_client_id = $client_id");
-        $invoice_id = mysqli_insert_id($mysqli);
-        $invoice = ['invoice_prefix' => $config_invoice_prefix, 'invoice_number' => $number];
-        mysqli_query($mysqli, "INSERT INTO history SET history_status = 'Draft', history_description = '" . escapeSql('Invoice created from the parts on ticket ' . ticketReference($ticket)) . "', history_invoice_id = $invoice_id");
     }
-    $order = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COALESCE(MAX(item_order), 0) FROM invoice_items WHERE item_invoice_id = $invoice_id"))[0]);
+    // Every line worked out and checked before anything is written, so a refusal never leaves a half-made invoice
+    $lines = [];
     foreach ($parts as $part_id => $part) {
-        $price = isset($prices[$part_id]) && is_numeric(str_replace(',', '', (string) $prices[$part_id])) ? round((float) str_replace(',', '', (string) $prices[$part_id]), 2) : (float) $part['unit_price'];
+        $posted = str_replace([',', '$'], '', trim((string) ($prices[$part_id] ?? '')));
+        $price = $posted !== '' && is_numeric($posted) ? round((float) $posted, 2) : (float) $part['unit_price'];
         $qty = (float) $part['quantity'];
         $subtotal = round($price * $qty, 2);
-        $tax_percent = intval($part['tax_id']) ? (float) mysqli_fetch_row(mysqli_query($mysqli, "SELECT tax_percent FROM taxes WHERE tax_id = " . intval($part['tax_id'])))[0] : 0;
+        $tax_percent = intval($part['tax_id']) ? (float) (mysqli_fetch_row(mysqli_query($mysqli, "SELECT tax_percent FROM taxes WHERE tax_id = " . intval($part['tax_id'])))[0] ?? 0) : 0;
         $tax = round($subtotal * $tax_percent / 100, 2);
-        // No item_product_id: stock was already taken when the part was used
-        mysqli_query($mysqli, "INSERT INTO invoice_items SET item_name = '" . escapeSql($part['name']) . "', item_description = '" . escapeSql((string) $part['description']) . "',
-            item_quantity = $qty, item_price = $price, item_subtotal = $subtotal, item_tax = $tax, item_total = " . ($subtotal + $tax) . ", item_order = " . (++$order) . ",
-            item_tax_id = " . intval($part['tax_id']) . ", item_invoice_id = $invoice_id");
-        mysqli_query($mysqli, "UPDATE mit_ticket_parts SET invoice_id = $invoice_id, invoice_item_id = " . mysqli_insert_id($mysqli) . ", unit_price = $price, billed_at = NOW() WHERE part_id = " . intval($part_id));
+        // invoice_items money columns are decimal(15,2)
+        if ($price < 0 || abs($subtotal + $tax) >= 1e12) {
+            return [0, 'Check the price of ' . $part['name'] . ' - it is below zero or too large.'];
+        }
+        $lines[$part_id] = ['part' => $part, 'price' => $price, 'qty' => $qty, 'subtotal' => $subtotal, 'tax' => $tax];
     }
-    // The invoice's amount: its lines less its discount (as ITFlow's add-item does)
-    mysqli_query($mysqli, "UPDATE invoices SET invoice_amount = (SELECT COALESCE(SUM(item_total), 0) FROM invoice_items WHERE item_invoice_id = $invoice_id) - invoice_discount_amount WHERE invoice_id = $invoice_id");
+
+    mysqli_begin_transaction($mysqli);
+    try {
+        if (!$invoice_id) {
+            $date = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $date) ? $date : date('Y-m-d');
+            $net_terms = intval(getFieldById('clients', $client_id, 'client_net_terms')) ?: intval($config_default_net_terms);
+            // The same numbering ITFlow uses (agent/post/ticket.php add_invoice_from_ticket)
+            mysqli_query($mysqli, "UPDATE settings SET config_invoice_next_number = LAST_INSERT_ID(config_invoice_next_number), config_invoice_next_number = config_invoice_next_number + 1 WHERE company_id = 1");
+            $number = mysqli_insert_id($mysqli);
+            mysqli_query($mysqli, "INSERT INTO invoices SET invoice_prefix = '" . escapeSql($config_invoice_prefix) . "', invoice_number = $number, invoice_scope = '" . escapeSql('Parts for ticket ' . ticketReference($ticket)) . "',
+                invoice_date = '$date', invoice_due = DATE_ADD('$date', INTERVAL $net_terms day), invoice_currency_code = '" . escapeSql($session_company_currency) . "',
+                invoice_category_id = " . intval($category_id) . ", invoice_status = 'Draft', invoice_url_key = '" . randomString(32) . "', invoice_client_id = $client_id");
+            $invoice_id = mysqli_insert_id($mysqli);
+            $invoice = ['invoice_prefix' => $config_invoice_prefix, 'invoice_number' => $number];
+            mysqli_query($mysqli, "INSERT INTO history SET history_status = 'Draft', history_description = '" . escapeSql('Invoice created from the parts on ticket ' . ticketReference($ticket)) . "', history_invoice_id = $invoice_id");
+        }
+        $order = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT COALESCE(MAX(item_order), 0) FROM invoice_items WHERE item_invoice_id = $invoice_id"))[0]);
+        foreach ($lines as $part_id => $line) {
+            $part = $line['part'];
+            // No item_product_id: stock was already taken when the part was used. The name is at most 200 (item_name's size).
+            mysqli_query($mysqli, "INSERT INTO invoice_items SET item_name = '" . escapeSql(mb_substr($part['name'], 0, 200)) . "', item_description = '" . escapeSql((string) $part['description']) . "',
+                item_quantity = {$line['qty']}, item_price = {$line['price']}, item_subtotal = {$line['subtotal']}, item_tax = {$line['tax']}, item_total = " . ($line['subtotal'] + $line['tax']) . ", item_order = " . (++$order) . ",
+                item_tax_id = " . intval($part['tax_id']) . ", item_invoice_id = $invoice_id");
+            mysqli_query($mysqli, "UPDATE mit_ticket_parts SET invoice_id = $invoice_id, invoice_item_id = " . mysqli_insert_id($mysqli) . ", unit_price = {$line['price']}, billed_at = NOW() WHERE part_id = " . intval($part_id));
+        }
+        // The invoice's amount: its lines less its discount (as ITFlow's add-item does)
+        mysqli_query($mysqli, "UPDATE invoices SET invoice_amount = (SELECT COALESCE(SUM(item_total), 0) FROM invoice_items WHERE item_invoice_id = $invoice_id) - invoice_discount_amount WHERE invoice_id = $invoice_id");
+        mysqli_commit($mysqli);
+    } catch (Throwable $e) {
+        mysqli_rollback($mysqli);
+        error_log('mitTicketPartsBill: ' . $e->getMessage());
+        return [0, 'The parts could not be billed - nothing was changed.'];
+    }
     $reference = $invoice['invoice_prefix'] . $invoice['invoice_number'];
     mysqli_query($mysqli, "INSERT INTO ticket_replies SET ticket_reply = '" . mitSqlHtml('Billed ' . count($parts) . ' part' . (count($parts) === 1 ? '' : 's') . ' on <a href="invoice.php?invoice_id=' . $invoice_id . '">' . escapeHtml($reference) . '</a>.') . "',
         ticket_reply_type = 'Internal', ticket_reply_time_worked = '00:00:00', ticket_reply_by = " . intval($session_user_id) . ", ticket_reply_ticket_id = $ticket_id");

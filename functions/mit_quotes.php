@@ -427,6 +427,12 @@ function mitQuoteItemExtra($quote_id, $item_id) {
 function mitQuoteItemSave($item_id, array $post, array $files, $is_new = false) {
     global $mysqli;
     $item_id = intval($item_id);
+    // A new line picked from a product keeps it in ITFlow's own quote_items.item_product_id (ITFlow's add_quote_item
+    // leaves it 0), so quote -> invoice "Send to procurement" knows the product: its vendor, and hardware ticked
+    $product_id = intval($post['product_id'] ?? 0);
+    if ($item_id && $is_new && $product_id && getFieldById('products', $product_id, 'product_id')) {
+        mysqli_query($mysqli, "UPDATE quote_items SET item_product_id = $product_id WHERE item_id = $item_id");
+    }
     if (!$item_id || !mitQuoteColumnsReady()) {
         return;
     }
@@ -456,9 +462,14 @@ function mitQuoteItemSave($item_id, array $post, array $files, $is_new = false) 
     }
 }
 
-/** Hook in a quote copy: the new line gets the old one's cost, method, % and its own copy of the image. */
+/** Hook in a quote copy: the new line gets the old one's product, cost, method, % and its own copy of the image. */
 function mitQuoteItemCopy($from_item_id, $to_item_id) {
     global $mysqli;
+    // The product too (ITFlow's copy leaves item_product_id out)
+    $product_id = intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT item_product_id FROM quote_items WHERE item_id = " . intval($from_item_id)))[0] ?? 0);
+    if ($product_id) {
+        mysqli_query($mysqli, "UPDATE quote_items SET item_product_id = $product_id WHERE item_id = " . intval($to_item_id));
+    }
     if (!mitQuoteColumnsReady()) {
         return;
     }

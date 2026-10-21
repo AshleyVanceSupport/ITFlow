@@ -35,6 +35,7 @@ if (isset($_POST['mit_proc_from_invoice'])) {
         if (!$item) {
             continue;
         }
+        $item = mitProcInvoiceLineProducts([$item])[0];
         $left = (float) $item['item_quantity'] - ($queued[intval($item_id)] ?? 0);
         $qty = min($left, round((float) str_replace(',', '', (string) ($line['qty'] ?? '0')), 2));
         if ($qty <= 0) {

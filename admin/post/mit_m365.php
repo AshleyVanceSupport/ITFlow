@@ -20,7 +20,8 @@ if (isset($_POST['mit_m365_start'])) {
     $_SESSION['mit_m365_device_expires'] = time() + intval($start['expires_in'] ?? 900);
     // 'update': bring the existing app up to today's permissions; 'calendar': make the calendar-only app for Outlook;
     // otherwise create the app - never a second one over the first (Outlook links and the mailbox are tied to it)
-    $purpose = in_array($_POST['purpose'] ?? '', ['update', 'calendar'], true) ? $_POST['purpose'] : 'create';
+    // 'calendar_update': bring the calendar-only app up to today's permissions
+    $purpose = in_array($_POST['purpose'] ?? '', ['update', 'calendar', 'calendar_update'], true) ? $_POST['purpose'] : 'create';
     if ($purpose === 'create' && mitM365App()) {
         mitM365Json(['error' => 'ITFlow already has its Microsoft 365 app - Remove it first to set up a new one.'], 409);
     }
@@ -64,6 +65,17 @@ if (isset($_POST['mit_m365_poll'])) {
         }
         logAudit("Settings", "Edit", "$session_name set up the calendar-only Microsoft 365 app for Outlook (" . escapeSql($calendar['client_id']) . ")");
         flashAlert("Calendar-only app created. Staff who had connected Outlook are asked to <strong>Reconnect</strong> once (Account > Outlook calendar); their calendars sync again after that.");
+        mitM365Json(['ok' => true]);
+    }
+    if ($purpose === 'calendar_update') {
+        try {
+            $calendar = mitM365UpdateCalendarPermissions($poll['token']);
+        } catch (Throwable $e) {
+            logApp("Microsoft 365", "error", "Updating the calendar app's permissions failed: " . $e->getMessage());
+            mitM365Json(['error' => $e->getMessage()], 400);
+        }
+        logAudit("Settings", "Edit", "$session_name updated the calendar-only Microsoft 365 app permissions (" . escapeSql($calendar['client_id']) . ")");
+        flashAlert("Calendar app permissions updated.");
         mitM365Json(['ok' => true]);
     }
     if ($purpose === 'create' && mitM365App()) {

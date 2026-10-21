@@ -133,6 +133,9 @@ function mitTsHolidayChanged($old_date, $old_name, $new_date, $new_name, $fill_a
             }
         }
     }
+    if ($fixed) {
+        mitTsForget();
+    }
     $parts = [];
     if ($fixed) {
         $parts[] = "$fixed timesheet day" . ($fixed === 1 ? '' : 's') . ' updated';
@@ -150,5 +153,5 @@ function mitTsHolidayChanged($old_date, $old_name, $new_date, $new_name, $fill_a
 function mitTsHolidayLocked($user_id, $date, ?array $period = null) {
     $period = $period ?: mitTsPeriodFor($date);
     $sheet = mitTsSheet($user_id, $period);
-    return in_array($sheet['status'], ['submitted', 'approved'], true) || mitTsApprovedDates($user_id, $date, $date);
+    return in_array($sheet['status'], ['submitted', 'approved'], true) || mitTsLockedDates($user_id, $date, $date, ['submitted', 'approved']);
 }

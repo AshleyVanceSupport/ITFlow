@@ -100,6 +100,10 @@ if (isset($_POST['mit_po_create']) || isset($_POST['mit_po_add_items']) || isset
             redirect();
         }
         $po_id = mitPoCreate($item_ids, $vendor_id);
+        if (!$po_id) {
+            flashAlert('The purchase order was not created - someone else is ordering right now, or the items are no longer waiting. Try again.', 'error');
+            redirect();
+        }
         flashAlert('Draft purchase order created - check the quantities and costs, then submit it');
         redirect("mit_purchase_order.php?po_id=$po_id");
     }
@@ -120,16 +124,18 @@ if (isset($_POST['mit_po_create']) || isset($_POST['mit_po_add_items']) || isset
             flashAlert('Pick a vendor.', 'error');
             redirect();
         }
-        mysqli_query($mysqli, "UPDATE mit_procurement_items SET vendor_id = $vendor_id WHERE item_id IN (" . implode(',', $item_ids) . ")");
+        // Still waiting: an item put on a PO meanwhile keeps the PO's vendor
+        mysqli_query($mysqli, "UPDATE mit_procurement_items SET vendor_id = $vendor_id WHERE item_id IN (" . implode(',', $item_ids) . ") AND status = 'waiting'");
         logAudit('Procurement', 'Edit', escapeSql(mitProcWho() . ' set the vendor of ' . count($item_ids) . ' item(s) to order'));
         flashAlert(count($item_ids) . ' item' . (count($item_ids) === 1 ? '' : 's') . ' set to that vendor');
         redirect();
     }
 
-    // Not needed
-    mysqli_query($mysqli, "UPDATE mit_procurement_items SET status = 'cancelled' WHERE item_id IN (" . implode(',', $item_ids) . ")");
-    logAudit('Procurement', 'Edit', escapeSql(mitProcWho() . ' took ' . count($item_ids) . ' item(s) off the list to order'));
-    flashAlert(count($item_ids) . ' item' . (count($item_ids) === 1 ? '' : 's') . ' taken off the list', 'error');
+    // Not needed - only items still waiting (one put on a PO meanwhile stays on it)
+    mysqli_query($mysqli, "UPDATE mit_procurement_items SET status = 'cancelled' WHERE item_id IN (" . implode(',', $item_ids) . ") AND status = 'waiting'");
+    $cancelled = max(0, mysqli_affected_rows($mysqli));
+    logAudit('Procurement', 'Edit', escapeSql(mitProcWho() . " took $cancelled item(s) off the list to order"));
+    flashAlert("$cancelled item" . ($cancelled === 1 ? '' : 's') . ' taken off the list', 'error');
     redirect();
 }
 

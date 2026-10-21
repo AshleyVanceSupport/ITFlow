@@ -1,7 +1,7 @@
 <?php
 
 /*
- * Mountaineer IT - purchase order settings (functions/mit_procurement.php), from Admin > Settings > Invoice.
+ * Mountaineer IT - purchase order settings (functions/mit_procurement.php), from Admin > Settings > Procurement.
  */
 
 defined('FROM_POST_HANDLER') || die("Direct file access is not allowed");

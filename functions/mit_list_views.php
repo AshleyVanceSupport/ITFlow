@@ -66,7 +66,7 @@ function mitListViewRestore($page) {
     }
     $preference = "listview.$page";
 
-    // Reset carries the session's CSRF token, so another site cannot wipe someone's saved view with a link or image
+    // Reset carries its own token (mitListViewResetToken), so another site cannot wipe someone's saved view with a link or image
     if (isset($_GET['mit_reset_view']) && hash_equals(mitListViewResetToken(), (string) $_GET['mit_reset_view'])) {
         unset($_GET['mit_reset_view']);
         $mit_list_view_restored = 'reset';

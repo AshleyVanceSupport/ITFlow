@@ -253,6 +253,7 @@ function mitBoardMove($ticket_id, $board_id, $reason = '', $unassign = false, $h
     if (!mitBoardsReady() || !isset($boards[$board_id])) {
         return [false, 'Pick a board.'];
     }
+    $who = stripslashes((string) $session_name); // it is kept SQL-escaped
     $from = mitBoardOf($ticket_id);
     $to_name = $boards[$board_id]['board_name'];
     if ($from === $board_id && $how !== 'created') {
@@ -268,9 +269,9 @@ function mitBoardMove($ticket_id, $board_id, $reason = '', $unassign = false, $h
     $verb = $how === 'escalated' ? 'escalated the ticket' : ($how === 'created' ? 'opened the ticket' : 'moved the ticket');
     $reason = trim((string) $reason);
     if ($how === 'created') {
-        logTicketHistory($ticket_id, escapeSql("$session_name put the ticket on the $to_name board"));
+        logTicketHistory($ticket_id, escapeSql("$who put the ticket on the $to_name board"));
     } else {
-        logTicketHistory($ticket_id, escapeSql("$session_name $verb from $from_name to $to_name" . ($reason !== '' ? ": $reason" : '')));
+        logTicketHistory($ticket_id, escapeSql("$who $verb from $from_name to $to_name" . ($reason !== '' ? ": $reason" : '')));
         $note = ($how === 'escalated' ? 'Escalated' : 'Moved') . " from $from_name to $to_name." . ($reason !== '' ? "\n\n$reason" : '');
         mysqli_query($mysqli, "INSERT INTO ticket_replies SET ticket_reply = '" . mitSqlHtml(nl2br(escapeHtml($note))) . "', ticket_reply_type = 'Internal',
             ticket_reply_time_worked = '00:00:00', ticket_reply_by = $by, ticket_reply_ticket_id = $ticket_id");
@@ -282,7 +283,7 @@ function mitBoardMove($ticket_id, $board_id, $reason = '', $unassign = false, $h
         }
     }
     $ticket = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT ticket_prefix, ticket_number, ticket_client_id FROM tickets WHERE ticket_id = $ticket_id"));
-    logAudit('Ticket', 'Edit', "$session_name $verb " . ticketReference($ticket ?: []) . " to the $to_name board", intval($ticket['ticket_client_id'] ?? 0), $ticket_id);
+    logAudit('Ticket', 'Edit', escapeSql("$who $verb " . ticketReference($ticket ?: []) . " to the $to_name board"), intval($ticket['ticket_client_id'] ?? 0), $ticket_id);
     $told = mitBoardNotify($ticket_id, $board_id, $how === 'created' ? 'new' : $how, $reason, $by);
     $given = mitBoardAutoAssign($ticket_id);
     return [true, ($how === 'escalated' ? 'Escalated' : 'Moved') . " to $to_name" . ($told ? ' - ' . implode(', ', $told) . ' told' : '')
@@ -304,7 +305,7 @@ function mitBoardNotify($ticket_id, $board_id, $why, $reason, $by_user_id) {
     $reference = ticketReference($ticket);
     $client_id = intval($ticket['ticket_client_id']);
     $url = '/agent/' . ticketUrl($ticket['ticket_id'], $client_id);
-    $who = $by_user_id ? (string) $session_name : '';
+    $who = $by_user_id ? stripslashes((string) $session_name) : ''; // it is kept SQL-escaped
     $line = $why === 'new'
         ? "New ticket on $board[board_name]: $reference - $ticket[ticket_subject]"
         : ($who ?: 'Someone') . ($why === 'escalated' ? ' escalated ' : ' moved ') . "$reference to $board[board_name] - $ticket[ticket_subject]";
@@ -439,39 +440,72 @@ function mitBoardOutOfOffice($user_id) {
  * Who would get a ticket on this board next, in turn after the last one: members in the rotation who are active agents,
  * can see the client, are not on leave today or Out of office now, and hold fewer than the board's limit of its open
  * tickets. Returns [user id or 0, [user id => why skipped]].
+ * Within one cron sweep ($GLOBALS['mit_board_sweep_cache'] set by mitBoardAssignSweep) a board's members and open counts,
+ * each member's leave / Out of office and client access are read once; a ticket handed out adds to its agent's count.
  */
 function mitBoardNextMember(array $board, $client_id) {
     global $mysqli;
     $board_id = intval($board['board_id']);
     $max = $board['board_assign_max'] === null ? 0 : intval($board['board_assign_max']);
-    $held = [];
-    if ($max) {
-        $sql = mysqli_query($mysqli, "SELECT ticket_assigned_to, COUNT(*) FROM tickets WHERE " . TICKET_OPEN_SQL . " AND ticket_assigned_to > 0
-            AND " . mitBoardSql() . " = $board_id GROUP BY ticket_assigned_to");
+    $sweep = is_array($GLOBALS['mit_board_sweep_cache'] ?? null);
+    $cache = null;
+    if ($sweep) {
+        $cache = &$GLOBALS['mit_board_sweep_cache'];
+    }
+    if ($sweep && isset($cache['boards'][$board_id])) {
+        [$held, $members] = $cache['boards'][$board_id];
+    } else {
+        $held = [];
+        if ($max) {
+            $sql = mysqli_query($mysqli, "SELECT ticket_assigned_to, COUNT(*) FROM tickets WHERE " . TICKET_OPEN_SQL . " AND ticket_assigned_to > 0
+                AND " . mitBoardSql() . " = $board_id GROUP BY ticket_assigned_to");
+            while ($row = mysqli_fetch_row($sql)) {
+                $held[intval($row[0])] = intval($row[1]);
+            }
+        }
+        $members = [];
+        $sql = mysqli_query($mysqli, "SELECT u.user_id FROM mit_board_members m JOIN users u ON u.user_id = m.user_id
+            WHERE m.board_id = $board_id AND m.member_rotation = 1 AND u.user_type = 1 AND u.user_status = 1 AND u.user_archived_at IS NULL ORDER BY u.user_id");
         while ($row = mysqli_fetch_row($sql)) {
-            $held[intval($row[0])] = intval($row[1]);
+            $members[] = intval($row[0]);
+        }
+        if ($sweep) {
+            $cache['boards'][$board_id] = [$held, $members];
         }
     }
-    $members = [];
-    $sql = mysqli_query($mysqli, "SELECT u.user_id FROM mit_board_members m JOIN users u ON u.user_id = m.user_id
-        WHERE m.board_id = $board_id AND m.member_rotation = 1 AND u.user_type = 1 AND u.user_status = 1 AND u.user_archived_at IS NULL ORDER BY u.user_id");
-    while ($row = mysqli_fetch_row($sql)) {
-        $members[] = intval($row[0]);
-    }
+    $away = function ($user_id) use (&$cache, $sweep) {
+        if ($sweep && isset($cache['away'][$user_id])) {
+            return $cache['away'][$user_id];
+        }
+        $why = mitBoardOnLeaveToday($user_id) ? 'on leave today' : (mitBoardOutOfOffice($user_id) ? 'out of office' : '');
+        if ($sweep) {
+            $cache['away'][$user_id] = $why;
+        }
+        return $why;
+    };
     // In turn: those after the last one, then from the start
     $last = intval($board['board_assign_last']);
     $after = array_values(array_filter($members, function ($id) use ($last) { return $id > $last; }));
     $order = array_merge($after, array_values(array_diff($members, $after)));
     $skipped = [];
+    $sees = function ($user_id) use (&$cache, $sweep, $client_id) {
+        $key = "$user_id-" . intval($client_id);
+        if ($sweep && isset($cache['sees'][$key])) {
+            return $cache['sees'][$key];
+        }
+        $yes = mitAgentCanSeeClient($user_id, $client_id);
+        if ($sweep) {
+            $cache['sees'][$key] = $yes;
+        }
+        return $yes;
+    };
     foreach ($order as $user_id) {
-        if (!mitAgentCanSeeClient($user_id, $client_id)) {
+        if (!$sees($user_id)) {
             $skipped[$user_id] = 'cannot see the client';
         } elseif ($max && ($held[$user_id] ?? 0) >= $max) {
             $skipped[$user_id] = "holds $max open tickets here";
-        } elseif (mitBoardOnLeaveToday($user_id)) {
-            $skipped[$user_id] = 'on leave today';
-        } elseif (mitBoardOutOfOffice($user_id)) {
-            $skipped[$user_id] = 'out of office';
+        } elseif (($why = $away($user_id)) !== '') {
+            $skipped[$user_id] = $why;
         } else {
             return [$user_id, $skipped];
         }
@@ -519,6 +553,9 @@ function mitBoardAutoAssign($ticket_id) {
                 if ($ok) {
                     mysqli_query($mysqli, "UPDATE mit_boards SET board_assign_last = $user_id WHERE board_id = $board_id");
                     $given = $user_id;
+                    if (isset($GLOBALS['mit_board_sweep_cache']['boards'][$board_id])) {
+                        $GLOBALS['mit_board_sweep_cache']['boards'][$board_id][0][$user_id] = ($GLOBALS['mit_board_sweep_cache']['boards'][$board_id][0][$user_id] ?? 0) + 1;
+                    }
                 }
             }
         }
@@ -549,10 +586,15 @@ function mitBoardAssignSweep() {
         AND mb.board_assign_since IS NOT NULL AND COALESCE(b.board_set_at, tickets.ticket_created_at) >= mb.board_assign_since
         ORDER BY tickets.ticket_id LIMIT 100");
     $given = 0;
-    while ($row = mysqli_fetch_row($sql)) {
-        if (mitBoardAutoAssign(intval($row[0]))) {
-            $given++;
+    $GLOBALS['mit_board_sweep_cache'] = ['boards' => [], 'away' => [], 'sees' => []]; // read once per board / member in this run (mitBoardNextMember)
+    try {
+        while ($row = mysqli_fetch_row($sql)) {
+            if (mitBoardAutoAssign(intval($row[0]))) {
+                $given++;
+            }
         }
+    } finally {
+        unset($GLOBALS['mit_board_sweep_cache']);
     }
     return $given;
 }
@@ -641,13 +683,30 @@ function mitBoardSwitcher(callable $filter_url) {
     return $html . '<div class="dropdown-divider"></div><span class="dropdown-item-text small text-body-secondary">Counts are open tickets</span></div></div>';
 }
 
-/** The ticket list and board cards: a small board tag - left out when the list shows one board. */
-function mitBoardListTag($ticket_id) {
+/**
+ * The ticket list and board cards: a small board tag - left out when the list shows one board. $page_ids = the page's
+ * ticket ids, whose boards are read in one query the first time (not one per row).
+ */
+function mitBoardListTag($ticket_id, array $page_ids = []) {
+    global $mysqli;
+    static $of = [];
     $boards = mitBoards();
     if (count($boards) < 2 || isset($boards[intval($_GET['board'] ?? 0)])) {
         return '';
     }
-    $board = $boards[mitBoardOf($ticket_id)] ?? null;
+    $ticket_id = intval($ticket_id);
+    $missing = array_diff(array_map('intval', $page_ids), array_keys($of));
+    if ($missing) {
+        $default = mitBoardDefaultId();
+        foreach ($missing as $id) {
+            $of[$id] = $default;
+        }
+        $sql = mysqli_query($mysqli, "SELECT ticket_id, board_id FROM mit_ticket_boards WHERE ticket_id IN (" . implode(',', $missing) . ")");
+        while ($row = mysqli_fetch_row($sql)) {
+            $of[intval($row[0])] = isset($boards[intval($row[1])]) ? intval($row[1]) : $default;
+        }
+    }
+    $board = $boards[$of[$ticket_id] ?? mitBoardOf($ticket_id)] ?? null;
     return $board ? mitBoardStyle() . '<span class="text-nowrap" title="Board"><span class="mit-board-dot me-1" style="--mit-board:' . escapeHtml($board['board_color']) . '"></span>'
         . escapeHtml($board['board_name']) . '</span>' : '';
 }
