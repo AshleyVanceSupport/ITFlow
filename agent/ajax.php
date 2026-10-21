@@ -577,6 +577,7 @@ if (isset($_POST['invoice_set_notes'])) {
 
     $invoice_id = intval($_POST['invoice_id']);
     $note = escapeSql($_POST['note']);
+    if (function_exists('mitQboInvoiceLock') && mitQboInvoiceLock($invoice_id) !== '') { http_response_code(409); exit; } // Mountaineer IT: locked while in a QuickBooks batch
 
     $sql = mysqli_query($mysqli, "SELECT invoice_client_id, invoice_number, invoice_prefix FROM invoices WHERE invoice_id = $invoice_id");
     $row = mysqli_fetch_assoc($sql);
@@ -1589,6 +1590,7 @@ if (isset($_POST['update_invoice_items_order'])) {
     $positions = $_POST['positions'];
     $invoice_id = intval($_POST['invoice_id']);
     enforceClientAccess(intval(getFieldById('invoices', $invoice_id, 'invoice_client_id'))); // the invoice's own client
+    if (function_exists('mitQboInvoiceLock') && mitQboInvoiceLock($invoice_id) !== '') { http_response_code(409); exit; } // Mountaineer IT: locked while in a QuickBooks batch
 
     foreach ($positions as $position) {
         $id = intval($position['id']);

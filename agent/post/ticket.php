@@ -1501,6 +1501,7 @@ if (isset($_POST['add_invoice_from_ticket'])) {
     }
 
     $invoice_id = intval($_POST['invoice_id'] ?? 0);
+    if ($invoice_id && function_exists('mitQboGuardInvoice')) { mitQboGuardInvoice($invoice_id); } // Mountaineer IT: locked while in a QuickBooks batch
     $date_input = (string) ($_POST['date'] ?? '');
     $date = ($parsed_date = DateTime::createFromFormat('!Y-m-d', $date_input)) && $parsed_date->format('Y-m-d') === $date_input ? $date_input : date('Y-m-d');
     $category = intval($_POST['category'] ?? 0);

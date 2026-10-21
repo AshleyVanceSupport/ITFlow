@@ -131,7 +131,7 @@ model: see DEPLOYMENT.md.
   client's own customer, portal documents / files record the portal user id; `guest_view_ticket.php` avatar path;
   `guest_download_file.php` checks the item first, quoted filename. Stage 3 (26.10.96): `agent/invoice.php` / `quote.php` /
   `recurring_invoice.php` draw the logo only when one is set (an empty name asked for the uploads/settings/ folder - 403);
-  `client/login_reset.php` reads the user row with `?? 0`; `agent/user/post.php` HTTP_REFERER `?? ''`.
+  `client/login_reset.php` reads the user row with `?? 0`; `agent/user/post.php` HTTP_REFERER `?? ''`. 26.10.98: `agent/post/invoice_model.php` discounts `?? 0` (add_invoice posts no recurring_discount).
   These fixes carry no "Mountaineer IT" marker (they are plain bug fixes, meant to match upstream's
   eventual fix) - find them with `git log`.
   When an upstream release fixes the same thing, resolve conflicts in favour of upstream.
@@ -523,6 +523,36 @@ model: see DEPLOYMENT.md.
   the ticket page gets the script through `mitTicketLayoutHtml` (no extra line in agent/ticket.php); one line each in
   `agent/asset.php` and `agent/modals/asset/asset.php` (`mitNinjaAssetButton`). A test install may set `MIT_NINJA_API_BASE` in
   config.php to point at a stand-in API (never on a real one).
+- QuickBooks Online (Oct 2026, first release - steps 1-3 of the billing plan; later: usage billing on agreement lines with an
+  inbound API, monthly snapshot and review, then source connectors NinjaOne / Bitwarden / Ingram Micro / Parallels / M365):
+  `functions/mit_qbo.php` (connection - Intuit OAuth 2.0 code flow, tokens via `mitEncryptSecret`, refresh under
+  `mitLock('qbo_token')`; API v3 JSON, minorversion 75, `mitQboApi` / `mitQboQueryAll`; mappings; `mitQboInvoicePayload` - number
+  = prefix + number (QuickBooks needs "Custom transaction numbers" on), US tax = TAX / NON lines + one TxnTaxCodeRef, discount +
+  credit as one discount line) and `functions/mit_qbo_billing.php` (required from it: approvals = sha256 fingerprint of the
+  invoice + lines in `mit_invoice_approvals`, "changed" when it differs - no hooks in ITFlow's edit paths for that; batches;
+  locks; send; take out = void (refused while paid there) or unlink -> Draft + unapproved, the sync's payment deleted; payments
+  back = one ITFlow payment per sent entry, method 'QuickBooks Online', = paid there (all of ITFlow's amount when the balance
+  there is 0) less other ITFlow payments, then `updateInvoiceStatusFromPayments`). Tables M031 `mit_qbo_customers` / `_items` /
+  `_tax_codes` (CASCADE), `mit_invoice_approvals`, `mit_qbo_batches`, `mit_qbo_batch_invoices` (payment_id SET NULL); settings
+  `mit_settings` qbo_*. Permission: pages Sales view, approve / batch / send / take out Financial edit (`mitQboCan`). Pages
+  Admin > Integrations > QuickBooks Online `admin/mit_qbo.php` (handlers `admin/post/mit_qbo.php`, Intuit returns to
+  `admin/mit_qbo_callback.php` - the redirect URI), Billing > Invoice Approvals `agent/mit_invoice_approvals.php`, Billing >
+  QuickBooks Batches `agent/mit_qbo_batches.php` + `agent/mit_qbo_batch.php` (handlers `agent/post/mit_qbo.php`; GET
+  `mit_invoice_approve` / `mit_invoice_unapprove` with the token from the invoice strip). Menus: `admin/includes/mit_integrations_nav.php`,
+  `agent/includes/mit_billing_nav.php` (shown once a client ID is saved; counts awaiting / ready). Hooks (one guarded line each):
+  `agent/post/invoice.php` `mitQboGuardInvoice` in edit_invoice, mark non-billable, cancel, delete, add / edit / delete item,
+  add / remove ticket, `mitQboGuardEmail` in email_invoice (quick send too); `agent/ajax.php` invoice_set_notes and item
+  reorder (409 when locked); `agent/post/payment.php` `mitQboGuardPayment` add_payment / add_payment_stripe, `mitQboGuardInvoice`
+  apply_credit, `mitQboGuardPaymentEdit` edit / delete / refund, bulk payment skips invoices in QuickBooks; `agent/post/ticket.php`
+  add_invoice_from_ticket onto an existing invoice; `api/v1/invoice_items/create.php` (refused as not found); our
+  `mitTicketPartsBill`; `cron/nightly_tasks.php` reminders + late fees skipped and recurring auto-send off while connected
+  (`mitQboHandlesInvoiceMail`), same auto-send line in `agent/post/recurring_invoice.php` force; `agent/invoice.php`
+  `mitQboInvoiceBar` (strip above the items; its `<style>` hides email / edit / payment buttons - the handlers refuse anyway);
+  `agent/invoices.php` `mitQboResultIds($sql)` before the loop + `mitQboListBadge` by the number. Cron job `mit_qbo_sync` hourly
+  (`cron/mit_qbo_sync.php`, entry in `includes/cron_jobs.php`; fails when no payment account is set). The test install has a
+  stand-in at `qbo-mock/index.php` (not in the repo; `MIT_QBO_AUTH_URL` / `_TOKEN_URL` / `_REVOKE_URL` / `_API_BASE` in its
+  config.php - never on a real one); smoke `10-qbo.spec.js`. Not yet: portal / guest Stripe pay is not blocked for invoices in
+  QuickBooks (turn ITFlow's Stripe off), statements still come from ITFlow.
 - Project tickets kept apart (Oct 2026): `functions/mit_projects.php` (ours) - a ticket in a project (ITFlow's
   `ticket_project_id`) is off the Tickets board / client tab (`mitProjectTicketsShows` adds `ticket_project_id = 0` to each
   view of `agent/tickets.php` plus a "Projects" view, unless the Project filter is set), the Dispatch queue + its menu count

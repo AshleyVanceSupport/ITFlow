@@ -206,6 +206,11 @@ break stock ITFlow, and lists what stops working after a move.
 - **NinjaOne** – the sync, the mapping page and the NinjaOne buttons go (the mapping and device links stay in the
   `mit_ninja_*` tables). The assets it made are ordinary ITFlow assets and stay, with the `[NinjaOne Sync]` lines in
   their notes - so the n8n workflow picks them up again if you go back to it.
+- **QuickBooks Online** – disconnect it first (Admin > Integrations > QuickBooks Online). Stock ITFlow has no invoice
+  approvals, batches or QuickBooks link: invoices in batches unlock, ITFlow's own invoice emails, reminders, late fees and
+  recurring auto-send come back, and payments made in QuickBooks stop coming back. Payments already brought back are
+  ordinary ITFlow payments (method "QuickBooks Online") and stay; the approvals, batches and mappings stay unused in `mit_qbo_*` /
+  `mit_invoice_approvals`.
 - **Email reply recipients** – an email reply goes to the contact and every watcher again, as stock ITFlow does; the
   per-ticket choices stay unused in `mit_ticket_mail_choices`.
 - **Modern look** – pages (and the sign-in screen) go back to ITFlow's own look, without the client count tiles and header contact line; the Look

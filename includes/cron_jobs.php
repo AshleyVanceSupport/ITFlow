@@ -147,6 +147,15 @@ function cronJobRegistry(): array
             'interval_minutes' => 60,
         ],
         [
+            // Mountaineer IT (functions/mit_qbo_billing.php)
+            'name' => 'mit_qbo_sync',
+            'label' => 'QuickBooks Online Payments',
+            'script' => 'mit_qbo_sync.php',
+            'description' => 'Brings payments made in QuickBooks Online back to the ITFlow invoices sent there, so balances and statuses follow. Does nothing until QuickBooks Online is connected (Admin > Integrations).',
+            'schedule' => 'Interval',
+            'interval_minutes' => 60,
+        ],
+        [
             // Mountaineer IT (functions/mit_projects.php)
             'name' => 'mit_project_tickets',
             'label' => 'Project Ticket SLAs',

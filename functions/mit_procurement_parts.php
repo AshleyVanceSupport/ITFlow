@@ -575,6 +575,9 @@ function mitTicketPartsBill(array $ticket, array $part_ids, array $prices, $invo
         if (!$invoice) {
             return [0, "That invoice isn't one of this client's drafts."];
         }
+        if (function_exists('mitQboInvoiceLock') && ($why = mitQboInvoiceLock($invoice_id)) !== '') {
+            return [0, $why];
+        }
     }
     // Every line worked out and checked before anything is written, so a refusal never leaves a half-made invoice
     $lines = [];

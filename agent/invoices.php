@@ -329,6 +329,7 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
                 </thead>
                 <tbody>
                 <?php
+                $mit_qbo_ids = function_exists('mitQboResultIds') ? mitQboResultIds($sql) : []; // Mountaineer IT: QuickBooks badges
 
                 while ($row = mysqli_fetch_assoc($sql)) {
                     $invoice_id = intval($row['invoice_id']);
@@ -398,6 +399,7 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
                             <a href="invoice.php?client_id=<?= $client_id ?>&invoice_id=<?= $invoice_id ?>">
                             <?= "$invoice_prefix$invoice_number" ?>
                             </a>
+                            <?= function_exists('mitQboListBadge') ? mitQboListBadge($invoice_id, $mit_qbo_ids) : '' // Mountaineer IT ?>
                         </td>
                         <td><?= $invoice_scope_display ?></td>
                         <?php if (!$client_url) { ?>

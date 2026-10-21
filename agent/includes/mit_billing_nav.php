@@ -1,8 +1,9 @@
 <?php
 /*
- * Mountaineer IT - Unbilled Parts in the agent side menu's BILLING section (agent/mit_unbilled_parts.php,
- * functions/mit_procurement_parts.php), required from agent/includes/side_nav.php after Products. Follows the
- * Sales permission (the section already needs Sales View); needs the Procurement module switched on, which keeps parts.
+ * Mountaineer IT - our entries in the agent side menu's BILLING section, required from agent/includes/side_nav.php after
+ * Products (the section already needs Sales View):
+ * - Unbilled Parts (agent/mit_unbilled_parts.php, functions/mit_procurement_parts.php) - needs the Procurement module, which keeps parts.
+ * - Invoice Approvals and QuickBooks Batches (functions/mit_qbo_billing.php) - once QuickBooks Online is set up (Admin > Integrations).
  */
 
 if (function_exists('mitUnbilledPartsCount') && mitProcOn() && mitTicketPartsReady()) {
@@ -14,6 +15,30 @@ if (function_exists('mitUnbilledPartsCount') && mitProcOn() && mitTicketPartsRea
             <p>
                 Unbilled Parts
                 <?php if ($mit_unbilled) { ?><span class="right badge text-light" data-bs-toggle="tooltip" title="Parts on tickets not billed yet"><?= $mit_unbilled ?></span><?php } ?>
+            </p>
+        </a>
+    </li>
+<?php }
+
+if (function_exists('mitQboReady') && mitQboReady() && (mitQboConnected() || mitQboSettings()['client_id'] !== '')) {
+    $mit_page = basename($_SERVER['PHP_SELF']);
+    $mit_qbo_counts = mitNavCachedCount('qbo:' . clientScopeSql('invoices.invoice_client_id'), 'mitQboNavCounts',
+        in_array($mit_page, ['mit_invoice_approvals.php', 'mit_qbo_batches.php'], true)); ?>
+    <li class="nav-item">
+        <a href="/agent/mit_invoice_approvals.php" class="nav-link <?= $mit_page === 'mit_invoice_approvals.php' ? 'active' : '' ?>">
+            <i class="nav-icon fas fa-clipboard-check"></i>
+            <p>
+                Invoice Approvals
+                <?php if ($mit_qbo_counts['awaiting']) { ?><span class="right badge text-light" data-bs-toggle="tooltip" title="Draft invoices awaiting approval"><?= $mit_qbo_counts['awaiting'] ?></span><?php } ?>
+            </p>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a href="/agent/mit_qbo_batches.php" class="nav-link <?= in_array($mit_page, ['mit_qbo_batches.php', 'mit_qbo_batch.php'], true) ? 'active' : '' ?>">
+            <i class="nav-icon fas fa-layer-group"></i>
+            <p>
+                QuickBooks Batches
+                <?php if ($mit_qbo_counts['ready']) { ?><span class="right badge text-light" data-bs-toggle="tooltip" title="Approved invoices waiting for a batch"><?= $mit_qbo_counts['ready'] ?></span><?php } ?>
             </p>
         </a>
     </li>

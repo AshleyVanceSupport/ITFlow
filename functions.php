@@ -53,6 +53,7 @@ require_once __DIR__ . '/functions/service.php';
 require_once __DIR__ . '/functions/mit_common.php';
 require_once __DIR__ . '/functions/mit_calendar.php';
 require_once __DIR__ . '/functions/mit_m365.php';
+require_once __DIR__ . '/functions/mit_qbo.php';
 require_once __DIR__ . '/functions/mit_quotes.php';
 require_once __DIR__ . '/functions/mit_ticket_layout.php';
 require_once __DIR__ . '/functions/mit_procurement.php';

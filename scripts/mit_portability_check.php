@@ -240,6 +240,9 @@ if ($n = $count("SELECT COUNT(*) FROM mit_timesheet_people WHERE pay_type = 'con
 if ($n = $count("SELECT COUNT(*) FROM mit_boards WHERE board_assign = 'round_robin' AND board_archived_at IS NULL")) {
     $after[] = "Board auto-assign: $n board" . ($n === 1 ? ' hands' : 's hand') . " new tickets out round-robin - in stock ITFlow new tickets stay unassigned until someone takes them. The Board Performance report and the dashboard's board filter go too.";
 }
+if ($n = $count("SELECT COUNT(*) FROM mit_qbo_batch_invoices WHERE entry_status != 'removed'") + $count("SELECT COUNT(*) FROM mit_invoice_approvals")) {
+    $after[] = "QuickBooks Online: $n invoice approvals / batch entries - stock ITFlow has no approvals, batches or QuickBooks link, so invoices unlock, ITFlow emails invoices and reminders again, and payments made in QuickBooks stop coming back (the ones already brought back are ordinary ITFlow payments and stay). Disconnect QuickBooks first (Admin > Integrations).";
+}
 $n = $count("SELECT COUNT(*) FROM quote_items WHERE item_cost IS NOT NULL OR item_image IS NOT NULL") + $count("SELECT COUNT(*) FROM products WHERE product_cost IS NOT NULL OR product_image IS NOT NULL");
 if ($n) {
     $after[] = "Quote pricing and images: $n quote lines / products have our cost or an image - stock ITFlow shows the customer prices only, without the images (the files stay in uploads/mit_images).";

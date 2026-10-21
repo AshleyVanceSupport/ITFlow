@@ -408,7 +408,7 @@ while ($row = mysqli_fetch_assoc($sql_resolved_tickets_to_close)) {
     //TODO: Add client notifs if $config_ticket_client_general_notifications is on
 }
 
-if ($config_send_invoice_reminders == 1) {
+if ($config_send_invoice_reminders == 1 && !(function_exists('mitQboHandlesInvoiceMail') && mitQboHandlesInvoiceMail())) { // Mountaineer IT: QuickBooks Online sends reminders and late fees
 
     // PAST DUE INVOICE Notifications
     $invoiceAlertArray = [1,30,60,90,120,150,180,210,240,270,300,330,360,390,420,450,480,510,540,570,590,620,650,680,710,740];
@@ -552,6 +552,7 @@ while ($row = mysqli_fetch_assoc($sql_recurring_invoices)) {
     $recurring_invoice_currency_code = escapeSql($row['recurring_invoice_currency_code']);
     $recurring_invoice_note = escapeSql($row['recurring_invoice_note']);
     $recurring_invoice_auto_send = intval($row['recurring_invoice_auto_send']);
+    if (function_exists('mitQboHandlesInvoiceMail') && mitQboHandlesInvoiceMail()) { $recurring_invoice_auto_send = 0; } // Mountaineer IT: stays a Draft for approval and a QuickBooks batch
     $recurring_invoice_email_notify = intval($row['recurring_invoice_email_notify']);
     $category_id = intval($row['recurring_invoice_category_id']);
     $client_id = intval($row['recurring_invoice_client_id']);

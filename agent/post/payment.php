@@ -14,6 +14,7 @@ if (isset($_POST['add_payment'])) {
     enforceUserPermission('module_financial', 2);
 
     $invoice_id = intval($_POST['invoice_id']);
+    if (function_exists('mitQboGuardPayment')) { mitQboGuardPayment($invoice_id); } // Mountaineer IT: paid in QuickBooks Online
     $balance = floatval($_POST['balance']);
     $date = escapeSql($_POST['date']);
     $amount = floatval($_POST['amount']);
@@ -199,6 +200,7 @@ if (isset($_POST['edit_payment'])) {
     enforceUserPermission('module_financial', 3);
 
     $payment_id = intval($_POST['payment_id']);
+    if (function_exists('mitQboGuardPaymentEdit')) { mitQboGuardPaymentEdit($payment_id); } // Mountaineer IT: kept by the QuickBooks sync
     $date = escapeSql($_POST['date']);
     $amount = floatval($_POST['amount']);
     $account = intval($_POST['account']);
@@ -234,6 +236,7 @@ if (isset($_POST['apply_credit'])) {
     enforceUserPermission('module_financial', 2);
 
     $invoice_id = intval($_POST['invoice_id']);
+    if (function_exists('mitQboGuardInvoice')) { mitQboGuardInvoice($invoice_id); } // Mountaineer IT: locked while in a QuickBooks batch
     $credit_amount_applied = floatval($_POST['credit_amount_applied']);
 
     $sql = mysqli_query($mysqli, "SELECT invoice_client_id, invoice_credit_amount, invoice_number, invoice_prefix, invoice_status FROM invoices LEFT JOIN clients ON invoice_client_id = client_id WHERE invoice_id = $invoice_id");
@@ -344,6 +347,7 @@ if (isset($_POST['add_payment_stripe'])) {
     enforceUserPermission('module_financial', 2);
 
     $invoice_id = intval($_POST['invoice_id']);
+    if (function_exists('mitQboGuardPayment')) { mitQboGuardPayment($invoice_id); } // Mountaineer IT: paid in QuickBooks Online
     $saved_payment_id = intval($_POST['saved_payment_id']);
 
     // Get invoice details
@@ -586,6 +590,7 @@ if (isset($_POST['add_bulk_payment'])) {
     // Loop Through Each Invoice
     while ($row = mysqli_fetch_assoc($result_invoices)) {
         $invoice_id = intval($row['invoice_id']);
+        if (function_exists('mitQboInQuickBooks') && mitQboInQuickBooks($invoice_id)) { continue; } // Mountaineer IT: paid in QuickBooks Online
         $invoice_prefix = escapeSql($row['invoice_prefix']);
         $invoice_number = intval($row['invoice_number']);
         $invoice_amount = floatval($row['invoice_amount']);
@@ -694,6 +699,7 @@ if (isset($_GET['delete_payment'])) {
     enforceUserPermission('module_financial', 3);
 
     $payment_id = intval($_GET['delete_payment']);
+    if (function_exists('mitQboGuardPaymentEdit')) { mitQboGuardPaymentEdit($payment_id); } // Mountaineer IT: kept by the QuickBooks sync
 
     // payments has no client column - the client comes from the invoice the payment sits on
     $sql = mysqli_query($mysqli,"SELECT invoice_client_id, invoice_number, invoice_prefix, payment_invoice_id FROM payments
@@ -732,6 +738,7 @@ if (isset($_GET['refund_payment_stripe'])) {
     enforceUserPermission('module_financial', 3);
 
     $payment_id = intval($_GET['refund_payment_stripe']);
+    if (function_exists('mitQboGuardPaymentEdit')) { mitQboGuardPaymentEdit($payment_id); } // Mountaineer IT: kept by the QuickBooks sync
 
     // payments has no client column - the client comes from the invoice the payment sits on
     $sql = mysqli_query($mysqli,"SELECT invoice_client_id, invoice_number, invoice_prefix, payment_invoice_id FROM payments

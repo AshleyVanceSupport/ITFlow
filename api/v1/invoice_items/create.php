@@ -66,6 +66,7 @@ if (
     if ($invoice_row && $client_id != 0 && intval($invoice_row['invoice_client_id']) !== $client_id) {
         $invoice_row = null;
     }
+    if ($invoice_row && function_exists('mitQboInvoiceLock') && mitQboInvoiceLock($invoice_id) !== '') { $invoice_row = null; } // Mountaineer IT: locked while in a QuickBooks batch
 
     if ($invoice_row) {
 

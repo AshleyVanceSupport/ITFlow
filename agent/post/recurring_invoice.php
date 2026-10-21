@@ -379,6 +379,7 @@ if (isset($_GET['force_recurring'])) {
     $recurring_invoice_scope = escapeSql($row['recurring_invoice_scope']);
     $recurring_invoice_frequency = validateRecurringFrequency($row['recurring_invoice_frequency']);
     $recurring_invoice_auto_send = intval($row['recurring_invoice_auto_send']);
+    if (function_exists('mitQboHandlesInvoiceMail') && mitQboHandlesInvoiceMail()) { $recurring_invoice_auto_send = 0; } // Mountaineer IT: stays a Draft for approval and a QuickBooks batch
     $recurring_invoice_email_notify = intval($row['recurring_invoice_email_notify']);
     $recurring_invoice_status = escapeSql($row['recurring_invoice_status']);
     $recurring_invoice_last_sent = escapeSql($row['recurring_invoice_last_sent']);

@@ -386,6 +386,7 @@ if (isset($_GET['invoice_id'])) {
             <?php $sql_invoice_items = mysqli_query($mysqli, "SELECT item_created_at, item_description, item_id, item_name, item_price, item_product_id,
                 item_quantity, item_tax, item_tax_id, item_total FROM invoice_items WHERE item_invoice_id = $invoice_id ORDER BY item_order ASC"); ?>
 
+            <?= function_exists('mitQboInvoiceBar') ? mitQboInvoiceBar($invoice_id) : '' // Mountaineer IT: QuickBooks approval / batch / lock ?>
             <?= mitProcInvoiceSummary($invoice_id) // Mountaineer IT: procurement status ?>
 
             <div class="row mb-3">

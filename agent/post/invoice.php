@@ -62,6 +62,7 @@ if (isset($_POST['edit_invoice'])) {
     require_once 'invoice_model.php';
 
     $invoice_id = intval($_POST['invoice_id']);
+    if (function_exists('mitQboGuardInvoice')) { mitQboGuardInvoice($invoice_id); } // Mountaineer IT: locked while in a QuickBooks batch
     $due = escapeSql($_POST['due']);
 
     // Get Invoice Number and Prefix and Client ID for Logging
@@ -223,6 +224,7 @@ if (isset($_GET['mark_invoice_non-billable'])) {
     enforceUserPermission('module_sales', 2);
 
     $invoice_id = intval($_GET['mark_invoice_non-billable']);
+    if (function_exists('mitQboGuardInvoice')) { mitQboGuardInvoice($invoice_id); } // Mountaineer IT: locked while in a QuickBooks batch
 
     // Get Invoice Number and Prefix and Client ID for Logging
     $sql = mysqli_query($mysqli,"SELECT invoice_prefix, invoice_number, invoice_client_id FROM invoices WHERE invoice_id = $invoice_id");
@@ -252,6 +254,7 @@ if (isset($_GET['cancel_invoice'])) {
     enforceUserPermission('module_sales', 2);
 
     $invoice_id = intval($_GET['cancel_invoice']);
+    if (function_exists('mitQboGuardInvoice')) { mitQboGuardInvoice($invoice_id); } // Mountaineer IT: locked while in a QuickBooks batch
 
     // Get Invoice Number and Prefix and Client ID for Logging
     $sql = mysqli_query($mysqli,"SELECT invoice_prefix, invoice_number, invoice_client_id FROM invoices WHERE invoice_id = $invoice_id");
@@ -281,6 +284,7 @@ if (isset($_GET['delete_invoice'])) {
     enforceUserPermission('module_sales', 3);
 
     $invoice_id = intval($_GET['delete_invoice']);
+    if (function_exists('mitQboGuardInvoice')) { mitQboGuardInvoice($invoice_id); } // Mountaineer IT: locked while in a QuickBooks batch
 
     // Get Invoice Number and Prefix and Client ID for Logging
     $sql = mysqli_query($mysqli,"SELECT invoice_prefix, invoice_number, invoice_client_id FROM invoices WHERE invoice_id = $invoice_id");
@@ -337,6 +341,7 @@ if (isset($_POST['add_invoice_item'])) {
     enforceUserPermission('module_sales', 2);
 
     $invoice_id = intval($_POST['invoice_id']);
+    if (function_exists('mitQboGuardInvoice')) { mitQboGuardInvoice($invoice_id); } // Mountaineer IT: locked while in a QuickBooks batch
     $name = escapeSql($_POST['name']);
     $description = escapeSql($_POST['description']);
     $qty = floatval($_POST['qty']);
@@ -454,6 +459,7 @@ if (isset($_POST['edit_invoice_item'])) {
     $sql = mysqli_query($mysqli,"SELECT item_invoice_id, item_product_id, item_quantity, product_type FROM invoice_items LEFT JOIN products ON item_product_id = product_id WHERE item_id = $item_id");
     $row = mysqli_fetch_assoc($sql);
     $invoice_id = intval($row['item_invoice_id']);
+    if (function_exists('mitQboGuardInvoice')) { mitQboGuardInvoice($invoice_id); } // Mountaineer IT: locked while in a QuickBooks batch
     $item_product_id = intval($row['item_product_id']);
     $old_qty = floatval($row['item_quantity']);
     $item_is_stocked = $item_product_id && $row['product_type'] === 'product';
@@ -516,6 +522,7 @@ if (isset($_GET['delete_invoice_item'])) {
         item_total, product_type FROM invoice_items LEFT JOIN products ON item_product_id = product_id WHERE item_id = $item_id");
     $row = mysqli_fetch_assoc($sql);
     $invoice_id = intval($row['item_invoice_id']);
+    if (function_exists('mitQboGuardInvoice')) { mitQboGuardInvoice($invoice_id); } // Mountaineer IT: locked while in a QuickBooks batch
     $item_name = escapeSql($row['item_name']);
     $item_quantity = floatval($row['item_quantity']);
     $item_product_id = intval($row['item_product_id']);
@@ -563,6 +570,7 @@ if (isset($_POST['email_invoice'])) {
     enforceUserPermission('module_sales', 2);
 
     $invoice_id = intval($_POST['invoice_id']);
+    if (function_exists('mitQboGuardEmail')) { mitQboGuardEmail(); } // Mountaineer IT: QuickBooks Online emails invoices
 
     $sql = mysqli_query($mysqli,"SELECT client_id, client_name, invoice_amount, invoice_currency_code,
         invoice_date, invoice_due, invoice_id, invoice_number, invoice_prefix, invoice_scope,
@@ -1053,6 +1061,7 @@ if (isset($_POST['add_ticket_to_invoice'])) {
     enforceUserPermission('module_sales', 2);
 
     $invoice_id = intval($_POST['invoice_id']);
+    if (function_exists('mitQboGuardInvoice')) { mitQboGuardInvoice($invoice_id); } // Mountaineer IT: locked while in a QuickBooks batch
     $ticket_id = intval($_POST['ticket_id']);
 
     $client_id = intval(getFieldById('tickets', $ticket_id, 'ticket_client_id'));
@@ -1074,6 +1083,7 @@ if (isset($_GET['remove_ticket_from_invoice'])) {
     enforceUserPermission('module_sales', 2);
 
     $invoice_id = intval($_GET['invoice_id']);
+    if (function_exists('mitQboGuardInvoice')) { mitQboGuardInvoice($invoice_id); } // Mountaineer IT: locked while in a QuickBooks batch
     $ticket_id = intval($_GET['ticket_id']);
 
     $client_id = intval(getFieldById('tickets', $ticket_id, 'ticket_client_id'));

@@ -4,6 +4,16 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.98 - 2026-10-21
+QuickBooks Online, first release (database update M031):
+- Admin > Integrations > QuickBooks Online: connect a company through Intuit's sign-in (an Intuit developer app's client ID and secret), choose how tax is sent (US: taxable / non-taxable lines and one tax code per invoice), the item for lines with no match, the ITFlow account payments from QuickBooks go to, and whether QuickBooks emails new batches. Customers, Items and Tax codes tabs map ITFlow clients, products and taxes to QuickBooks (or match by name; missing customers can be made in QuickBooks).
+- Billing > Invoice Approvals: every invoice is approved before it can go to QuickBooks. A change after approval (lines, amounts, dates, client) shows "Changed since approval" and needs approving again. Approve from the list (many at once) or from the strip on the invoice.
+- Billing > QuickBooks Batches: tick approved invoices into a new or open batch, then Send - each becomes a QuickBooks invoice with ITFlow's number, a Draft becomes Sent, and QuickBooks emails it to the client's billing contacts (else the primary). Failed ones keep the reason and are sent again with the batch.
+- An invoice in a batch is locked in ITFlow (edits, lines, cancel, delete, adding it to from tickets / parts / the API are refused). Taking it out unlocks it; one already in QuickBooks is voided there (refused while it has payments) or left there, and goes back to Draft for approval.
+- Payments made in QuickBooks come back every hour (cron job "QuickBooks Online Payments", or "Check payments now"): one ITFlow payment per invoice follows what was paid there, so Partial / Paid, balances and the portal stay right. ITFlow won't take payments for an invoice in QuickBooks, and the synced payment can't be changed by hand.
+- While connected, QuickBooks sends the invoices: ITFlow's invoice emails, overdue reminders, late fees and recurring invoices' auto-send stop (recurring invoices are made as Drafts to approve).
+- Fix: ITFlow's Create invoice form logged a PHP warning (recurring discount not sent).
+
 ## 26.10.97 - 2026-10-21
 Performance review (measured on a copy grown to 50,000 tickets, 300,000 replies and 300,000 log entries):
 - New database indexes (update M030) for the open-ticket counts, date ranges, ticket numbers, attachments, client activity, last sign-ins and invoice counts. Admin > Users went from 0.8 s to 0.01 s, the dashboard from 0.5 s to 0.3 s, Dispatch's queues from 0.13 s to 0.02 s; most other pages are 30-60% quicker on a busy system.
