@@ -570,6 +570,19 @@ model: see DEPLOYMENT.md.
   `agent/includes/mit_billing_nav.php`, handlers `agent/post/mit_usage.php`. API `api/v1/mit_usage/create.php` / `read.php` - one
   line in `api/v1/enforce_api_rbac.php` (`'mit_usage' => 'module_sales'`). Cron job `mit_usage` daily 00:30 (`cron/mit_usage.php`,
   `mitUsageRecordTagCounts`; apply also counts tags when the snapshot is today). Smoke `11-usage.spec.js`.
+  Connectors (step 5, 26.10.100): `functions/mit_usage_connectors.php` (required from mit_usage.php), table M033 `mit_usage_links`
+  (connector bitwarden | ingram, client FK CASCADE, external id unique per connector, encrypted secret, last run). `mitUsageRunConnectors`
+  runs from cron `mit_usage` (throws when any connector had a problem) and "Run now"; counts via `mitUsageRecordDaily` (one per day
+  per client + metric + source; count_source ninjaone | bitwarden | ingram - `MIT_USAGE_COUNT_SOURCES`). NinjaOne: from
+  `mit_ninja_devices` seen in 7 days by `mit_ninja_orgs` mapped client, `usage_ninjaone_on`. Bitwarden: per client org API key
+  (`organization.<uuid>` + secret, scope api.organization, `/public/members`, status >= 0 = users, 2 = confirmed), region
+  `usage_bitwarden_region`. Ingram Micro Cloud Marketplace: `usage_ingram_*` (marketplace, login, password + subscription key
+  encrypted, optional base; token POST {base}/token with X-Subscription-Key, cached `usage_ingram_token`), GET /customers and
+  /subscriptions?customerId=&status=active (products[].mpn / name / quantity, summed per mpn) - the real API was not reachable
+  when built: confirm on the first live run. Page Admin > Integrations > Usage connectors `admin/mit_usage_connectors.php`
+  (handlers `admin/post/mit_usage_connectors.php`, menu `admin/includes/mit_integrations_nav.php`). The usage card's metric box has
+  a datalist from `mitUsageKnownMetrics` (Ingram names from the count note). Test install stand-in `usage-mock/index.php` (not in
+  the repo; `MIT_BITWARDEN_IDENTITY_URL` / `MIT_BITWARDEN_API_URL` / `MIT_INGRAM_API_BASE` in its config.php); smoke `12-connectors.spec.js`.
 - Project tickets kept apart (Oct 2026): `functions/mit_projects.php` (ours) - a ticket in a project (ITFlow's
   `ticket_project_id`) is off the Tickets board / client tab (`mitProjectTicketsShows` adds `ticket_project_id = 0` to each
   view of `agent/tickets.php` plus a "Projects" view, unless the Project filter is set), the Dispatch queue + its menu count

@@ -20,11 +20,15 @@
  * Permission: Sales view sees it, Sales edit sets lines, types counts and overrides.
  */
 
+require_once __DIR__ . '/mit_usage_connectors.php';
+
 const MIT_USAGE_SOURCES = [
     'manual' => 'Typed each month',
     'api' => 'Reported through the API',
     'tag' => 'Contacts with a tag',
 ];
+// Where a count came from (mit_usage_counts.count_source): typed, the API, the daily tag count, or a connector
+const MIT_USAGE_COUNT_SOURCES = ['manual', 'api', 'tag', 'ninjaone', 'bitwarden', 'ingram'];
 const MIT_USAGE_FLAGS = [
     'missing' => ['No count', 'text-bg-danger', 'No count on or before the snapshot day - the recurring quantity was kept.'],
     'stale' => ['Old count', 'text-bg-warning', 'The count is older than the snapshot day allows.'],
@@ -133,7 +137,7 @@ function mitUsageContactTags() {
 
 /**
  * Keep a count. $as_of 'Y-m-d' (default today; not more than a day ahead). Returns [count_id, ''] or [0, problem].
- * $source manual | api | tag.
+ * $source: one of MIT_USAGE_COUNT_SOURCES.
  */
 function mitUsageRecordCount($client_id, $metric, $quantity, $as_of = '', $source = 'manual', $note = '') {
     global $mysqli, $session_user_id;
@@ -153,7 +157,7 @@ function mitUsageRecordCount($client_id, $metric, $quantity, $as_of = '', $sourc
     if (!$date || $date->format('Y-m-d') !== $as_of || $as_of > date('Y-m-d', strtotime('+1 day')) || $as_of < '2000-01-01') {
         return [0, 'The date must be a real date (YYYY-MM-DD), not in the future.'];
     }
-    $source = in_array($source, ['manual', 'api', 'tag'], true) ? $source : 'manual';
+    $source = in_array($source, MIT_USAGE_COUNT_SOURCES, true) ? $source : 'manual';
     mysqli_query($mysqli, "INSERT INTO mit_usage_counts SET client_id = $client_id, metric = '" . escapeSql($metric) . "', quantity = " . round(floatval($quantity), 2) . ",
         as_of = '$as_of', count_source = '$source', count_note = '" . escapeSql(mb_substr((string) $note, 0, 255)) . "', reported_by = " . intval($session_user_id ?? 0));
     return [mysqli_insert_id($mysqli), ''];
@@ -415,6 +419,13 @@ function mitUsageRecurringCard($recurring_invoice_id) {
     $lines = mitUsageLines($recurring_invoice_id);
     $can = mitUsageCan(2);
     $tags = mitUsageContactTags();
+    // Usage names already reported for this client (connectors, the API) to pick from
+    $known = mitUsageKnownMetrics(intval(mysqli_fetch_row(mysqli_query($mysqli, "SELECT recurring_invoice_client_id FROM recurring_invoices WHERE recurring_invoice_id = $recurring_invoice_id"))[0] ?? 0));
+    $datalist = '<datalist id="mitUsageMetrics">';
+    foreach ($known as $metric => $label) {
+        $datalist .= '<option value="' . escapeHtml($metric) . '" label="' . escapeHtml($label) . '"></option>';
+    }
+    $datalist .= '</datalist>';
     $settings = mitUsageSettings();
     $html = '<div class="card mb-3 d-print-none" data-mit-usage-card><div class="card-header text-bold"><i class="fas fa-fw fa-tachometer-alt me-2"></i>Usage billing'
         . '<span class="small text-muted fw-normal ms-2">Lines billed by a count - quantities set from the count on the snapshot day (the ' . $settings['snapshot_day']
@@ -438,12 +449,12 @@ function mitUsageRecurringCard($recurring_invoice_id) {
         $html .= '<tr data-item="' . $id . '"><td>' . escapeHtml($item['item_name']) . '</td>'
             . '<td><select class="form-select form-select-sm" name="usage[' . $id . '][source]" data-mit-usage-source' . $disabled . '>' . $options . '</select></td>'
             . '<td><input type="text" class="form-control form-control-sm" name="usage[' . $id . '][metric]" maxlength="100" placeholder="' . escapeHtml(mitUsageMetricFromName($item['item_name']))
-            . '" value="' . escapeHtml($source === 'tag' ? '' : (string) ($line['line_metric'] ?? '')) . '" data-mit-usage-metric' . $disabled . '>'
+            . '" value="' . escapeHtml($source === 'tag' ? '' : (string) ($line['line_metric'] ?? '')) . '" list="mitUsageMetrics" data-mit-usage-metric' . $disabled . '>'
             . '<select class="form-select form-select-sm" name="usage[' . $id . '][tag_id]" data-mit-usage-tag' . $disabled . '>' . $tag_options . '</select></td>'
             . '<td><input type="number" min="0" step="0.01" class="form-control form-control-sm" name="usage[' . $id . '][min]" value="'
             . ($line && $line['line_min_qty'] !== null ? mitUsageQty($line['line_min_qty']) : '') . '"' . $disabled . '></td></tr>';
     }
-    $html .= '</tbody></table></div>';
+    $html .= '</tbody></table></div>' . $datalist;
     if ($can) {
         $html .= '<button type="submit" name="mit_usage_save_lines" class="btn btn-primary btn-sm"><i class="fas fa-check me-1"></i>Save usage</button>'
             . '<span class="small text-muted ms-2">API lines: other systems report counts under the usage name (POST api/v1/mit_usage/create.php).</span>';

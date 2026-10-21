@@ -4,7 +4,15 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
-## 26.10.99 - 2026-10-21
+## 26.10.100 - 2026-10-21
+Usage connectors (database update M033) - Admin > Integrations > Usage connectors, run daily with the Usage Counts job or Run now:
+- NinjaOne: workstations, servers and all devices per client (from what the NinjaOne sync saw in the last 7 days) - usage names `ninjaone:workstations`, `ninjaone:servers`, `ninjaone:devices`.
+- Bitwarden: each client organization linked with its own API key (the Provider portal has no API; the key is tested before it is kept, and stored encrypted) - `bitwarden:users` (members not revoked, as Bitwarden bills) and `bitwarden:confirmed`. US or EU region.
+- Ingram Micro Cloud Marketplace (Xvantage): your API login, read customers, link them to clients (or match by name) - each product on a customer's active subscriptions is counted as `ingram:<part number>` with its name; a product that ends counts 0.
+- A recurring invoice's usage line now offers the usage names already reported for the client (e.g. "Microsoft 365 Business Basic") to pick from.
+- Parallels RAS stays a contact tag (e.g. "RAS user").
+
+
 Usage billing (database update M032):
 - A recurring invoice's lines can be billed by a count instead of a fixed quantity (its new Usage billing card): typed each month, reported through the API, or the client's contacts carrying a tag (e.g. "Billable user"). A minimum can be set per line.
 - Counts are kept with their date and source. Other systems report them with `POST /api/v1/mit_usage/create.php` (ITFlow API key, JSON: client_id, metric, quantity, as_of); `GET /api/v1/mit_usage/read.php` lists the usage names to report. Tag counts are recorded daily (cron job "Usage Counts"). The client's overview has a Usage card with the latest counts and a box to type one.

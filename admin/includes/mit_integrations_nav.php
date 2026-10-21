@@ -1,7 +1,7 @@
 <?php
 /*
  * Mountaineer IT - our integrations in the admin side menu's INTEGRATIONS, required from admin/includes/side_nav.php
- * after AI Providers: NinjaOne, QuickBooks Online.
+ * after AI Providers: NinjaOne, QuickBooks Online, Usage connectors.
  */
 ?>
 <li class="nav-item">
@@ -14,5 +14,11 @@
     <a href="/admin/mit_qbo.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'mit_qbo.php' ? 'active' : '' ?>">
         <i class="nav-icon fas fa-file-invoice-dollar"></i>
         <p>QuickBooks Online</p>
+    </a>
+</li>
+<li class="nav-item">
+    <a href="/admin/mit_usage_connectors.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'mit_usage_connectors.php' ? 'active' : '' ?>">
+        <i class="nav-icon fas fa-plug"></i>
+        <p>Usage connectors</p>
     </a>
 </li>

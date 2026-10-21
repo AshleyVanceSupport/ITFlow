@@ -1,7 +1,8 @@
 <?php
 /*
  * Mountaineer IT - usage billing, daily (functions/mit_usage.php): records each client's count of contacts carrying a usage
- * line's tag, so the snapshot day has a count to bill. Counts reported through the API or typed need nothing from here.
+ * line's tag, and runs the usage connectors (functions/mit_usage_connectors.php - NinjaOne, Bitwarden, Ingram Micro), so the
+ * snapshot day has a count to bill. Counts reported through the API or typed need nothing from here.
  */
 
 // Set working directory to the directory this cron script lives at.
@@ -30,4 +31,16 @@ if (!mitUsageReady()) {
     cronJobStop("Usage billing needs the database update");
 } else {
     echo 'Usage billing: ' . mitUsageRecordTagCounts() . " new tag counts recorded\n";
+    // Connectors (Admin > Integrations > Usage connectors) - all run; any problem marks the job Failed afterwards
+    $mit_usage_problems = [];
+    foreach (mitUsageRunConnectors() as $mit_usage_connector => [$mit_usage_counted, $mit_usage_errors]) {
+        echo MIT_USAGE_CONNECTORS[$mit_usage_connector] . ": $mit_usage_counted counted\n";
+        foreach ($mit_usage_errors as $mit_usage_error) {
+            echo "  $mit_usage_error\n";
+            $mit_usage_problems[] = MIT_USAGE_CONNECTORS[$mit_usage_connector] . " - $mit_usage_error";
+        }
+    }
+    if ($mit_usage_problems) {
+        throw new RuntimeException('Usage connectors: ' . implode('; ', array_slice($mit_usage_problems, 0, 5)));
+    }
 }

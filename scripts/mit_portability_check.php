@@ -243,6 +243,9 @@ if ($n = $count("SELECT COUNT(*) FROM mit_boards WHERE board_assign = 'round_rob
 if ($n = $count("SELECT COUNT(*) FROM mit_qbo_batch_invoices WHERE entry_status != 'removed'") + $count("SELECT COUNT(*) FROM mit_invoice_approvals")) {
     $after[] = "QuickBooks Online: $n invoice approvals / batch entries - stock ITFlow has no approvals, batches or QuickBooks link, so invoices unlock, ITFlow emails invoices and reminders again, and payments made in QuickBooks stop coming back (the ones already brought back are ordinary ITFlow payments and stay). Disconnect QuickBooks first (Admin > Integrations).";
 }
+if ($n = $count("SELECT COUNT(*) FROM mit_usage_links")) {
+    $after[] = "Usage connectors: $n Bitwarden / Ingram Micro link" . ($n === 1 ? '' : 's') . " - the daily counts from NinjaOne, Bitwarden and Ingram Micro stop (the keys stay encrypted in mit_usage_links / mit_settings; delete them if you move).";
+}
 if ($n = $count("SELECT COUNT(*) FROM mit_usage_lines")) {
     $after[] = "Usage billing: $n recurring invoice line" . ($n === 1 ? ' is' : 's are') . " billed by a count - stock ITFlow bills the fixed quantity on the recurring invoice again (set it by hand each month), and the counts, the API endpoint and Usage Review stop. Invoices already made keep their quantities.";
 }

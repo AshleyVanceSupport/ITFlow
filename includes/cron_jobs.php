@@ -151,7 +151,7 @@ function cronJobRegistry(): array
             'name' => 'mit_usage',
             'label' => 'Usage Counts',
             'script' => 'mit_usage.php',
-            'description' => 'Counts each client\'s contacts carrying the tag of a usage-billed recurring invoice line, so the snapshot day has a count to bill.',
+            'description' => 'Counts each client\'s contacts carrying the tag of a usage-billed recurring invoice line, and reads the usage connectors (NinjaOne, Bitwarden, Ingram Micro - Admin > Integrations > Usage connectors), so the snapshot day has a count to bill.',
             'schedule' => 'Daily',
             'daily_at' => '00:30',
         ],
