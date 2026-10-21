@@ -185,6 +185,7 @@ ob_start();
 
         </div>
 
+        <?= function_exists('mitBoardRoleField') ? mitBoardRoleField($role_id, $role_admin) : '' // Mountaineer IT: service boards this role sees ?>
     </div>
     <div class="modal-footer">
         <button type="submit" name="edit_role" class="btn btn-primary text-bold"><i class="fas fa-check me-2"></i>Save</button>

@@ -67,6 +67,7 @@ echo mitBoardStyle();
                                 <?php if (intval($board['board_is_default'])) { ?><span class="badge text-bg-primary ms-1" title="New tickets that match no rule land here">Default</span><?php } ?>
                                 <?php if ($archived) { ?><span class="badge text-bg-secondary ms-1">Archived</span><?php } ?>
                                 <?php if ($board['board_description'] !== '') { ?><div class="small text-body-secondary mt-1"><?= escapeHtml($board['board_description']) ?></div><?php } ?>
+                                <?php if (!$archived && ($seen_by = mitBoardSeenBy($id)) !== '') { ?><div class="small text-body-secondary mt-1" data-mit-seen-by title="Set in Admin > Roles > Edit"><i class="fas fa-eye me-1"></i>Seen by: <?= escapeHtml($seen_by) ?></div><?php } ?>
                             </td>
                             <td class="small">
                                 <?php if (empty($members[$id])) { ?>

@@ -146,6 +146,7 @@ ob_start();
 
         </div>
 
+        <?= function_exists('mitBoardRoleField') ? mitBoardRoleField(0) : '' // Mountaineer IT: service boards this role sees ?>
     </div>
 
     <div class="modal-footer">

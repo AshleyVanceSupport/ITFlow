@@ -670,6 +670,17 @@ model: see DEPLOYMENT.md.
   escalation flows; agents for one board; CSV.
   Wording: ITFlow's kanban toggle on `agent/tickets.php` says "Kanban" (was "Board") and its first pill there "Active" (was "On the
   board"), so "board" on that page only means a service board - two strings; keep them if an upstream merge brings the old ones back.
+  Boards by role (M034, 26.10.102): `functions/mit_board_roles.php` (ours, required from mit_boards.php) - each ITFlow role sees every
+  board (no row / `limited` 0) or only the ones ticked (`mit_role_board_access`, `mit_role_boards`; FK user_roles / mit_boards
+  CASCADE); admin roles and sessions without a role (cron, API) see all. Hidden from lists only, not blocked (a link still opens
+  the ticket); still shown: assigned to them, helping on (mit_ticket_techs), escalated by them (mit_board_moves). `mitBoardVisibleSql`
+  is appended by `mitBoardWhere` (Tickets list / kanban / client tab, Dispatch queue / Workload / week stats, menu counts), the
+  switcher, dashboard (`mitBoardDashAnd`, picker, Your boards card), and one guarded line each in `functions/search.php` (tickets
+  and ticket_replies groups) and `functions/client_overview.php` clientOverviewOpenTickets; calendar via `mitBoardVisibleCalendarItems`
+  in `mitCalendarTicketItems`. New Ticket and the board pickers offer `mitBoardsVisible()`; Escalate / Move offer every board.
+  UI: "Service boards" section (`mitBoardRoleField`) - one line in `admin/modals/role/role_add.php` / `role_edit.php` before the footer,
+  saved by `mitBoardRoleSave` (one line each in `admin/post/roles.php` add_role / edit_role, only when `mit_boards_present` is
+  posted); Admin > Settings > Boards shows "Seen by" (`mitBoardSeenBy`). Smoke `13-board-roles.spec.js`.
 - Modern look (Oct 2026): `functions/mit_theme.php`, `css/mit_theme.css`, `js/mit_theme.js`, `css/fonts/inter/` (Inter,
   OFL - from @fontsource-variable/inter, latin + latin-ext) - ours. Colours, type and spacing over ITFlow's own styles, no markup
   changes: slate sidebar with a blue active pill, white top bar (the script switches ITFlow's `.app-header` `data-bs-theme="dark"`

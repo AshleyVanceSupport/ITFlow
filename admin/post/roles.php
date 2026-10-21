@@ -32,6 +32,7 @@ if (isset($_POST['add_role'])) {
         }
     }
 
+    if (function_exists('mitBoardRoleSave')) { mitBoardRoleSave($role_id, $_POST); } // Mountaineer IT: service boards this role sees
     logAudit("User Role", "Create", "$session_name created user role $name", 0, $role_id);
 
     flashAlert("User Role <strong>$name</strong> created");
@@ -76,6 +77,7 @@ if (isset($_POST['edit_role'])) {
 
     }
 
+    if (function_exists('mitBoardRoleSave')) { mitBoardRoleSave($role_id, $_POST); } // Mountaineer IT: service boards this role sees
     logAudit("User Role", "Edit", "$session_name edited user role $name", 0, $role_id);
 
     flashAlert("User Role <strong>$name</strong> edited");

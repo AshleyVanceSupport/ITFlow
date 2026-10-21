@@ -73,7 +73,7 @@ function mitDispatchBoardChoice($choice) {
     if (!function_exists('mitBoards') || !mitBoards()) {
         return 'all';
     }
-    $mine = (bool) mitBoardsOfUser($session_user_id);
+    $mine = (bool) array_intersect_key(mitBoardsOfUser($session_user_id), mitBoardsVisible());
     if ($choice === null || $choice === '') {
         return $mine ? 'mine' : 'all';
     }
@@ -81,7 +81,7 @@ function mitDispatchBoardChoice($choice) {
     if ($choice === 'mine') {
         return $mine ? 'mine' : 'all';
     }
-    return isset(mitBoards()[intval($choice)]) ? (string) intval($choice) : 'all';
+    return isset(mitBoardsVisible()[intval($choice)]) ? (string) intval($choice) : 'all';
 }
 
 /** " AND <the ticket is on the chosen board(s)>" for Dispatch's lists - '' for all boards. */
@@ -102,7 +102,7 @@ function mitDispatchBoards() {
         $members[intval($row[0])][] = intval($row[1]);
     }
     $list = [];
-    foreach (mitBoards() as $id => $board) {
+    foreach (mitBoardsVisible() as $id => $board) {
         $list[] = ['id' => $id, 'name' => $board['board_name'], 'color' => $board['board_color'], 'members' => $members[$id] ?? []];
     }
     return $list;

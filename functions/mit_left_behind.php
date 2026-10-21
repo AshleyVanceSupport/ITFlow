@@ -117,6 +117,7 @@ function mitLeftBehindMark(array $items) {
 
 /** functions/calendar.php's tickets source: our changes to its items - left behind, then project bookings. */
 function mitCalendarTicketItems(array $items, array $opts = []) {
+    $items = function_exists('mitBoardVisibleCalendarItems') ? mitBoardVisibleCalendarItems($items) : $items;
     $items = mitLeftBehindMark($items);
     return function_exists('mitProjectCalendarItems') ? mitProjectCalendarItems($items, $opts) : $items;
 }

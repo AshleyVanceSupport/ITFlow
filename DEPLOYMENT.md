@@ -264,7 +264,9 @@ break stock ITFlow, and lists what stops working after a move.
   (the rows sit unused in `mit_boards` / `mit_ticket_boards` / `mit_board_rules` / `mit_board_members`).
   Categories are ITFlow's and stay; escalation reasons stay as internal notes. Round-robin auto-assign stops (new
   tickets stay unassigned), and the Board Performance report, the board move log (`mit_board_moves`) and the
-  dashboard's board filter go; assignments it made are ordinary ITFlow assignments and stay.
+  dashboard's board filter go; assignments it made are ordinary ITFlow assignments and stay. Boards by role go too
+  (`mit_role_board_access` / `mit_role_boards`): every role sees every ticket again (ITFlow's own role permissions and
+  client access stay as they are).
 - **Quote pricing and item images** – stock ITFlow keeps every quote's customer prices, but our
   cost, the markup / margin and the line and product images are not shown (they sit unused in
   the `item_cost` / `item_price_*` / `item_image` and `product_cost` / `product_price_*` /

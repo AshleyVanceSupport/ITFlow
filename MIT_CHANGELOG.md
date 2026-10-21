@@ -4,6 +4,11 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.102 - 2026-10-21
+- Service boards by role: Admin > Roles > Edit has a "Service boards" section - leave "All boards" on, or pick the boards that role's agents see (e.g. technicians don't see Sales). Admin roles always see every board.
+- A board a role can't see is left out of its Tickets list and kanban, the board switcher and counts, the dashboard, Dispatch, the calendar, global search and the client overview. Tickets assigned to them, ones they help on and ones they escalated still show; a direct link still opens the ticket.
+- New Ticket offers only the role's boards; Escalate still offers every board. Admin > Settings > Boards shows which roles see each board.
+
 ## 26.10.101 - 2026-10-21
 Audit of the QuickBooks, usage billing and connector releases (four reviewers; every finding checked against the code):
 - QuickBooks: an invoice in a batch (sent or still waiting) takes no payments in ITFlow - agent, bulk, nightly autopay, client portal and guest pay links (before, autopay could charge a card for an invoice QuickBooks was also collecting). Sending refuses an invoice paid, cancelled or archived since it was batched.

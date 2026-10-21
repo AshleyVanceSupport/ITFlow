@@ -148,7 +148,8 @@ function clientOverviewAttention($client_id, $access, $renewals) {
 function clientOverviewOpenTickets($client_id, $limit = 8) {
     global $mysqli;
 
-    $where = "ticket_client_id = $client_id AND ticket_resolved_at IS NULL AND ticket_closed_at IS NULL";
+    $where = "ticket_client_id = $client_id AND ticket_resolved_at IS NULL AND ticket_closed_at IS NULL"
+        . (function_exists('mitBoardVisibleSql') ? mitBoardVisibleSql('tickets') : ''); // Mountaineer IT: boards the role sees
     $sql = mysqli_query($mysqli, "
         SELECT ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_priority, ticket_created_at, ticket_updated_at,
             ticket_status_name, ticket_status_color, user_name, contact_name,

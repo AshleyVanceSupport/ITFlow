@@ -122,7 +122,7 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
             <?php if ($service_boards) { ?>
                 <select class="form-select form-select-sm w-auto" data-md-service-board aria-label="Board" title="Which board's tickets the queue, Workload and This week show">
                     <option value="all" <?= $state['board'] === 'all' ? 'selected' : '' ?>>All boards</option>
-                    <?php if (mitBoardsOfUser($session_user_id)) { ?><option value="mine" <?= $state['board'] === 'mine' ? 'selected' : '' ?>>My boards</option><?php } ?>
+                    <?php if (array_intersect_key(mitBoardsOfUser($session_user_id), mitBoardsVisible())) { ?><option value="mine" <?= $state['board'] === 'mine' ? 'selected' : '' ?>>My boards</option><?php } ?>
                     <?php foreach ($service_boards as $service_board) { ?>
                         <option value="<?= intval($service_board['id']) ?>" <?= $state['board'] === (string) $service_board['id'] ? 'selected' : '' ?>><?= escapeHtml($service_board['name']) ?></option>
                     <?php } ?>

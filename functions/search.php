@@ -140,7 +140,8 @@ function globalSearchGroups($terms, $deep) {
             LEFT JOIN clients ON ticket_client_id = client_id
             LEFT JOIN ticket_statuses ON ticket_status = ticket_status_id',
         'where' => "ticket_archived_at IS NULL
-            AND (ticket_subject LIKE '%$like%' OR CONCAT(ticket_prefix, ticket_number) LIKE '%$like%' $ticket_number_match $ticket_deep_match)",
+            AND (ticket_subject LIKE '%$like%' OR CONCAT(ticket_prefix, ticket_number) LIKE '%$like%' $ticket_number_match $ticket_deep_match)"
+            . (function_exists('mitBoardVisibleSql') ? mitBoardVisibleSql('tickets') : ''), // Mountaineer IT: boards the role sees
         'scope' => 'ticket_client_id',
         'order' => ($ticket_number !== null ? "(ticket_number = $ticket_number) DESC, " : '') . "(ticket_closed_at IS NULL) DESC, ticket_id DESC",
         'exact' => $ticket_number !== null ? "ticket_number = $ticket_number" : null,
@@ -600,7 +601,8 @@ function globalSearchGroups($terms, $deep) {
             'from' => 'ticket_replies
                 JOIN tickets ON ticket_reply_ticket_id = ticket_id
                 LEFT JOIN clients ON ticket_client_id = client_id',
-            'where' => "ticket_reply_archived_at IS NULL AND ticket_archived_at IS NULL AND ticket_reply LIKE '%$like%'",
+            'where' => "ticket_reply_archived_at IS NULL AND ticket_archived_at IS NULL AND ticket_reply LIKE '%$like%'"
+                . (function_exists('mitBoardVisibleSql') ? mitBoardVisibleSql('tickets') : ''), // Mountaineer IT: boards the role sees
             'scope' => 'ticket_client_id',
             'order' => 'ticket_reply_id DESC',
             'list_url' => null,

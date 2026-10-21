@@ -21,6 +21,8 @@
  * Dispatch's board picker (functions/mit_dispatch.php).
  */
 
+require_once __DIR__ . '/mit_board_roles.php';
+
 const MIT_BOARD_RULE_KINDS = ['mailbox' => 'Sent to', 'client' => 'Client', 'category' => 'Category'];
 const MIT_BOARD_ICONS = ['inbox', 'headset', 'layer-group', 'server', 'handshake', 'columns', 'tools', 'network-wired', 'shield-alt',
     'cloud', 'laptop', 'user-tie', 'star', 'bolt', 'life-ring', 'file-invoice-dollar'];
@@ -129,17 +131,17 @@ function mitBoardChoiceIds($choice, $user_id) {
         return null;
     }
     if ($choice === 'mine') {
-        $mine = array_keys(mitBoardsOfUser($user_id));
+        $mine = array_keys(array_intersect_key(mitBoardsOfUser($user_id), mitBoardsVisible()));
         return $mine ?: null;
     }
     $id = intval($choice);
-    return isset(mitBoards()[$id]) ? [$id] : null;
+    return isset(mitBoardsVisible()[$id]) ? [$id] : null;
 }
 
-/** " AND <ticket's board> IN (...)" for a choice, or ''. */
+/** " AND <ticket's board> IN (...)" for a choice (and only boards the agent's role sees - mitBoardVisibleSql), or ''. */
 function mitBoardWhere($choice, $user_id, $alias = 'tickets') {
     $ids = mitBoardChoiceIds($choice, $user_id);
-    return $ids === null ? '' : ' AND ' . mitBoardSql($alias) . ' IN (' . implode(',', array_map('intval', $ids)) . ')';
+    return ($ids === null ? '' : ' AND ' . mitBoardSql($alias) . ' IN (' . implode(',', array_map('intval', $ids)) . ')') . mitBoardVisibleSql($alias);
 }
 
 /** A board's coloured tag. */
@@ -650,15 +652,15 @@ function mitBoardHiddenInput() {
 /** agent/tickets.php: the board switcher next to the title - All boards, My boards and each board with its open tickets. */
 function mitBoardSwitcher(callable $filter_url) {
     global $mysqli, $session_user_id;
-    $boards = mitBoards();
+    $boards = mitBoardsVisible();
     if (!$boards) {
         return '';
     }
     $choice = (string) ($_GET['board'] ?? '');
-    $mine = mitBoardsOfUser($session_user_id);
+    $mine = array_intersect_key(mitBoardsOfUser($session_user_id), $boards);
     $counts = [];
     $sql = mysqli_query($mysqli, "SELECT " . mitBoardSql() . " AS b, COUNT(*) FROM tickets WHERE " . TICKET_OPEN_SQL
-        . clientScopeSql('ticket_client_id') . (function_exists('mitServiceTicketsAnd') ? mitServiceTicketsAnd('tickets.ticket_project_id') : '') . " GROUP BY b");
+        . clientScopeSql('ticket_client_id') . (function_exists('mitServiceTicketsAnd') ? mitServiceTicketsAnd('tickets.ticket_project_id') : '') . mitBoardVisibleSql() . " GROUP BY b");
     while ($row = mysqli_fetch_row($sql)) {
         $counts[intval($row[0])] = intval($row[1]);
     }
@@ -739,7 +741,7 @@ function mitBoardEscalateMenuItem(array $ticket) {
 
 /** New Ticket: the Board field - Automatic (the routing rules) or a board. */
 function mitBoardNewTicketField() {
-    $boards = mitBoards();
+    $boards = mitBoardsVisible();
     if (!$boards) {
         return '';
     }
@@ -814,7 +816,7 @@ function mitBoardDashChoice() {
     $value = (string) ($picked ? $_GET['board'] : mitUserPreference($session_user_id, 'dashboard.board', ''));
     if ($value === 'mine') {
         $value = mitBoardsOfUser($session_user_id) ? 'mine' : '';
-    } elseif (!isset(mitBoards()[intval($value)]) || $value === '') {
+    } elseif (!isset(mitBoardsVisible()[intval($value)]) || $value === '') {
         $value = '';
     } else {
         $value = (string) intval($value);
@@ -829,7 +831,7 @@ function mitBoardDashChoice() {
 function mitBoardDashAnd($alias = 'tickets') {
     global $session_user_id;
     $choice = mitBoardDashChoice();
-    return $choice === '' ? '' : mitBoardWhere($choice, $session_user_id, $alias);
+    return $choice === '' ? mitBoardVisibleSql($alias) : mitBoardWhere($choice, $session_user_id, $alias);
 }
 
 /** Needs attention: the ticket items open the Tickets list on the same board. */
@@ -853,8 +855,8 @@ function mitBoardDashPicker() {
         return '';
     }
     $choice = mitBoardDashChoice();
-    $options = ['' => 'All boards'] + (mitBoardsOfUser($session_user_id) ? ['mine' => 'My boards'] : []);
-    foreach (mitBoards() as $id => $board) {
+    $options = ['' => 'All boards'] + (array_intersect_key(mitBoardsOfUser($session_user_id), mitBoardsVisible()) ? ['mine' => 'My boards'] : []);
+    foreach (mitBoardsVisible() as $id => $board) {
         $options[(string) $id] = $board['board_name'];
     }
     $html = '<form class="d-flex align-items-center gap-2" data-mit-dash-board>'
@@ -870,14 +872,14 @@ function mitBoardDashPicker() {
 /** "Your boards": each board the agent is on - open, unassigned and past-SLA tickets, linking to the Tickets list. */
 function mitBoardDashCard() {
     global $mysqli, $session_user_id;
-    $mine = mitBoardsOfUser($session_user_id);
+    $mine = array_intersect_key(mitBoardsOfUser($session_user_id), mitBoardsVisible());
     if (!$mine) {
         return '';
     }
     $figures = [];
     $sql = mysqli_query($mysqli, "SELECT " . mitBoardSql() . " AS b, COUNT(*) AS open, SUM(ticket_assigned_to = 0) AS unassigned,
         SUM(" . dashboardSlaBreachedSql() . ") AS breached FROM tickets WHERE " . TICKET_OPEN_SQL . clientScopeSql('ticket_client_id')
-        . (function_exists('mitServiceTicketsAnd') ? mitServiceTicketsAnd() : '') . " GROUP BY b");
+        . (function_exists('mitServiceTicketsAnd') ? mitServiceTicketsAnd() : '') . mitBoardVisibleSql() . " GROUP BY b");
     while ($row = mysqli_fetch_assoc($sql)) {
         $figures[intval($row['b'])] = $row;
     }
