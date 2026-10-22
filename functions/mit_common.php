@@ -280,3 +280,5 @@ function mitNavCachedCount($key, callable $compute, $fresh = false) {
     $_SESSION['mit_nav_counts'][$key] = ['at' => time(), 'value' => $value];
     return $value;
 }
+
+require_once __DIR__ . '/mit_backup_restore.php'; // Admin > Backup: restore on a running install

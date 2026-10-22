@@ -20,7 +20,7 @@
  */
 
 // Only ever included by the updater or setup, never opened in a browser
-if (php_sapi_name() !== 'cli' && !defined('FROM_SETUP')) {
+if (php_sapi_name() !== 'cli' && !defined('FROM_SETUP') && !defined('MIT_FROM_RESTORE')) { // MIT_FROM_RESTORE: Admin > Backup restore
     echo "Cannot access this file directly.";
     exit();
 }

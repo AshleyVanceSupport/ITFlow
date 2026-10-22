@@ -164,6 +164,13 @@ calendar page asks them to Reconnect. Restoring onto the same server needs nothi
 A backup restored with `scripts/restore_cli.php` or the setup wizard gets our database updates
 straight after (a stock ITFlow backup, or one from an older build of ours, needs them).
 
+**Restoring on a running install (26.10.108):** Admin > Backup > Restore on a stored backup, or upload a .zip (up to the
+server's upload limit - bigger ones by the command line). It shows what is in the archive, asks for your password and
+`RESTORE`, makes a Full "Before restore" backup of the system as it is (restore that to undo), restores, runs ITFlow's and
+our database updates and signs everyone out. Do it when nobody is working - it takes a minute or more and the system is
+being replaced meanwhile. A backup from another server needs that server's backup key, and its connection secrets
+(Microsoft 365, NinjaOne, QuickBooks, Bitwarden, Ingram) need entering again unless `$config_mit_secret_key` is copied too.
+
 **What the stored Microsoft tokens can do.** The mailbox token (Settings > Mail) can read and send
 mail as that mailbox; each person's Outlook token can read their calendar's free/busy and write the
 events ITFlow puts there. Anyone with the database *and* `$config_mit_secret_key` could use them, so
@@ -244,6 +251,8 @@ break stock ITFlow, and lists what stops working after a move.
   `mit_leave_rates`, settings in `mit_settings` (ts_*, including the paid-break rule; lunch is a charge code); export the Timesheets & Payroll
   report (both CSVs) before moving. Ticket time is ITFlow's own (ticket replies) and stays. Admin >
   Roles keeps an unused "Timesheets" permission (`module_timesheets` row) – harmless.
+- **Restore from Admin > Backup** – stock ITFlow restores only on a fresh install (setup wizard) or from the command line
+  (`scripts/restore_cli.php`); nothing of ours is stored for it.
 - **Dispatch** – the page and its Workload view go away; it keeps nothing of its own (schedules and
   assignments it made are ordinary ITFlow ticket fields and stay). Use Calendar and each ticket's Schedule instead.
   Admin > Roles keeps an unused "Dispatch" permission (`module_dispatch` row, M035) – harmless; delete the row if wanted.

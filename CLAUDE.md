@@ -782,6 +782,18 @@ model: see DEPLOYMENT.md.
   person picker lists only people who may be opened; a per-person approver can be any active agent; changing a reimbursement no
   longer needs Support (same rule as removing); hours changed by someone else notify the person (once an hour). Reports and the
   API are not filtered by board (documented in mit_board_roles.php). Smoke: picker test in `04-permissions.spec.js`.
+- Restore on a running install (Oct 22, 26.10.108): `functions/mit_backup_restore.php` (ours, required from mit_common.php) -
+  Admin > Backup: Restore on a stored backup (`mitRestoreRowButton`, one line in the row actions of `admin/backup.php`) or upload a
+  .zip (`admin/includes/mit_restore_card.php`, one require in ITFlow's "Restoring" card, whose "cannot be done from here" sentence
+  went; the upload is stored with the backups, source "Uploaded", and `?mit_restore=<id>` opens its window). Window
+  `admin/modals/mit_backup/restore.php` (contents via ITFlow's backupInspectArchive; newer database version refused; key field for
+  another install's backups), handlers `admin/post/mit_backup_restore.php` (own password + typing RESTORE): `mitRestoreRun` = a Full
+  backup source "Before restore" first, ITFlow's `backupRestoreArchive` (dumps the database and puts it back if the import fails),
+  then the restored-from and safety rows written back into the restored `backups` table; the handler then runs
+  `mitRestoreItflowUpdates` + our runner (`MIT_FROM_RESTORE` lets `admin/database_updates_mountaineerit.php` run outside the CLI),
+  logs it, destroys the session and shows a result page. Under `mitLock('backup_restore')`, `ignore_user_abort`. The action name is a
+  hidden input (the button is disabled while it runs - a disabled button's name is not sent). Smoke `16-backup-restore.spec.js`
+  (the real round trip only with `ITFLOW_SMOKE_RESTORE=1`).
 - Review fixes (Oct 2026): `functions/mit_common.php` (ours, required first in `functions.php`) - shared
   helpers: `mitMailBody` / `mitSqlHtml` (HTML for SQL without escapeSql's strip_tags), `mitProductIsTangible`,
   module switches (`mitModuleOn`, `mitModuleRequire` for pages/modals, `mitModuleGuard` for handler files,

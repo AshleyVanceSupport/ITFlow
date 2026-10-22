@@ -4,6 +4,10 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.108 - 2026-10-22
+- Admin > Backup: restore a backup on a running system - the Restore button on a stored backup, or upload a backup .zip (also one from another server, with its key). You see what is in it first, and confirm with your password and by typing RESTORE.
+- Before anything changes, a Full backup of the system as it is now is made and kept as "Before restore" - restore that to undo. Afterwards the database updates run and everyone signs in again. Do it when nobody is working; it takes a minute or more.
+
 ## 26.10.107 - 2026-10-22
 - Procurement: the Receiving number in the side menu counts the items still to arrive (it counted purchase orders, so a PO with two items showed 1).
 
