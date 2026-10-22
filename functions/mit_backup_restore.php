@@ -10,9 +10,15 @@
  *   - after it, the "Before restore" row is put back in the list (the restore brought back the backups table as it was)
  * The handler (admin/post/mit_backup_restore.php) then runs ITFlow's and our database updates, logs it and signs the admin out.
  * Admins only (the admin pages); the admin's own password and typing RESTORE confirm it.
+ * Big backups (up to MIT_RESTORE_MAX_BYTES): the browser sends the file in pieces (mitRestoreChunk*, the script in
+ * admin/includes/mit_restore_card.php), so PHP's upload limit and a proxy's request limit don't matter. Free disk is checked
+ * before the upload and before the restore. Each restore writes how it went to mit_last_restore.json in the backups folder,
+ * shown on Admin > Backup - a long restore carries on when a proxy stops waiting for the page.
  */
 
 const MIT_RESTORE_SOURCE = 'Before restore';
+const MIT_RESTORE_MAX_BYTES = 5 * 1024 * 1024 * 1024;  // biggest backup the browser upload takes (sent in pieces)
+const MIT_RESTORE_CHUNK_BYTES = 32 * 1024 * 1024;      // one piece - under PHP's and proxies' (Cloudflare: 100 MB) request limits
 
 /** A stored backup that can be restored: [row, path] or [null, why]. */
 function mitRestoreStored($backup_id) {
@@ -55,21 +61,31 @@ function mitRestoreCheck($path, $key) {
     return [$meta, ''];
 }
 
-/** An uploaded .zip ($_FILES entry): checked, stored with the other backups and listed. Returns [backup_id, message]. */
+/** An uploaded .zip ($_FILES entry, a small file in one request): checked, stored with the other backups and listed. Returns [backup_id, message]. */
 function mitRestoreUpload(array $file, $typed_key) {
-    global $mysqli, $session_name;
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'] ?? '')) {
         $too_big = in_array($file['error'] ?? 0, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true);
-        return [0, $too_big ? 'The file is bigger than this server takes (' . backupFormatBytes(backupMaxUploadBytes()) . ') - copy it to the server and use the command line restore.' : 'Pick a backup .zip to upload.'];
+        return [0, $too_big ? 'The file is bigger than this server takes in one go (' . backupFormatBytes(backupMaxUploadBytes()) . ') - upload it from Admin > Backup with JavaScript on (it goes in pieces), or copy it to the server and use the command line restore.' : 'Pick a backup .zip to upload.'];
     }
-    [$meta, $problem] = mitRestoreCheck($file['tmp_name'], mitRestoreKey($typed_key));
+    return mitRestoreAdopt($file['tmp_name'], $typed_key, true);
+}
+
+/**
+ * A backup file on the server (an upload): checked with its key, moved in with the other backups under a backup's name and
+ * listed (source "Uploaded"). The file is removed when it is not a backup. Returns [backup_id, message].
+ */
+function mitRestoreAdopt($tmp, $typed_key, $uploaded = false) {
+    global $mysqli, $session_name;
+    [$meta, $problem] = mitRestoreCheck($tmp, mitRestoreKey($typed_key));
     if (!$meta) {
+        $uploaded || @unlink($tmp);
         return [0, "That is not a backup that can be read: $problem"];
     }
     $type = in_array($meta['type'], backupAllTypes(), true) ? $meta['type'] : BACKUP_TYPE_FULL;
     $name = backupBuildFileName($type, randomString(32));
     $path = backupStorageDir() . '/' . $name;
-    if (!move_uploaded_file($file['tmp_name'], $path)) {
+    if (!($uploaded ? move_uploaded_file($tmp, $path) : rename($tmp, $path))) {
+        $uploaded || @unlink($tmp);
         return [0, 'The file could not be saved with the backups (is the backup folder writable?).'];
     }
     @chmod($path, 0600);
@@ -78,7 +94,113 @@ function mitRestoreUpload(array $file, $typed_key) {
     mysqli_query($mysqli, "INSERT INTO backups SET backup_type = '" . escapeSql($type) . "', backup_file_name = '" . escapeSql($name) . "', backup_size = $size,
         backup_sha256 = '$sha', backup_status = 'Complete', backup_source = 'Uploaded', backup_created_by = '" . escapeSql(stripslashes((string) $session_name)) . "',
         backup_completed_at = NOW()");
-    return [intval(mysqli_insert_id($mysqli)), 'Backup uploaded (' . backupTypeLabel($type) . ', taken ' . $meta['generated'] . ').' . ($problem !== '' ? " $problem" : '')];
+    return [intval(mysqli_insert_id($mysqli)), 'Backup uploaded (' . backupTypeLabel($type) . ', ' . backupFormatBytes($size) . ', taken ' . $meta['generated'] . ').' . ($problem !== '' ? " $problem" : '')];
+}
+
+/** '' when the backups folder's disk has $bytes free, else why not. */
+function mitRestoreDiskProblem($bytes, $for) {
+    $free = @disk_free_space(backupStorageDir());
+    if ($free === false || $free >= $bytes) {
+        return '';
+    }
+    return "Not enough disk space $for: about " . backupFormatBytes($bytes) . ' is needed, ' . backupFormatBytes($free) . ' is free.';
+}
+
+/** The size of one piece of a browser upload - under PHP's request limit on this server. */
+function mitRestoreChunkBytes() {
+    $limit = backupMaxUploadBytes();
+    return $limit > 0 ? max(512 * 1024, min(MIT_RESTORE_CHUNK_BYTES, $limit - 256 * 1024)) : MIT_RESTORE_CHUNK_BYTES;
+}
+
+function mitRestorePartPath($id) {
+    return backupStorageDir() . '/mit_upload_' . preg_replace('/[^a-f0-9]/', '', (string) $id) . '.part';
+}
+
+/** A browser upload in pieces starts: [id, piece size] - throws with why not. Kept in the admin's session. */
+function mitRestoreChunkStart($name, $size) {
+    $size = intval($size);
+    if (!preg_match('/\.zip$/i', (string) $name)) {
+        throw new RuntimeException('Pick a backup .zip to upload.');
+    }
+    if ($size <= 0 || $size > MIT_RESTORE_MAX_BYTES) {
+        throw new RuntimeException('A backup up to ' . backupFormatBytes(MIT_RESTORE_MAX_BYTES) . ' can be uploaded here - copy a bigger one to the server and use the command line restore.');
+    }
+    // Pieces of uploads that never finished (a closed browser) go after a day
+    foreach (glob(backupStorageDir() . '/mit_upload_*.part') ?: [] as $old) {
+        if (filemtime($old) < time() - 86400) {
+            @unlink($old);
+        }
+    }
+    if (!empty($_SESSION['mit_restore_upload']['id'])) {
+        @unlink(mitRestorePartPath($_SESSION['mit_restore_upload']['id']));
+    }
+    $problem = mitRestoreDiskProblem($size + 512 * 1024 * 1024, 'for the upload');
+    if ($problem !== '') {
+        throw new RuntimeException($problem);
+    }
+    $id = bin2hex(random_bytes(16));
+    if (@file_put_contents(mitRestorePartPath($id), '') === false) {
+        throw new RuntimeException('The backup folder is not writable.');
+    }
+    @chmod(mitRestorePartPath($id), 0600);
+    $_SESSION['mit_restore_upload'] = ['id' => $id, 'size' => $size, 'received' => 0];
+    return [$id, mitRestoreChunkBytes()];
+}
+
+/** One piece ($_FILES entry) at $offset - returns the bytes received so far; throws with why not. */
+function mitRestoreChunkAppend($id, $offset, array $file) {
+    $upload = $_SESSION['mit_restore_upload'] ?? null;
+    if (!$upload || !hash_equals($upload['id'], (string) $id)) {
+        throw new RuntimeException('This upload is no longer going on - start it again.');
+    }
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'] ?? '')) {
+        throw new RuntimeException('A piece of the file did not arrive (error ' . intval($file['error'] ?? 0) . ').');
+    }
+    if (intval($offset) !== intval($upload['received'])) {
+        throw new RuntimeException('A piece arrived out of order - start the upload again.');
+    }
+    $length = filesize($file['tmp_name']);
+    if ($length <= 0 || $length > mitRestoreChunkBytes() || $upload['received'] + $length > $upload['size']) {
+        throw new RuntimeException('A piece of the file was not the expected size - start the upload again.');
+    }
+    $in = fopen($file['tmp_name'], 'rb');
+    $out = fopen(mitRestorePartPath($id), 'ab');
+    $copied = ($in && $out) ? stream_copy_to_stream($in, $out) : false;
+    $in && fclose($in);
+    $out && fclose($out);
+    if ($copied !== $length) {
+        throw new RuntimeException('A piece could not be written to the backup folder (disk full?).');
+    }
+    $_SESSION['mit_restore_upload']['received'] += $length;
+    return $_SESSION['mit_restore_upload']['received'];
+}
+
+/** Every piece is in: checked and listed like a one-go upload. Returns [backup_id, message]. */
+function mitRestoreChunkFinish($id, $typed_key) {
+    $upload = $_SESSION['mit_restore_upload'] ?? null;
+    unset($_SESSION['mit_restore_upload']);
+    if (!$upload || !hash_equals($upload['id'], (string) $id)) {
+        return [0, 'This upload is no longer going on - start it again.'];
+    }
+    $part = mitRestorePartPath($id);
+    if (intval($upload['received']) !== intval($upload['size']) || !is_file($part) || filesize($part) !== intval($upload['size'])) {
+        @unlink($part);
+        return [0, 'The upload did not finish - start it again.'];
+    }
+    return mitRestoreAdopt($part, $typed_key);
+}
+
+/** How the last restore went (mit_last_restore.json in the backups folder - it outlives the restore): array or null. */
+function mitRestoreLastStatus() {
+    $raw = @file_get_contents(backupStorageDir() . '/mit_last_restore.json');
+    $status = $raw ? json_decode($raw, true) : null;
+    return is_array($status) ? $status : null;
+}
+
+function mitRestoreSetStatus(array $status) {
+    $file = backupStorageDir() . '/mit_last_restore.json';
+    @file_put_contents($file, json_encode($status + ['at' => date('Y-m-d H:i:s')]), LOCK_EX);
+    @chmod($file, 0600);
 }
 
 /**
@@ -95,15 +217,22 @@ function mitRestoreRun($path, $key, $who, array $from = []) {
     if (!$meta || $problem !== '') {
         return [false, $problem];
     }
+    // The "Before restore" copy (about the size of what is here now), the unpacked archive and the import
+    $problem = mitRestoreDiskProblem(3 * (filesize($path) ?: 0), 'to restore it');
+    if ($problem !== '') {
+        return [false, "Nothing was changed - $problem"];
+    }
     if (!mitLock('backup_restore', 1)) {
         return [false, 'A restore is already running.'];
     }
+    mitRestoreSetStatus(['state' => 'running', 'who' => (string) $who, 'file' => basename($path), 'started' => date('Y-m-d H:i:s')]);
 
     // The system as it is now, kept - so this can be undone
     $error = null;
     $safety_id = backupCreate($mysqli, BACKUP_TYPE_FULL, $who, MIT_RESTORE_SOURCE, $error);
     if (!$safety_id) {
         mitUnlock('backup_restore');
+        mitRestoreSetStatus(['state' => 'failed', 'who' => (string) $who, 'file' => basename($path), 'message' => 'Nothing was changed - the safety backup of the current system failed: ' . $error]);
         return [false, 'Nothing was changed - the safety backup of the current system failed: ' . $error];
     }
     $safety = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT * FROM backups WHERE backup_id = $safety_id"));
@@ -113,6 +242,7 @@ function mitRestoreRun($path, $key, $who, array $from = []) {
     $mysqli = backupDbEnsure($mysqli);
     if (!$ok) {
         mitUnlock('backup_restore');
+        mitRestoreSetStatus(['state' => 'failed', 'who' => (string) $who, 'file' => basename($path), 'message' => "Restore failed: $error"]);
         return [false, "Restore failed: $error"];
     }
 

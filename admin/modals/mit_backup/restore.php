@@ -42,7 +42,8 @@ if ($row) {
                 <div class="alert alert-warning small">
                     <strong>This replaces everything</strong> - the database<?= !$meta || in_array('uploads.zip', $meta['entries'], true) ? ' and the uploads folder (attachments, logos, receipts)' : '' ?> - with what is in the backup.
                     First a Full backup of the system as it is now is made and kept as <strong>"Before restore"</strong>, so this can be undone.
-                    Everyone is signed out afterwards; sign in with the accounts that were in the backup. Anyone working meanwhile may see errors - it takes a minute or more.
+                    Everyone is signed out afterwards; sign in with the accounts that were in the backup. Anyone working meanwhile may see errors - it takes a minute or more (a big backup longer: if this page stops waiting, the
+                    restore carries on - sign in again in a few minutes and Admin > Backup shows how it went).
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Encryption key<?= $needs_key ? '' : ' <span class="text-muted small">(blank = this install\'s)</span>' ?></label>

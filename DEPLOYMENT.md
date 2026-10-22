@@ -164,8 +164,11 @@ calendar page asks them to Reconnect. Restoring onto the same server needs nothi
 A backup restored with `scripts/restore_cli.php` or the setup wizard gets our database updates
 straight after (a stock ITFlow backup, or one from an older build of ours, needs them).
 
-**Restoring on a running install (26.10.108):** Admin > Backup > Restore on a stored backup, or upload a .zip (up to the
-server's upload limit - bigger ones by the command line). It shows what is in the archive, asks for your password and
+**Restoring on a running install (26.10.108):** Admin > Backup > Restore on a stored backup, or upload a .zip - up to 5 GB
+(26.10.110: the page sends it in 32 MB pieces, so PHP's upload limit and a proxy's request limit don't matter; keep the page open
+until it finishes). Free disk: about 3 x the backup's size (the "Before restore" copy, the unpacked archive, the import). A big
+restore takes minutes - if the page stops waiting (a proxy timeout), the restore carries on; sign in again and Admin > Backup shows
+how it went. Bigger than 5 GB: copy the file to the server and use `scripts/restore_cli.php`. It shows what is in the archive, asks for your password and
 `RESTORE`, makes a Full "Before restore" backup of the system as it is (restore that to undo), restores, runs ITFlow's and
 our database updates and signs everyone out. Do it when nobody is working - it takes a minute or more and the system is
 being replaced meanwhile. A backup from another server needs that server's backup key, and its connection secrets

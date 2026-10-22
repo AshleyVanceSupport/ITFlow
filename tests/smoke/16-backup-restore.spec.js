@@ -51,8 +51,58 @@ test('restore: a file that is not a backup is refused', async ({ page }) => {
     await visit(page, 'admin/backup.php');
     const form = page.locator('form:has(button[name=mit_backup_upload])');
     await form.locator('input[name=backup_file]').setInputFiles(file);
-    await Promise.all([page.waitForNavigation(), form.locator('button[name=mit_backup_upload]').click()]);
-    expect(await flash(page)).toContain('not a backup that can be read');
+    await form.locator('button[name=mit_backup_upload]').click();
+    // Sent in pieces by the page's script - the answer shows under the progress bar
+    await expect(form.locator('[data-mit-upload-text]')).toContainText('not a backup that can be read');
+});
+
+test('restore: a big backup goes up in pieces and is put back together', async ({ page }) => {
+    const errors = watch(page);
+    const list = await backups(page);
+    test.skip(!list.length, 'no complete backup to send');
+    const before = list.length;
+    const download = await page.locator(`a[href*="backup_download.php?backup_id=${list[0].id}"]`).getAttribute('href');
+    // The stored backup, sent back in 1 MB pieces through the same requests the page's script makes
+    const result = await page.evaluate(async (href) => {
+        const token = document.querySelector('form[data-mit-backup-upload] [name=csrf_token]').value;
+        const blob = await (await fetch(href, { credentials: 'same-origin' })).blob();
+        const post = async (fields, piece) => {
+            const data = new FormData();
+            data.append('csrf_token', token);
+            Object.entries(fields).forEach(([k, v]) => data.append(k, v));
+            if (piece) data.append('chunk', piece, 'chunk');
+            const r = await fetch('post.php', { method: 'POST', body: data, credentials: 'same-origin' });
+            return r.json();
+        };
+        const start = await post({ mit_backup_chunk_start: 1, name: 'big.zip', size: blob.size });
+        if (!start.id) return { error: start.error || 'no start' };
+        const piece = 1024 * 1024;
+        let pieces = 0;
+        for (let offset = 0; offset < blob.size; offset += piece) {
+            const r = await post({ mit_backup_chunk: 1, id: start.id, offset }, blob.slice(offset, offset + piece));
+            if (r.error) return { error: r.error };
+            pieces++;
+        }
+        // A piece out of order is refused (the upload is finished, so it is gone)
+        const late = await post({ mit_backup_chunk: 1, id: start.id, offset: 0 }, blob.slice(0, 10));
+        const done = await post({ mit_backup_chunk_finish: 1, id: start.id, restore_key: '' });
+        return { pieces, size: blob.size, done, late };
+    }, download);
+    expect(result.error, 'no error while sending').toBeUndefined();
+    expect(result.pieces, 'sent in several pieces').toBeGreaterThan(1);
+    expect(result.done.redirect, `put together and listed (${JSON.stringify(result.done)})`).toMatch(/backup\.php\?mit_restore=\d+/);
+    await visit(page, 'admin/' + result.done.redirect, errors);
+    expect(await flash(page)).toContain('Backup uploaded');
+    const modal = page.locator('.modal.show');
+    await expect(modal, 'its Restore window reads it').toContainText(/Contains\s*(Database and uploads|Database only)/);
+    const after = await backups(page);
+    expect(after.length, 'one more in the list').toBe(before + 1);
+    // Clean up: delete the uploaded copy
+    const id = Number(new URL(result.done.redirect, page.url()).searchParams.get('mit_restore'));
+    const del = await page.locator(`a[href*="delete_backup=${id}&"]`).getAttribute('href');
+    await page.goto(new URL(del, page.url()).href);
+    expect((await backups(page)).length, 'the copy is deleted again').toBe(before);
+    await expectClean(page, errors);
 });
 
 test('restore: a backup, then the "Before restore" copy - the install ends as it started', async ({ page, browser }) => {

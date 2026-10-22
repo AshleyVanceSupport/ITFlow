@@ -4,6 +4,11 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.110 - 2026-10-22
+- Admin > Backup: backups up to 5 GB can be uploaded to restore - the page sends the file in pieces with a progress bar (keep the page open), so the server's upload limit no longer matters.
+- Before an upload or a restore, free disk space is checked (a restore needs about three times the backup's size).
+- Each restore's result is kept and shown on Admin > Backup - a big restore carries on even if the page stops waiting, and you see afterwards how it went.
+
 ## 26.10.109 - 2026-10-22
 - Development mode: integrations sync into the dev server but nothing done there goes back - NinjaOne, Bitwarden and Ingram Micro are still read, Outlook busy times still come in, and nothing is created, changed or deleted in them, even from a button pressed by hand. Mail sent to the test inbox still goes out.
 - Development mode: QuickBooks Online and invoice batching work with an Intuit sandbox company connected on the dev server (production's connection from the backup is never used or revoked); QuickBooks' invoice emails go to the test inbox.

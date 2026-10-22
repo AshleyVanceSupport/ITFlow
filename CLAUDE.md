@@ -799,6 +799,14 @@ model: see DEPLOYMENT.md.
   runner; the CLI paths still use ITFlow's file) - a stock v26.10 backup (DB 2.7.9) restored from Admin > Backup was left at 2.7.9.
   Rows that came with the backup still Running / Pending with no file here are marked Failed. Checked with a stock v26.10 install's
   backup (its key typed in the window): updated to 2.8.9, all our updates ran, main pages clean.
+  Big backups (26.10.110): up to `MIT_RESTORE_MAX_BYTES` (5 GB), sent by the card's script in pieces of `mitRestoreChunkBytes()`
+  (32 MB, less under a smaller PHP limit - under Cloudflare's 100 MB request cap) - handlers `mit_backup_chunk_start` / `mit_backup_chunk` /
+  `mit_backup_chunk_finish` (JSON) -> `mitRestoreChunkStart` / `Append` / `Finish` (session `mit_restore_upload`, file
+  `<backups>/mit_upload_<id>.part`, pieces in order only, leftovers older than a day removed) -> `mitRestoreAdopt` (also used by the
+  one-go `mitRestoreUpload`, the no-JavaScript fallback). `mitRestoreDiskProblem`: the upload needs its size + 512 MB free, a restore
+  3 x the archive. Each restore writes `<backups>/mit_last_restore.json` (running / done / failed - `mitRestoreSetStatus`), shown on
+  Admin > Backup (`[data-mit-last-restore]`) - a restore carries on when the browser or a proxy stops waiting (ignore_user_abort).
+  Tested with a 1.2 GB backup: upload 29 s, restore about 3 min (2.5 of it the "Before restore" copy).
 - Development mode (Oct 22, 26.10.108): `functions/mit_dev_mode.php` (ours, required from mit_common.php) - for a copy of production
   restored onto a test server. `config.php` `$config_mit_dev_mode` / `$config_mit_dev_mail_to` (not the database, so restoring
   production's backup can't switch it off; written by `mitConfigSet`, which also clears opcache). Switched in Admin > Backup's

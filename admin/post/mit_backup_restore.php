@@ -45,6 +45,34 @@ if (isset($_POST['mit_backup_upload'])) {
     redirect("backup.php");
 }
 
+// A big backup from the browser, in pieces (admin/includes/mit_restore_card.php's script) - JSON answers
+if (isset($_POST['mit_backup_chunk_start']) || isset($_POST['mit_backup_chunk']) || isset($_POST['mit_backup_chunk_finish'])) {
+
+    validateCSRFToken();
+
+    header('Content-Type: application/json');
+    try {
+        if (isset($_POST['mit_backup_chunk_start'])) {
+            [$id, $chunk] = mitRestoreChunkStart($_POST['name'] ?? '', $_POST['size'] ?? 0);
+            echo json_encode(['id' => $id, 'chunk' => $chunk]);
+        } elseif (isset($_POST['mit_backup_chunk'])) {
+            echo json_encode(['received' => mitRestoreChunkAppend($_POST['id'] ?? '', $_POST['offset'] ?? -1, $_FILES['chunk'] ?? [])]);
+        } else {
+            [$backup_id, $message] = mitRestoreChunkFinish($_POST['id'] ?? '', $_POST['restore_key'] ?? '');
+            if (!$backup_id) {
+                throw new RuntimeException($message);
+            }
+            logAudit("Backup", "Upload", escapeSql(stripslashes((string) $session_name) . " uploaded a backup to restore"));
+            flashAlert(escapeHtml($message) . ' Check it and confirm below.');
+            echo json_encode(['redirect' => "backup.php?mit_restore=$backup_id"]);
+        }
+    } catch (Throwable $e) {
+        http_response_code(422);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+    exit;
+}
+
 if (isset($_POST['mit_backup_restore'])) {
 
     validateCSRFToken();
@@ -89,6 +117,7 @@ if (isset($_POST['mit_backup_restore'])) {
         }
     }
     logAudit("Backup", "Restore", escapeSql("$who restored " . $backup['backup_file_name'] . " from Admin > Backup"));
+    mitRestoreSetStatus(['state' => 'done', 'who' => $who, 'file' => $backup['backup_file_name'], 'message' => $message, 'warnings' => $warnings]);
 
     // Everyone signs in again - the user list is the backup's now
     session_start();
