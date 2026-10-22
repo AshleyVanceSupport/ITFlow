@@ -807,6 +807,13 @@ model: see DEPLOYMENT.md.
   3 x the archive. Each restore writes `<backups>/mit_last_restore.json` (running / done / failed - `mitRestoreSetStatus`), shown on
   Admin > Backup (`[data-mit-last-restore]`) - a restore carries on when the browser or a proxy stops waiting (ignore_user_abort).
   Tested with a 1.2 GB backup: upload 29 s, restore about 3 min (2.5 of it the "Before restore" copy).
+  Temporary folder (26.10.111): ITFlow unpacks into sys_get_temp_dir() (/tmp) - on Debian 13 a RAM disk of half the memory, so a
+  1.1 GB backup failed with "Could not extract the archive: No error" (or, a little smaller, "database restored but uploads.zip could
+  not be opened"). `mitRestoreUseTempDir` (start of `mitRestoreRun`) sets TMPDIR to `<backups>/mit_tmp` before PHP picks its folder
+  (a php.ini `sys_temp_dir` still wins; that folder's free space is then checked too); leftovers there older than a day go. The backup
+  list is put right after a failed restore too, and the handler runs the database updates after a failure (ITFlow may have restored
+  the database before the uploads failed). `scripts/install.sh` sets `sys_temp_dir = /var/lib/itflow-tmp` (apache2 + cli) so ITFlow's
+  own backups and restore_cli don't use /tmp either. Reproduced with Apache's TMPDIR on a 300 MB tmpfs (old code failed, new restored).
 - Development mode (Oct 22, 26.10.108): `functions/mit_dev_mode.php` (ours, required from mit_common.php) - for a copy of production
   restored onto a test server. `config.php` `$config_mit_dev_mode` / `$config_mit_dev_mail_to` (not the database, so restoring
   production's backup can't switch it off; written by `mitConfigSet`, which also clears opcache). Switched in Admin > Backup's

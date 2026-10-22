@@ -4,6 +4,11 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.111 - 2026-10-22
+- Admin > Backup: big backups restore again - they were unpacked in the server's temporary folder, which on newer Debian is a small memory disk ("Could not extract the archive: No error"). They now unpack next to the backups.
+- A restore that fails part way still leaves the backup list right and the database up to date.
+- New servers keep PHP's temporary files on disk (the installer); DEPLOYMENT.md has the two commands for a server installed before.
+
 ## 26.10.110 - 2026-10-22
 - Admin > Backup: backups up to 5 GB can be uploaded to restore - the page sends the file in pieces with a progress bar (keep the page open), so the server's upload limit no longer matters.
 - Before an upload or a restore, free disk space is checked (a restore needs about three times the backup's size).

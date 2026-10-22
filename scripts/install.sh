@@ -233,6 +233,10 @@ timedatectl set-timezone "$TIMEZONE" 2>/dev/null || ln -sf "/usr/share/zoneinfo/
 # ---------------------------------------------------------------------------- PHP settings
 
 info "Configuring PHP"
+# Backups and restores unpack in PHP's temporary folder; on Debian 13 /tmp is a RAM disk of half the memory, too
+# small for a big backup - use a folder on disk instead
+PHP_TMP="/var/lib/itflow-tmp"
+install -d -m 0700 -o "$WEB_USER" -g "$WEB_USER" "$PHP_TMP"
 for sapi in apache2 cli; do
     if [[ -d "/etc/php/$PHP_VER/$sapi/conf.d" ]]; then
         cat > "/etc/php/$PHP_VER/$sapi/conf.d/99-itflow.ini" <<EOF
@@ -242,10 +246,11 @@ post_max_size = 500M
 memory_limit = 512M
 max_execution_time = 300
 date.timezone = $TIMEZONE
+sys_temp_dir = $PHP_TMP
 EOF
     fi
 done
-ok "uploads up to 500 MB, timezone $TIMEZONE"
+ok "uploads up to 500 MB, timezone $TIMEZONE, temporary files in $PHP_TMP"
 
 # ---------------------------------------------------------------------------- database
 

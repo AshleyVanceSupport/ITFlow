@@ -168,7 +168,17 @@ straight after (a stock ITFlow backup, or one from an older build of ours, needs
 (26.10.110: the page sends it in 32 MB pieces, so PHP's upload limit and a proxy's request limit don't matter; keep the page open
 until it finishes). Free disk: about 3 x the backup's size (the "Before restore" copy, the unpacked archive, the import). A big
 restore takes minutes - if the page stops waiting (a proxy timeout), the restore carries on; sign in again and Admin > Backup shows
-how it went. Bigger than 5 GB: copy the file to the server and use `scripts/restore_cli.php`. It shows what is in the archive, asks for your password and
+how it went. Bigger than 5 GB: copy the file to the server and use `scripts/restore_cli.php`.
+
+**Temporary files (26.10.111).** Backups and restores unpack in PHP's temporary folder. On Debian 13 `/tmp` is a RAM disk of half
+the memory (`df -h /tmp` shows `tmpfs`), too small for a big backup - a restore failed with "Could not extract the archive: No
+error". Restores from Admin > Backup now unpack next to the backups (`uploads/backups/mit_tmp`). New servers from
+`scripts/install.sh` also send ITFlow's own backups and the command line restore to `/var/lib/itflow-tmp`; on a server installed
+before 26.10.111 do the same once:
+
+    sudo install -d -m 0700 -o www-data -g www-data /var/lib/itflow-tmp
+    for s in apache2 cli; do echo 'sys_temp_dir = /var/lib/itflow-tmp' | sudo tee -a /etc/php/*/$s/conf.d/99-itflow.ini; done
+    sudo systemctl restart apache2 It shows what is in the archive, asks for your password and
 `RESTORE`, makes a Full "Before restore" backup of the system as it is (restore that to undo), restores, runs ITFlow's and
 our database updates and signs everyone out. Do it when nobody is working - it takes a minute or more and the system is
 being replaced meanwhile. A backup from another server needs that server's backup key, and its connection secrets

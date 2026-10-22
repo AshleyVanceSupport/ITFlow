@@ -190,6 +190,30 @@ function mitRestoreChunkFinish($id, $typed_key) {
     return mitRestoreAdopt($part, $typed_key);
 }
 
+/**
+ * ITFlow's backup and restore work in PHP's temporary folder (sys_get_temp_dir - /tmp). On Debian 13 /tmp is a RAM disk of half
+ * the memory, too small to unpack a big backup (ZipArchive then fails with "No error"). For our restore that folder is moved
+ * next to the backups (same disk as the free-space check; ITFlow's backups leave the backups folder out): PHP reads TMPDIR the
+ * first time sys_get_temp_dir() is asked in a request. Returns the folder in use.
+ */
+function mitRestoreUseTempDir() {
+    $dir = backupStorageDir() . '/mit_tmp';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0700, true);
+    }
+    // Left by a restore that was stopped half way (a server restart)
+    foreach (glob($dir . '/*') ?: [] as $old) {
+        if (filemtime($old) < time() - 86400) {
+            is_dir($old) ? backupDeleteDirectory($old) : @unlink($old);
+        }
+    }
+    if (is_dir($dir) && is_writable($dir)) {
+        putenv("TMPDIR=$dir");
+        $_ENV['TMPDIR'] = $dir;
+    }
+    return rtrim(sys_get_temp_dir(), '/');
+}
+
 /** How the last restore went (mit_last_restore.json in the backups folder - it outlives the restore): array or null. */
 function mitRestoreLastStatus() {
     $raw = @file_get_contents(backupStorageDir() . '/mit_last_restore.json');
@@ -217,8 +241,15 @@ function mitRestoreRun($path, $key, $who, array $from = []) {
     if (!$meta || $problem !== '') {
         return [false, $problem];
     }
+    $temp = mitRestoreUseTempDir();
     // The "Before restore" copy (about the size of what is here now), the unpacked archive and the import
     $problem = mitRestoreDiskProblem(3 * (filesize($path) ?: 0), 'to restore it');
+    // Unpacking somewhere else (PHP had already chosen its temporary folder): that disk needs room too
+    $temp_free = $temp !== rtrim(backupStorageDir(), '/') . '/mit_tmp' ? @disk_free_space($temp) : false;
+    if ($problem === '' && $temp_free !== false && $temp_free < 1.5 * (filesize($path) ?: 0)) {
+        $problem = "Not enough space in the temporary folder $temp to unpack it: about " . backupFormatBytes(1.5 * filesize($path)) . ' is needed, '
+            . backupFormatBytes($temp_free) . ' is free.';
+    }
     if ($problem !== '') {
         return [false, "Nothing was changed - $problem"];
     }
@@ -240,11 +271,6 @@ function mitRestoreRun($path, $key, $who, array $from = []) {
     $error = null;
     $ok = backupRestoreArchive($mysqli, $path, $key, $error);
     $mysqli = backupDbEnsure($mysqli);
-    if (!$ok) {
-        mitUnlock('backup_restore');
-        mitRestoreSetStatus(['state' => 'failed', 'who' => (string) $who, 'file' => basename($path), 'message' => "Restore failed: $error"]);
-        return [false, "Restore failed: $error"];
-    }
 
     // The restored list is the backup's own, from while it was being made (so its row says Running) - put its row and the
     // safety copy's right (others made since are adopted by ITFlow's retention)
@@ -267,6 +293,12 @@ function mitRestoreRun($path, $key, $who, array $from = []) {
         if ($file === false || !is_file($file)) {
             mysqli_query($mysqli, "UPDATE backups SET backup_status = 'Failed', backup_error = 'Came with a restored backup - the file is not on this server', backup_completed_at = NOW() WHERE backup_id = " . intval($row['backup_id']));
         }
+    }
+    if (!$ok) {
+        // The list is put right on a failure too - ITFlow may have restored the database before the uploads failed
+        mitUnlock('backup_restore');
+        mitRestoreSetStatus(['state' => 'failed', 'who' => (string) $who, 'file' => basename($path), 'message' => "Restore failed: $error"]);
+        return [false, "Restore failed: $error"];
     }
     mitUnlock('backup_restore');
     return [true, backupTypeLabel($meta['type']) . ' taken ' . $meta['generated'] . ' restored. The system as it was is kept as the "' . MIT_RESTORE_SOURCE . '" backup.'];

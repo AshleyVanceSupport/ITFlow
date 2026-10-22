@@ -98,6 +98,11 @@ if (isset($_POST['mit_backup_restore'])) {
     session_write_close();
     [$ok, $message] = mitRestoreRun($path, mitRestoreKey($_POST['restore_key'] ?? ''), $who, $backup);
     if (!$ok) {
+        // ITFlow may have restored the database before something later failed - bring it up to this code's version
+        if (mitRestoreItflowUpdates() === '') {
+            define('MIT_FROM_RESTORE', true);
+            require __DIR__ . "/../database_updates_mountaineerit.php";
+        }
         session_start();
         logAudit("Backup", "Restore", escapeSql("$who could not restore " . $backup['backup_file_name'] . ": $message"));
         flashAlert(escapeHtml($message), 'error');
