@@ -14,6 +14,7 @@
  *   POST book=1 ticket_id tech_id start minutes onsite contact    assign and book (+ detail_* - saved first)
  *   POST unbook=1 ticket_id                                       take the booking off
  *   POST state=1 view (day | week | workload) hidden weekends board board_techs   the board settings for this agent
+ * GETs need Dispatch View, POSTs (but state) Dispatch Edit + Support edit - mitDispatchCan / mitDispatchCanEdit.
  */
 
 require_once "../config.php";
@@ -29,7 +30,7 @@ $mit_fail = function ($message, $code = 400) {
 };
 
 if (!mitDispatchCan()) {
-    $mit_fail('Dispatching needs Support edit access.', 403);
+    $mit_fail('The Dispatch board needs the Dispatch permission (Admin > Roles).', 403);
 }
 
 if (isset($_GET['queue'])) {
@@ -78,6 +79,10 @@ if (isset($_GET['week_stats'])) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCSRFToken();
+    // Seeing the board is Dispatch View; changing anything on it (all but the agent's own board settings) is Edit
+    if (!isset($_POST['state']) && !mitDispatchCanEdit()) {
+        $mit_fail('Booking and moving tickets here needs Dispatch Edit and Support edit (Admin > Roles) - you can look, not change.', 403);
+    }
 
     if (isset($_POST['merge'])) {
         [$ok, $message] = mitDispatchMerge($_POST['child_id'] ?? 0, $_POST['parent_id'] ?? 0, $_POST['comment'] ?? '', !empty($_POST['move_replies']));

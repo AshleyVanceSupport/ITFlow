@@ -1,8 +1,8 @@
 <?php
 /*
  * Mountaineer IT - Dispatch in the agent side menu (functions/mit_dispatch.php), required from
- * agent/includes/side_nav.php in SUPPORT after Recurring Tickets. For Support edit (with ticketing and Dispatch
- * switched on), with the count of open tickets with no agent - on the agent's own service boards when they are on any.
+ * agent/includes/side_nav.php in SUPPORT after Recurring Tickets. For the Dispatch permission, View or more (with ticketing
+ * and Dispatch switched on), with the count of open tickets with no agent - on the agent's own service boards when they are on any.
  */
 
 if (function_exists('mitDispatchCan') && mitDispatchCan()) {

@@ -484,7 +484,12 @@ model: see DEPLOYMENT.md.
   Under Contact it lists the contact's other open tickets (`?contact_tickets=`) with "Merge into this" / "Merge this into it"
   (`mitDispatchMerge`: ITFlow's Merge form checks, a scheduled ticket being merged has its schedule cancelled, then ITFlow's
   own `ticketMergeInto()`, which lives in `agent/post/ticket.php` and is loaded from there - re-check if upstream moves it).
-  Needs Support edit (`calendarCanScheduleTickets`). Settings per agent in `mit_user_preferences` dispatch.state.
+  Permission (M035, 26.10.105): ITFlow module row `module_dispatch` (Admin > Roles "Dispatch") - `mitDispatchLevel`: View 1 sees the
+  board / queue / Workload / This week (`mitDispatchCan`; menu, page, GETs), Edit 2 books, moves, assigns, merges (`mitDispatchCanEdit`
+  = Dispatch Edit + Support edit; every POST but `state`, item `editable`, `data-can-edit` -> the script's `canEdit` turns off dragging,
+  Sortable and Move to; "View only" badge). M035 gave Dispatch Edit to every role that had Support edit; before it runs the old rule
+  (Support edit) applies. Suggested: Technician View, a Dispatcher role (Client View, Support Edit, Dispatch Edit). Smoke
+  `14-dispatch-role.spec.js`. Settings per agent in `mit_user_preferences` dispatch.state.
   Hooks: require of `agent/includes/mit_dispatch_nav.php` in `agent/includes/side_nav.php` (SUPPORT, after
   Recurring Tickets), `functions.php` (require), and one condition in `functions/ticket.php` ticketMailSchedule
   (`empty($GLOBALS['mit_schedule_skip_contact'])` - the "Email the contact" tick; a global rather than a new

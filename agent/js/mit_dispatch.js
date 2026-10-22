@@ -16,6 +16,8 @@
     }
 
     const csrf = root.dataset.csrf;
+    // Dispatch View only (Admin > Roles): the board can be looked at, nothing on it moves (the server refuses anyway)
+    const canEdit = root.dataset.canEdit !== '0';
     const techs = JSON.parse(root.dataset.techs || '[]');
     const saved = JSON.parse(root.dataset.state || '{}');
     // Service boards (functions/mit_boards.php): [{id, name, color, members}] - not the calendar "board" below
@@ -651,9 +653,9 @@
                 slotDuration: '00:30:00',
                 snapDuration: '00:15:00',
                 nowIndicator: true,
-                editable: true,
-                droppable: true,
-                eventDurationEditable: true,
+                editable: canEdit,
+                droppable: canEdit,
+                eventDurationEditable: canEdit,
                 businessHours: businessHours,
                 // The times down the side once, on the first column. The other columns keep the label but
                 // hidden: an empty one collapses FullCalendar's rows, so their hours would be squashed
@@ -764,7 +766,7 @@
             calendars.push(cal);
         });
 
-        if (FullCalendar.Interaction && FullCalendar.Interaction.Draggable) {
+        if (canEdit && FullCalendar.Interaction && FullCalendar.Interaction.Draggable) {
             queueDraggable = new FullCalendar.Interaction.Draggable(queueEl, {
                 itemSelector: '.mit-dq-item',
                 eventData: function (item) {
@@ -848,7 +850,7 @@
                     }
                 });
             });
-            if (typeof Sortable === 'undefined') {
+            if (typeof Sortable === 'undefined' || !canEdit) {
                 return;
             }
             board.querySelectorAll('.mit-dw-cell').forEach(function (cell) {
@@ -953,7 +955,7 @@
             return o.id !== t.id;
         });
         return '<div class="list-group list-group-flush">' + t.tickets.map(function (k) {
-            const move = k.role === 'lead' ? '<div class="dropdown flex-shrink-0"><button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">Move to</button>'
+            const move = k.role === 'lead' && canEdit ? '<div class="dropdown flex-shrink-0"><button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">Move to</button>'
                 + '<div class="dropdown-menu dropdown-menu-end" style="max-height: 50vh; overflow-y: auto">' + others.map(function (o) {
                     return '<a class="dropdown-item" href="#" data-wl-move="' + o.id + '" data-ticket="' + k.id + '"><span class="d-inline-block rounded-circle me-2" style="width: 10px; height: 10px; background: ' + escapeText(o.color) + '"></span>' + escapeText(o.name) + '</a>';
                 }).join('') + '</div></div>' : '<span class="badge text-bg-light border flex-shrink-0">Helping</span>';
@@ -1079,7 +1081,7 @@
                 }
             });
         });
-        if (typeof Sortable === 'undefined') {
+        if (typeof Sortable === 'undefined' || !canEdit) {
             return;
         }
         board.querySelectorAll('.mit-wl-drop').forEach(function (zone) {

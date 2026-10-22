@@ -33,9 +33,33 @@ function mitDispatchBusinessHours() {
     return ['daysOfWeek' => array_values($days), 'startTime' => $time($sla['business_hours_start'], '08:00'), 'endTime' => $time($sla['business_hours_end'], '17:00')];
 }
 
-/** May the signed-in agent dispatch? Support edit, with ticketing on (Admin > Modules) and our Dispatch switch on. */
+/**
+ * The signed-in agent's Dispatch level - the role's Dispatch permission (M035; Admin > Roles): 1 sees the board, 2 works it.
+ * Before M035 has run it is Support edit, as it was. 0 when ticketing or our Dispatch switch is off.
+ */
+function mitDispatchLevel() {
+    global $mysqli;
+    static $has_row = null;
+    if (!mitModuleOn('dispatch')) {
+        return 0;
+    }
+    if ($has_row === null) {
+        $has_row = mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM modules WHERE module_name = 'module_dispatch'")) === 1;
+    }
+    if (!$has_row) {
+        return calendarCanScheduleTickets() ? 2 : 0;
+    }
+    return intval(lookupUserPermission('module_dispatch'));
+}
+
+/** May the signed-in agent see the Dispatch board? Dispatch View. */
 function mitDispatchCan() {
-    return mitModuleOn('dispatch') && calendarCanScheduleTickets();
+    return mitDispatchLevel() >= 1;
+}
+
+/** May they book, move, assign and merge there? Dispatch Edit, and Support edit (ITFlow's own rule for changing tickets). */
+function mitDispatchCanEdit() {
+    return mitDispatchLevel() >= 2 && calendarCanScheduleTickets();
 }
 
 /** Agents who can be dispatched to: user_id => [user_id, name, color, initials]. */
@@ -206,7 +230,7 @@ function mitDispatchItems($from, $to, array $tech_ids) {
             }
             $item['id'] = ($item['id'] ?? '') . ($kind === 'ticket' || $kind === 'helper' ? '' : "-t$tech_id"); // the same event on two agents' columns
             $item['extendedProps']['tech'] = $tech_id;
-            $item['editable'] = $kind === 'ticket' && !empty($item['editable']);
+            $item['editable'] = $kind === 'ticket' && !empty($item['editable']) && mitDispatchCanEdit(); // Dispatch View: nothing moves
             $item['durationEditable'] = $item['editable'];
             $items[] = $item;
         }

@@ -246,6 +246,7 @@ break stock ITFlow, and lists what stops working after a move.
   Roles keeps an unused "Timesheets" permission (`module_timesheets` row) – harmless.
 - **Dispatch** – the page and its Workload view go away; it keeps nothing of its own (schedules and
   assignments it made are ordinary ITFlow ticket fields and stay). Use Calendar and each ticket's Schedule instead.
+  Admin > Roles keeps an unused "Dispatch" permission (`module_dispatch` row, M035) – harmless; delete the row if wanted.
 - **Module switches** for Procurement, Timesheets and Dispatch (Settings > Modules) – stored in
   `mit_settings` (`module_*`), unused by stock ITFlow.
 - **Reimbursements** (mileage and purchases logged on tickets) – the ticket's Reimbursements box, the

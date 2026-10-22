@@ -12,10 +12,11 @@
 require_once "includes/inc_all.php";
 
 if (!mitDispatchCan()) {
-    enforceUserPermission('module_support', 2);
-    // Support edit but ticketing or Dispatch is switched off
-    flashAlert('Dispatch is switched off (Admin > Settings > Modules).', 'error');
-    redirect('/agent/calendar.php');
+    if (!mitModuleOn('dispatch')) {
+        flashAlert('Dispatch is switched off (Admin > Settings > Modules).', 'error');
+        redirect('/agent/calendar.php');
+    }
+    enforceUserPermission('module_dispatch');
 }
 
 $techs = mitDispatchTechs();
@@ -94,6 +95,7 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
 
 <div class="mit-dispatch" id="mitDispatch"
     data-csrf="<?= $_SESSION['csrf_token'] ?>"
+    data-can-edit="<?= mitDispatchCanEdit() ? 1 : 0 ?>"
     data-techs="<?= escapeHtml(json_encode(array_values($techs))) ?>"
     data-state="<?= escapeHtml(json_encode($state)) ?>"
     data-boards="<?= escapeHtml(json_encode($service_boards)) ?>"
@@ -107,7 +109,7 @@ $clients = mysqli_fetch_all(mysqli_query($mysqli, "SELECT client_id, client_name
 
     <div class="card mb-3">
         <div class="card-header bg-dark py-2 d-flex flex-wrap align-items-center gap-2">
-            <h3 class="card-title mt-2 me-auto"><i class="fas fa-fw fa-people-arrows me-2"></i>Dispatch <span class="fw-normal opacity-75 ms-2 small" data-md-title></span></h3>
+            <h3 class="card-title mt-2 me-auto"><i class="fas fa-fw fa-people-arrows me-2"></i>Dispatch<?php if (!mitDispatchCanEdit()) { ?> <span class="badge text-bg-secondary ms-2 align-middle" data-md-view-only title="Your role has Dispatch View - ask for Dispatch Edit (Admin > Roles) to book and move tickets">View only</span><?php } ?> <span class="fw-normal opacity-75 ms-2 small" data-md-title></span></h3>
             <div class="btn-group btn-group-sm" role="group" aria-label="View">
                 <button type="button" class="btn btn-light" data-md-view="day">Day</button>
                 <button type="button" class="btn btn-light" data-md-view="week">Week</button>
