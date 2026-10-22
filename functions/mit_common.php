@@ -195,22 +195,48 @@ function mitMailFrom() {
 }
 
 /**
- * After a restore (setup/index.php, scripts/restore_cli.php): ITFlow's own database updates up to this release, as
- * update_cli runs them, so ours come after. Returns '' or "version: error".
+ * After a restore (setup/index.php, scripts/restore_cli.php, Admin > Backup): ITFlow's own database updates up to this
+ * release, as update_cli runs them, so ours come after. Returns '' or "version: error". In a web request ITFlow's
+ * load_global_settings.php has already fixed CURRENT_DATABASE_VERSION at the version before the restore, so there the
+ * same steps as admin/database_updates.php are taken here (its files, in order, the version bumped after each).
  */
 function mitRestoreItflowUpdates() {
     global $mysqli;
     defined('LATEST_DATABASE_VERSION') || require __DIR__ . '/../includes/database_version.php';
     $row = mysqli_fetch_row(mysqli_query($mysqli, "SELECT config_current_database_version FROM settings LIMIT 1"));
     $current = trim((string) ($row[0] ?? ''));
-    if ($current === '' || !version_compare($current, LATEST_DATABASE_VERSION, '<') || defined('CURRENT_DATABASE_VERSION')) {
+    if ($current === '' || !version_compare($current, LATEST_DATABASE_VERSION, '<')) {
         return '';
     }
-    define('CURRENT_DATABASE_VERSION', $current);
-    $database_updates_applied = [];
-    $database_updates_error = null;
-    require __DIR__ . '/../admin/database_updates.php';
-    return (string) $database_updates_error;
+    if (!defined('CURRENT_DATABASE_VERSION')) {
+        define('CURRENT_DATABASE_VERSION', $current);
+        $database_updates_applied = [];
+        $database_updates_error = null;
+        require __DIR__ . '/../admin/database_updates.php';
+        return (string) $database_updates_error;
+    }
+    defined('FROM_DB_UPDATER') || define('FROM_DB_UPDATER', true);
+    $files = [];
+    foreach (glob(__DIR__ . '/../admin/database_updates/*.php') as $file) {
+        if (preg_match('/^\d+(\.\d+)+$/', basename($file, '.php'))) {
+            $files[basename($file, '.php')] = $file;
+        }
+    }
+    uksort($files, 'version_compare');
+    foreach ($files as $version => $file) {
+        if (version_compare($version, $current, '<=')) {
+            continue;
+        }
+        try {
+            require $file;
+        } catch (Throwable $e) {
+            error_log("ITFlow database update to version $version failed: " . $e->getMessage());
+            return "$version: " . $e->getMessage();
+        }
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '" . escapeSql($version) . "'");
+        $current = $version;
+    }
+    return '';
 }
 
 /**
@@ -282,3 +308,4 @@ function mitNavCachedCount($key, callable $compute, $fresh = false) {
 }
 
 require_once __DIR__ . '/mit_backup_restore.php'; // Admin > Backup: restore on a running install
+require_once __DIR__ . '/mit_dev_mode.php'; // development mode (config.php) - nothing reaches the outside world

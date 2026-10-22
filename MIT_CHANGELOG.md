@@ -7,6 +7,8 @@ CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to
 ## 26.10.108 - 2026-10-22
 - Admin > Backup: restore a backup on a running system - the Restore button on a stored backup, or upload a backup .zip (also one from another server, with its key). You see what is in it first, and confirm with your password and by typing RESTORE.
 - Before anything changes, a Full backup of the system as it is now is made and kept as "Before restore" - restore that to undo. Afterwards the database updates run and everyone signs in again. Do it when nobody is working; it takes a minute or more.
+- A backup from stock ITFlow (v26.08 or newer) can be restored the same way - type that server's backup key in the Restore window. ITFlow's own database updates now run after a restore from Admin > Backup too (an older backup was left on its old database version).
+- Admin > Backup > Development mode, for a copy of production on a test server: every email goes to a test inbox (the subject says who it was for), the mailbox is not read, Outlook sync, QuickBooks Online, Stripe, custom actions and the Microsoft 365 certificate renewal are off, and a red DEVELOPMENT badge shows in the top bar. NinjaOne, Bitwarden and Ingram Micro are still read. Kept in config.php, so restoring production's backup doesn't switch it off.
 
 ## 26.10.107 - 2026-10-22
 - Procurement: the Receiving number in the side menu counts the items still to arrive (it counted purchase orders, so a PO with two items showed 1).

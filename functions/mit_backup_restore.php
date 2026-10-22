@@ -130,6 +130,14 @@ function mitRestoreRun($path, $key, $who, array $from = []) {
             mysqli_query($mysqli, "INSERT INTO backups SET " . implode(', ', $set));
         }
     }
+    // A backup from another server lists the one it was making then (its file is not here) - not left as Running
+    $running = mysqli_query($mysqli, "SELECT backup_id, backup_file_name FROM backups WHERE backup_status IN ('Running', 'Pending')");
+    while ($row = mysqli_fetch_assoc($running)) {
+        $file = backupResolvePath($row['backup_file_name']);
+        if ($file === false || !is_file($file)) {
+            mysqli_query($mysqli, "UPDATE backups SET backup_status = 'Failed', backup_error = 'Came with a restored backup - the file is not on this server', backup_completed_at = NOW() WHERE backup_id = " . intval($row['backup_id']));
+        }
+    }
     mitUnlock('backup_restore');
     return [true, backupTypeLabel($meta['type']) . ' taken ' . $meta['generated'] . ' restored. The system as it was is kept as the "' . MIT_RESTORE_SOURCE . '" backup.'];
 }

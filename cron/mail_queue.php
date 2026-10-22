@@ -325,6 +325,8 @@ function sendQueueEmail(
         }
     }
 
+    // Mountaineer IT: development mode - to the test inbox only, or not at all (functions/mit_dev_mode.php)
+    if (function_exists('mitDevMailRedirect') && !mitDevMailRedirect($mail)) { return true; }
     // Mountaineer IT: through Microsoft Graph when ITFlow's own Microsoft 365 app has the mailbox
     if ($mit_graph) {
         mitM365GraphSendMail($mail);

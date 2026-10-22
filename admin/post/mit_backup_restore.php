@@ -7,6 +7,30 @@
 
 defined('FROM_POST_HANDLER') || die("Direct file access is not allowed");
 
+if (isset($_POST['mit_dev_mode_save'])) {
+
+    validateCSRFToken();
+
+    $on = !empty($_POST['dev_mode']);
+    $to = trim((string) ($_POST['dev_mail_to'] ?? ''));
+    if ($to !== '' && !filter_var($to, FILTER_VALIDATE_EMAIL)) {
+        flashAlert('The test inbox is not a valid email address.', 'error');
+        redirect("backup.php");
+    }
+    if ($on && $to === '') {
+        flashAlert('Give a test inbox - in development mode every email goes there.', 'error');
+        redirect("backup.php");
+    }
+    $why = mitConfigSet('config_mit_dev_mail_to', $to) ?: mitConfigSet('config_mit_dev_mode', $on ? 1 : 0);
+    if ($why !== '') {
+        flashAlert(escapeHtml($why), 'error');
+        redirect("backup.php");
+    }
+    logAudit("Settings", "Edit", escapeSql(stripslashes((string) $session_name) . ' turned development mode ' . ($on ? "on (mail to $to)" : 'off')));
+    flashAlert($on ? 'Development mode is on - every email goes to ' . escapeHtml($to) . '.' : 'Development mode is off - email and the integrations work normally again.', $on ? 'warning' : 'success');
+    redirect("backup.php");
+}
+
 if (isset($_POST['mit_backup_upload'])) {
 
     validateCSRFToken();

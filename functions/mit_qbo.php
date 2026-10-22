@@ -94,6 +94,9 @@ function mitQboAuthorizeUrl($state) {
 
 /** A call to Intuit's token endpoint (client id + secret as Basic auth). Returns the decoded answer; throws on failure. */
 function mitQboTokenCall(array $fields) {
+    if (mitDevMode()) {
+        throw new RuntimeException('Development mode - QuickBooks Online is switched off on this server.');
+    }
     $s = mitQboSettings();
     $secret = mitDecryptSecret((string) mitSetting('qbo_client_secret', ''));
     if ($s['client_id'] === '' || $secret === '') {
@@ -231,6 +234,9 @@ function mitQboFault(array $response) {
  * A 401 gets one fresh token and one more try. Returns the decoded answer; throws RuntimeException with QuickBooks' reason.
  */
 function mitQboApi($method, $path, $body = null, array $query = []) {
+    if (mitDevMode()) {
+        throw new RuntimeException('Development mode - QuickBooks Online is switched off on this server.');
+    }
     $s = mitQboSettings();
     if ($s['realm_id'] === '') {
         throw new RuntimeException('QuickBooks Online is not connected.');

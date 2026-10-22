@@ -5,6 +5,7 @@
 
 
 function triggerCustomAction($trigger, $entity) {
+    if (function_exists('mitDevMode') && mitDevMode()) { return; } // Mountaineer IT: no custom actions in development mode
     $original_dir = getcwd(); // Save
 
     chdir(dirname(__FILE__));

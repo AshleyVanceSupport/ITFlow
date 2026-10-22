@@ -171,6 +171,21 @@ our database updates and signs everyone out. Do it when nobody is working - it t
 being replaced meanwhile. A backup from another server needs that server's backup key, and its connection secrets
 (Microsoft 365, NinjaOne, QuickBooks, Bitwarden, Ingram) need entering again unless `$config_mit_secret_key` is copied too.
 
+**A backup from stock ITFlow** (the original itflow-org install) restores the same way: ITFlow v26.08 or newer makes the
+same encrypted archive (older: update that server first). Upload it in Admin > Backup, type **that server's** backup key
+(its Admin > Backup page shows it) in the Restore window, and sign in afterwards with that server's accounts. ITFlow's and our
+database updates run straight after (tested with a stock v26.10 backup, database 2.7.9).
+
+**Development mode (26.10.108) - for a copy of production on a test server.** Admin > Backup > Development mode: switch it on
+and give a test inbox **before** restoring production's backup there. It is kept in `config.php` (`$config_mit_dev_mode`,
+`$config_mit_dev_mail_to`), so the restore can't switch it off. While it is on:
+- every email (ticket replies, invoices, reminders, alerts) goes to the test inbox instead, its subject saying who it was for;
+- the mailbox is not read (the copy would take production's new mail), Outlook calendars are not synced, the Microsoft 365
+  certificate is not renewed, QuickBooks Online and Stripe are switched off, custom actions do nothing;
+- NinjaOne, Bitwarden and Ingram Micro are still read (read-only - they change nothing there);
+- a red DEVELOPMENT badge shows in the top bar.
+Never switch it on on production. Webhooks and anything set up outside ITFlow (n8n, uptime monitors) are not covered.
+
 **What the stored Microsoft tokens can do.** The mailbox token (Settings > Mail) can read and send
 mail as that mailbox; each person's Outlook token can read their calendar's free/busy and write the
 events ITFlow puts there. Anyone with the database *and* `$config_mit_secret_key` could use them, so
@@ -253,6 +268,8 @@ break stock ITFlow, and lists what stops working after a move.
   Roles keeps an unused "Timesheets" permission (`module_timesheets` row) – harmless.
 - **Restore from Admin > Backup** – stock ITFlow restores only on a fresh install (setup wizard) or from the command line
   (`scripts/restore_cli.php`); nothing of ours is stored for it.
+- **Development mode** – stock ITFlow ignores `$config_mit_dev_mode` / `$config_mit_dev_mail_to` in `config.php`: a test copy
+  moved to stock code sends real mail and runs everything again. Delete the two lines.
 - **Dispatch** – the page and its Workload view go away; it keeps nothing of its own (schedules and
   assignments it made are ordinary ITFlow ticket fields and stay). Use Calendar and each ticket's Schedule instead.
   Admin > Roles keeps an unused "Dispatch" permission (`module_dispatch` row, M035) – harmless; delete the row if wanted.

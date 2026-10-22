@@ -750,6 +750,9 @@ function mitM365UseManualApp($tenant_id, $client_id, $object_id, $created_by) {
 
 /** Replace the certificate when it has MIT_M365_RENEW_DAYS left - tried at most every six hours. */
 function mitM365MaybeRenewCertificate() {
+    if (mitDevMode()) {
+        return; // production renews it; a renewal from here would change production's app
+    }
     $expires = mitSetting('m365_cert_expires', '');
     if ($expires === '' || strtotime($expires) - time() > MIT_M365_RENEW_DAYS * 86400) {
         return;
@@ -902,6 +905,9 @@ function mitM365ProvisionCalendar($token) {
  * app may always do for its own keys, proven with a token signed by its current key).
  */
 function mitM365RenewCertificate() {
+    if (mitDevMode()) {
+        throw new RuntimeException('Development mode - the Microsoft 365 certificate is renewed by production only.');
+    }
     $app = mitM365App();
     if (!$app || $app['object_id'] === '') {
         throw new RuntimeException('There is no Microsoft 365 app to renew.');

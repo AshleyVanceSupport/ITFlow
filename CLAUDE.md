@@ -794,6 +794,24 @@ model: see DEPLOYMENT.md.
   logs it, destroys the session and shows a result page. Under `mitLock('backup_restore')`, `ignore_user_abort`. The action name is a
   hidden input (the button is disabled while it runs - a disabled button's name is not sent). Smoke `16-backup-restore.spec.js`
   (the real round trip only with `ITFLOW_SMOKE_RESTORE=1`).
+  26.10.108: in a web request ITFlow's `load_global_settings.php` has already fixed `CURRENT_DATABASE_VERSION` at the pre-restore
+  version, so `mitRestoreItflowUpdates` then walks `admin/database_updates/*.php` itself (same order and version bump as ITFlow's
+  runner; the CLI paths still use ITFlow's file) - a stock v26.10 backup (DB 2.7.9) restored from Admin > Backup was left at 2.7.9.
+  Rows that came with the backup still Running / Pending with no file here are marked Failed. Checked with a stock v26.10 install's
+  backup (its key typed in the window): updated to 2.8.9, all our updates ran, main pages clean.
+- Development mode (Oct 22, 26.10.108): `functions/mit_dev_mode.php` (ours, required from mit_common.php) - for a copy of production
+  restored onto a test server. `config.php` `$config_mit_dev_mode` / `$config_mit_dev_mail_to` (not the database, so restoring
+  production's backup can't switch it off; written by `mitConfigSet`, which also clears opcache). Switched in Admin > Backup's
+  Development mode card (`admin/includes/mit_restore_card.php`, handler `mit_dev_mode_save` in `admin/post/mit_backup_restore.php`;
+  a test inbox is required). While on: every queued mail goes to the test inbox, subject "[DEV to <real recipients>]"
+  (`mitDevMailRedirect` - one guarded line in `cron/mail_queue.php` before the send; no inbox = marked sent, not sent); the mail
+  parser stops (`cronJobStop` in `cron/ticket_email_parser.php`); Stripe calls throw (`mitDevBlockStripe` sets the library's HTTP
+  client - one line in `includes/stripe_init.php`); custom actions do nothing (`functions/logging.php` triggerCustomAction);
+  QuickBooks calls throw (`mitQboApi` / `mitQboTokenCall`, `cron/mit_qbo_sync.php` stops); Outlook sync stops
+  (`cron/mit_outlook_sync.php`); the Microsoft 365 certificate is not renewed (`mitM365RenewCertificate` throws,
+  `mitM365MaybeRenewCertificate` returns - a renewal would add a key to production's app). NinjaOne / Bitwarden / Ingram keep
+  reading (user's choice). A red DEVELOPMENT badge in the top bar (`mitDevBadge` from `includes/mit_timers_nav.php`). Smoke
+  `17-dev-mode.spec.js`.
 - Review fixes (Oct 2026): `functions/mit_common.php` (ours, required first in `functions.php`) - shared
   helpers: `mitMailBody` / `mitSqlHtml` (HTML for SQL without escapeSql's strip_tags), `mitProductIsTangible`,
   module switches (`mitModuleOn`, `mitModuleRequire` for pages/modals, `mitModuleGuard` for handler files,

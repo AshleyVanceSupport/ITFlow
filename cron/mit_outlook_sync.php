@@ -28,8 +28,8 @@ if (intval($row['config_enable_cron']) === 0) {
 
 mitSettingsCacheRef(true);  // settings as they are now - an earlier job in this cycle may have read them
 
-if (!mitOutlookAvailable()) {
-    cronJobStop();
+if (!mitOutlookAvailable() || mitDevMode()) {
+    cronJobStop(); // development mode writes nothing to the techs' real calendars, renews no certificate
 }
 
 try {
