@@ -58,9 +58,16 @@ test('procurement: item to order, PO, approve, order, receive', async ({ page })
     expect(await flash(page)).toContain('added to the list to order');
     const row = page.locator('#mitProcForm tr', { has: page.locator(`input[aria-label="Select ${name}"]`) });
     await expect(row, 'the item on To order').toHaveCount(1);
+    // A second item on the same PO - Receiving's menu count is of items, not POs
+    const name2 = smokeName('PO item two');
+    modal = await openModal(page, 'modals/mit_procurement/item.php');
+    await fillForm(modal, { name: name2, quantity: '1', client_id: String(made.clientId) });
+    await submit(modal, 'mit_proc_save_item');
+    const row2 = page.locator('#mitProcForm tr', { has: page.locator(`input[aria-label="Select ${name2}"]`) });
 
-    // Tick it, pick a vendor, Create PO
+    // Tick both, pick a vendor, Create PO
     await row.locator('input[name="item_ids[]"]').check();
+    await row2.locator('input[name="item_ids[]"]').check();
     const vendor = await page.locator('#mitPoVendor option:not([value="0"])').first().getAttribute('value');
     test.skip(!vendor, 'no vendors to order from');
     await page.selectOption('#mitPoVendor', vendor);
@@ -97,17 +104,23 @@ test('procurement: item to order, PO, approve, order, receive', async ({ page })
     expect(await flash(page)).toContain('Marked ordered');
     await expect(page.locator('h2 + .badge')).toHaveText('Ordered');
 
+    // The side menu counts every item still to arrive (it counted POs before)
+    await visit(page, 'agent/mit_receiving.php', errors);
+    const waiting = await page.locator('#mitReceiveForm [data-mit-got]').count();
+    await expect(page.locator('.app-sidebar a[href="/agent/mit_receiving.php"] .badge'), 'Receiving counts items').toHaveText(String(waiting));
+
     // Receive both on Receiving, making no assets and adding nothing to stock
     await visit(page, `agent/mit_receiving.php?po_id=${poId}`, errors);
-    const line = page.locator('#mitReceiveForm tr', { hasText: name });
+    const line = page.locator('#mitReceiveForm tr', { hasText: name }).filter({ hasNotText: name2 });
     await expect(line).toHaveCount(1);
     await line.locator('input[name$="[qty]"]').fill('2');
+    await page.locator('#mitReceiveForm tr', { hasText: name2 }).locator('input[name$="[qty]"]').fill('1');
     const form = page.locator('#mitReceiveForm');
     await form.locator('#mitOptAssets').uncheck();
     await form.locator('#mitOptStock').uncheck();
     await submit(form, 'mit_po_receive');
     const message = await flash(page);
-    expect(message).toContain('Received 1 line on 1 PO');
+    expect(message).toContain('Received 2 lines on 1 PO');
     expect(message, 'no assets or stock when not ticked').not.toMatch(/asset|stock/i);
 
     await visit(page, poUrl, errors);

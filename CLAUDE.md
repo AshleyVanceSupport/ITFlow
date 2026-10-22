@@ -285,7 +285,8 @@ model: see DEPLOYMENT.md.
   `agent/includes/mit_procurement_nav.php` in `agent/includes/side_nav.php` (before FINANCE),
   Admin > Settings > Procurement page `admin/mit_procurement_settings.php` (card
   `admin/includes/mit_procurement_card.php`, handler `admin/post/mit_procurement_settings.php`; menu via
-  `admin/includes/mit_admin_nav.php`), `functions.php` (require). PO numbers are unique (M015); a PO
+  `admin/includes/mit_admin_nav.php`), `functions.php` (require). Side-menu counts (`agent/includes/mit_procurement_nav.php`): To Order
+  = waiting items, Purchase Orders = waiting for approval, Receiving = PO lines still to arrive (not POs). PO numbers are unique (M015); a PO
   needs approval when over the limit or when a line has no cost - unless approval is switched off (`procurement_approval_on`) -
   approvers are Full Procurement access + admins (roles - `mitPoApprovers`); nobody approves their own PO unless
   they are an admin (logged as self-approved) or the only approver (`mitPoMayApprove`). "Their own" = made or shaped it

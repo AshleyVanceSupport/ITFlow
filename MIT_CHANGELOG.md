@@ -4,6 +4,9 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.107 - 2026-10-22
+- Procurement: the Receiving number in the side menu counts the items still to arrive (it counted purchase orders, so a PO with two items showed 1).
+
 ## 26.10.106 - 2026-10-21
 - Ticket page: Board, SLA and Category in the Details box are drop-downs now, like Status and Priority - pick and it is saved, no window. Changing the SLA reloads the page so the clock shows the new targets. Escalating to another board (with a reason) is still in the ⋮ menu.
 
