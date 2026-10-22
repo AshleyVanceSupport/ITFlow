@@ -30,7 +30,7 @@ function mitLeftBehindTickets($user_id = 0, $client_id = 0, $limit = 50) {
         WHERE " . mitLeftBehindSql() . "
         " . ($user_id ? "AND ticket_assigned_to = $user_id" : '') . "
         " . ($client_id ? "AND ticket_client_id = $client_id" : '') . "
-        " . clientScopeSql('ticket_client_id') . "
+        " . clientScopeSql('ticket_client_id') . mitBoardVisibleSql('tickets') . "
         ORDER BY ticket_schedule ASC
         LIMIT " . intval($limit));
     $tickets = [];

@@ -7,7 +7,8 @@
  * Tickets list, kanban and client Tickets tab, the board switcher, the dashboard, Dispatch, the calendar, global search and
  * the client overview's open tickets. Still shown on a hidden board: tickets assigned to them, tickets they help on, and
  * tickets they escalated there. Hidden, not blocked: a link still opens the ticket. New Ticket offers only the role's
- * boards; Escalate offers every board.
+ * boards; Escalate offers every board. The API (api/v1) is not filtered by board - keys work by ITFlow's module and client
+ * access only. Reports (Reporting access) show every board, so the Board Performance flows add up.
  */
 
 /** Has M034 run? */
@@ -44,7 +45,7 @@ function mitBoardRoleBoards($role_id) {
     return $cache[$role_id];
 }
 
-/** The boards the signed-in agent sees: null = every board (admins, roles not limited, cron and API without a role). */
+/** The boards the signed-in agent sees: null = every board (admins, roles not limited, cron with no role). */
 function mitBoardVisibleIds() {
     global $session_is_admin, $session_user_role;
     if (!empty($session_is_admin) || empty($session_user_role)) {

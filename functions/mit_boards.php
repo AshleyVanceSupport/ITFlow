@@ -317,7 +317,7 @@ function mitBoardNotify($ticket_id, $board_id, $why, $reason, $by_user_id) {
     $mail = [];
     $told = [];
     foreach (mitBoardMembers($board_id) as $user_id => $member) {
-        if (!$member['notify'] || $user_id === intval($by_user_id) || !mitAgentCanSeeClient($user_id, $client_id)) {
+        if (!$member['notify'] || $user_id === intval($by_user_id) || !mitAgentCanWorkTicket($user_id, $client_id, 1)) {
             continue;
         }
         mysqli_query($mysqli, "INSERT INTO notifications SET notification_type = 'Ticket', notification = '" . escapeSql($line) . "',
@@ -495,7 +495,7 @@ function mitBoardNextMember(array $board, $client_id) {
         if ($sweep && isset($cache['sees'][$key])) {
             return $cache['sees'][$key];
         }
-        $yes = mitAgentCanSeeClient($user_id, $client_id);
+        $yes = mitAgentCanWorkTicket($user_id, $client_id);
         if ($sweep) {
             $cache['sees'][$key] = $yes;
         }
@@ -503,7 +503,7 @@ function mitBoardNextMember(array $board, $client_id) {
     };
     foreach ($order as $user_id) {
         if (!$sees($user_id)) {
-            $skipped[$user_id] = 'cannot see the client';
+            $skipped[$user_id] = mitAgentSupportLevel($user_id) < 2 ? 'their role cannot work tickets' : 'cannot see the client';
         } elseif ($max && ($held[$user_id] ?? 0) >= $max) {
             $skipped[$user_id] = "holds $max open tickets here";
         } elseif (($why = $away($user_id)) !== '') {
@@ -757,7 +757,7 @@ function mitBoardNewTicketField() {
 /** After New Ticket saved: the board picked, else the routing rules. */
 function mitBoardAfterCreate($ticket_id, $picked) {
     $picked = intval($picked);
-    if ($picked && isset(mitBoards()[$picked])) {
+    if ($picked && isset(mitBoardsVisible()[$picked])) {
         mitBoardMove($ticket_id, $picked, '', false, 'created');
         return;
     }

@@ -16,6 +16,16 @@ test('a technician can work tickets', async ({ page }) => {
     await visit(page, 'agent/mit_timesheet.php');
 });
 
+test('the timesheet person picker lists only people the technician may open', async ({ page }) => {
+    await visit(page, 'agent/mit_timesheet.php');
+    const people = await page.locator('select[aria-label=Person] option').evaluateAll((o) => o.map((x) => [x.value, x.textContent.trim()]));
+    for (const [userId, name] of people) {
+        await visit(page, `agent/mit_timesheet.php?user_id=${userId}`);
+        // A person they may not open falls back to their own timesheet
+        await expect(page.locator('select[aria-label=Person]'), `${name} is in the picker but their timesheet does not open`).toHaveValue(userId);
+    }
+});
+
 test('a technician cannot open Admin', async ({ page }) => {
     for (const url of ['admin/users.php', 'admin/settings_mail.php', 'admin/mit_timesheets.php', 'admin/mit_procurement_settings.php', 'admin/backup.php']) {
         await page.goto(url);

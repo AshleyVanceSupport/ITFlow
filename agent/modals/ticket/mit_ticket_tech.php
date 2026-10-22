@@ -34,7 +34,7 @@ $agents = [];
 if (!$tech) {
     $sql_agents = mysqli_query($mysqli, "SELECT user_id, user_name FROM users WHERE user_type = 1 AND user_status = 1 AND user_archived_at IS NULL AND user_id <> $lead_id ORDER BY user_name");
     while ($agent = mysqli_fetch_assoc($sql_agents)) {
-        if (!isset($techs[intval($agent['user_id'])]) && mitAgentCanSeeClient($agent['user_id'], $row['ticket_client_id'])) {
+        if (!isset($techs[intval($agent['user_id'])]) && mitAgentCanWorkTicket($agent['user_id'], $row['ticket_client_id'])) {
             $agents[] = $agent;
         }
     }

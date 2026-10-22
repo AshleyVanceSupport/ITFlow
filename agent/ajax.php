@@ -2399,7 +2399,7 @@ if (isset($_GET['calendar_unscheduled'])) {
         WHERE ticket_schedule IS NULL AND ticket_resolved_at IS NULL AND ticket_closed_at IS NULL AND ticket_archived_at IS NULL
         AND " . ($user_id ? "ticket_assigned_to = $user_id" : "ticket_assigned_to > 0") . "
         " . ($client_id ? "AND ticket_client_id = $client_id" : '') . "
-        " . clientScopeSql('ticket_client_id') . "
+        " . clientScopeSql('ticket_client_id') . (function_exists('mitBoardVisibleSql') ? mitBoardVisibleSql('tickets') : '') /* Mountaineer IT: boards this role sees */ . "
         ORDER BY FIELD(ticket_priority, 'Urgent', 'High', 'Medium', 'Low'), ticket_created_at ASC
         LIMIT " . ($user_id ? 25 : 50));
     $tickets = [];

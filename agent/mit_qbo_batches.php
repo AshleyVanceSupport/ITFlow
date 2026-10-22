@@ -25,6 +25,7 @@ $batches = mysqli_fetch_all(mysqli_query($mysqli, "SELECT b.*, u.user_name AS cr
         SUM(e.entry_status != 'removed') AS invoices, SUM(e.entry_status = 'queued') AS queued, SUM(e.entry_status = 'sent') AS sent,
         SUM(e.entry_status = 'failed') AS failed, SUM(IF(e.entry_status != 'removed', e.amount, 0)) AS total
     FROM mit_qbo_batches b LEFT JOIN mit_qbo_batch_invoices e ON e.batch_id = b.batch_id
+        AND e.invoice_id IN (SELECT invoice_id FROM invoices WHERE 1 = 1" . clientScopeSql('invoice_client_id') . ")
     LEFT JOIN users u ON u.user_id = b.created_by LEFT JOIN users s ON s.user_id = b.sent_by
     GROUP BY b.batch_id ORDER BY b.batch_id DESC LIMIT 200"), MYSQLI_ASSOC);
 

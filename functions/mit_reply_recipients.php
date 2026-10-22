@@ -200,6 +200,9 @@ function mitInternalNotifyAgents($ticket_id) {
     }))) : [];
     foreach ($rows as $row) {
         $user_id = intval($row['user_id']);
+        if (mitAgentSupportLevel($user_id) < 1) {
+            continue; // their role has no Support access - they could not open the ticket
+        }
         if ($client_id && intval($row['role_is_admin']) !== 1) {
             $a = $access[$user_id] ?? ['allow' => [], 'deny' => []];
             if (isset($a['deny'][$client_id]) || ($a['allow'] && !isset($a['allow'][$client_id]))) {
@@ -290,6 +293,9 @@ function mitTicketClientMoved($ticket_id, $client_id) {
     $client_id = intval($client_id);
     if (mitReplyRecipientsReady()) {
         mysqli_query($mysqli, "DELETE FROM mit_ticket_mail_choices WHERE ticket_id = $ticket_id");
+    }
+    if (function_exists('mitProcTicketClientMoved')) {
+        mitProcTicketClientMoved($ticket_id, $client_id); // its parts still to order / to receive go with it
     }
     mysqli_query($mysqli, "DELETE FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id
         AND watcher_email NOT IN (SELECT user_email FROM users WHERE user_type = 1 AND user_archived_at IS NULL AND user_email IS NOT NULL)

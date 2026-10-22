@@ -36,7 +36,7 @@ ob_start();
             <thead class="small text-muted"><tr><th>Ticket</th><th>Client</th><th class="text-center">Billable</th><th class="text-end">Hours</th></tr></thead>
             <tbody>
                 <?php foreach ($rows as $row) {
-                    if (!$see_tickets || !hasClientAccess($row['ticket_client_id'])) {
+                    if (!$see_tickets || (intval($row['ticket_client_id']) && !hasClientAccess($row['ticket_client_id']))) {
                         $hidden += $row['minutes'];
                         continue;
                     } ?>

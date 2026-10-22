@@ -47,6 +47,37 @@ function mitProcGuessAssetType($name) {
  * An invoice line made from a tangible product had its stock taken by ITFlow when it was added; ordered
  * for the client instead, that stock is put back as the line arrives, so the shelf count stays right.
  */
+/**
+ * A ticket moved to another client (mitTicketClientMoved): its parts still waiting to be ordered, and PO lines for them not yet
+ * fully received, belong to the new client now - so client access, receiving's assets and the To order list follow the ticket
+ * (as its ticket parts do, MIT_PART_CLIENT_SQL). What was already received stays where it went.
+ */
+function mitProcTicketClientMoved($ticket_id, $client_id) {
+    global $mysqli;
+    if (!mitProcReady()) {
+        return;
+    }
+    $ticket_id = intval($ticket_id);
+    $client_id = intval($client_id);
+    mysqli_query($mysqli, "UPDATE mit_po_lines l JOIN mit_procurement_items i ON i.item_id = l.proc_item_id SET l.client_id = $client_id
+        WHERE i.ticket_id = $ticket_id AND l.received_qty < l.quantity");
+    mysqli_query($mysqli, "UPDATE mit_procurement_items SET client_id = $client_id WHERE ticket_id = $ticket_id AND status NOT IN ('received', 'cancelled')");
+}
+
+/**
+ * Receiving's extras the signed-in agent's role may do: assets and ticket notes need Support edit (as ITFlow's asset and reply
+ * forms do), adding stock needs Sales edit (as ITFlow's product stock form). Returns the options with the others taken out.
+ */
+function mitProcReceiveOptions(array $options) {
+    if (lookupUserPermission('module_support') < 2) {
+        unset($options['assets'], $options['review'], $options['notes']);
+    }
+    if (lookupUserPermission('module_sales') < 2) {
+        unset($options['stock']);
+    }
+    return $options;
+}
+
 function mitProcAfterReceive(array $line, $qty, $serials, $receipt_id, array $options, array $in) {
     global $mysqli, $session_user_id, $asset_types_array;
     $done = ['assets' => 0, 'stock' => 0, 'notes' => 0, 'capped' => 0, 'asset_ids' => []];

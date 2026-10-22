@@ -166,7 +166,7 @@ if (isset($_POST['mit_ts_person_save'])) {
         redirect();
     }
     $approver_id = intval($_POST['approver_id'] ?? 0);
-    if ($approver_id === $user_id || ($approver_id && !(mitTsUsers()[$approver_id] ?? null))) {
+    if ($approver_id === $user_id || ($approver_id && !(mitTsUsers([], true)[$approver_id] ?? null))) {
         $approver_id = 0;
     }
     $employee_id = trim((string) ($_POST['employee_id'] ?? ''));

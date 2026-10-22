@@ -53,7 +53,7 @@ ob_start();
                 <label class="form-label">Approves their timesheets</label>
                 <select class="form-select" name="approver_id">
                     <option value="0">Anyone with Full Timesheets access</option>
-                    <?php foreach (mitTsUsers() as $uid => $user) {
+                    <?php foreach (mitTsUsers([], true) as $uid => $user) { // any active agent - a manager may keep no timesheet
                         if ($uid === $user_id) {
                             continue;
                         } ?>

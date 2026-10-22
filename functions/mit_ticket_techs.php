@@ -279,6 +279,28 @@ function mitAgentCanSeeClient($user_id, $client_id) {
 }
 
 /**
+ * Another agent's Support level from their ITFlow role (admins 3, no role / no Support row 0) - for picking, handing out
+ * or telling people about tickets: 1 can read a ticket, 2 can work it (reply, schedule).
+ */
+function mitAgentSupportLevel($user_id) {
+    global $mysqli;
+    static $cache = [];
+    $user_id = intval($user_id);
+    if (!isset($cache[$user_id])) {
+        $row = mysqli_fetch_row(mysqli_query($mysqli, "SELECT IFNULL(role_is_admin, 0), (SELECT p.user_role_permission_level FROM user_role_permissions p
+                JOIN modules m ON m.module_id = p.module_id WHERE p.user_role_id = users.user_role_id AND m.module_name = 'module_support')
+            FROM users LEFT JOIN user_roles ON role_id = user_role_id AND role_archived_at IS NULL WHERE user_id = $user_id"));
+        $cache[$user_id] = !$row ? 0 : (intval($row[0]) === 1 ? 3 : intval($row[1]));
+    }
+    return $cache[$user_id];
+}
+
+/** Can this agent work (level 2) - or read (level 1) - a ticket of this client: their role's Support level and client access. */
+function mitAgentCanWorkTicket($user_id, $client_id, $level = 2) {
+    return mitAgentSupportLevel($user_id) >= $level && mitAgentCanSeeClient($user_id, $client_id);
+}
+
+/**
  * Add a helper, or change their booking. $mode: 'lead' (same time as the lead), 'own' ($start - $end)
  * or 'none'. Emails the helper their booking (or its cancellation), notes it on the ticket.
  * Returns [ok, message (plain text - the caller escapes it), conflicts].
@@ -298,7 +320,7 @@ function mitTicketTechSave(array $ticket, $user_id, $mode, $start = '', $end = '
     if ($user_id === intval($ticket['ticket_assigned_to'])) {
         return [false, $tech['user_name'] . ' is the lead agent on this ticket.', []];
     }
-    if (!mitAgentCanSeeClient($user_id, $ticket['ticket_client_id'])) {
+    if (!mitAgentCanWorkTicket($user_id, $ticket['ticket_client_id'])) {
         return [false, $tech['user_name'] . ' does not have access to this client.', []];
     }
     $mode = in_array($mode, ['lead', 'own', 'none'], true) ? $mode : 'lead';

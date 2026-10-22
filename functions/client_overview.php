@@ -40,7 +40,7 @@ function clientOverviewSlaBreachedSql() {
  */
 function clientOverviewAttention($client_id, $access, $renewals) {
     $items = [];
-    $open = "ticket_client_id = $client_id AND ticket_resolved_at IS NULL AND ticket_closed_at IS NULL";
+    $open = "ticket_client_id = $client_id AND ticket_resolved_at IS NULL AND ticket_closed_at IS NULL" . (function_exists('mitBoardVisibleSql') ? mitBoardVisibleSql('tickets') : ''); // Mountaineer IT: boards this role sees
 
     if ($access['tickets']) {
         $items[] = [
@@ -80,7 +80,7 @@ function clientOverviewAttention($client_id, $access, $renewals) {
         if ($access['tickets']) {
             $items[] = [
                 'count' => dashboardCount("SELECT COUNT(ticket_id) FROM tickets WHERE ticket_client_id = $client_id
-                    AND ticket_resolved_at IS NOT NULL AND ticket_billable = 1 AND ticket_invoice_id = 0"),
+                    AND ticket_resolved_at IS NOT NULL AND ticket_billable = 1 AND ticket_invoice_id = 0" . (function_exists('mitBoardVisibleSql') ? mitBoardVisibleSql('tickets') : '')), // Mountaineer IT: boards this role sees
                 'label' => 'Resolved, not invoiced', 'icon' => 'receipt', 'tone' => 'info',
                 'url' => "/agent/tickets.php?client_id=$client_id&billing=unbilled&state=closed",
             ];

@@ -1524,11 +1524,19 @@ function mitTsSaveCells(array $sheet, array $period, array $cells, array $notes 
         // Signed (California): the signature no longer covers these hours - they sign again
         mitTsCaChangedAfterSigning($sheet, $period);
     }
+    $typed = $changed; // by hand - closure days filled in below are not someone's correction
     $changed += mitTsFillClosures($user_id, $period);
     if ($changed) {
         mitTsSheetSaved($user_id, $period);
         if ($user_id !== intval($session_user_id)) {
             logAudit('Timesheet', 'Edit', escapeSql(mitTsWho() . " changed $changed entr" . ($changed === 1 ? 'y' : 'ies') . " on the timesheet of user $user_id for " . $period['label']), 0, $user_id);
+            // The person is told (once an hour while someone works on their sheet - the day panel saves as it is typed)
+            $text = mitTsWho() . ' changed hours on your timesheet for ' . $period['label'];
+            $recent = mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM notifications WHERE notification_user_id = $user_id AND notification_type = 'Timesheet'
+                AND notification = '" . escapeSql($text) . "' AND notification_timestamp > NOW() - INTERVAL 1 HOUR LIMIT 1"));
+            if ($typed && intval($session_user_id) && !$recent) {
+                mitTsNotify($user_id, $text, mitTsLink($user_id, $period), intval($sheet['sheet_id'] ?? 0));
+            }
         }
     }
     return [true, $changed ? 'Timesheet saved' : 'Nothing changed'];
@@ -1612,7 +1620,7 @@ function mitTsApprovers() {
 function mitTsApproversFor($user_id) {
     $approver_id = mitTsPerson($user_id)['approver_id'];
     if ($approver_id && $approver_id !== intval($user_id)) {
-        $approver = mitTsUsers()[$approver_id] ?? null;
+        $approver = mitTsUsers([], true)[$approver_id] ?? null; // any active agent, timesheet or not
         if ($approver) {
             return [$approver_id => $approver];
         }

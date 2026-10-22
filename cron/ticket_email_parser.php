@@ -314,6 +314,11 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
             $from_email_esc2 = mysqli_real_escape_string($mysqli, $from_email);
             $row2 = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT contact_id FROM contacts WHERE contact_email = '$from_email_esc2' AND contact_client_id = $client_id LIMIT 1"));
             $agent_row = $row2 ? null : mysqli_fetch_row(mysqli_query($mysqli, "SELECT user_id FROM users WHERE user_email = '$from_email_esc2' AND user_type = 1 AND user_status = 1 AND user_archived_at IS NULL LIMIT 1"));
+            // ... whose role can work this client's tickets - another agent is handled like a stranger
+            $agent_blocked = $agent_row && function_exists('mitAgentCanWorkTicket') && !mitAgentCanWorkTicket($agent_row[0], $client_id);
+            if ($agent_blocked) {
+                $agent_row = null;
+            }
             if ($row2) {
                 $ticket_reply_contact = intval($row2['contact_id']);
             } elseif ($agent_row) {
@@ -321,7 +326,7 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
                 $ticket_reply_type = 'Internal';
                 $ticket_reply_contact = intval($agent_row[0]);  // an agent's reply is by their user id, as on the ticket page
             } else {
-                $stranger = !mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id AND watcher_email = '$from_email_esc2'
+                $stranger = $agent_blocked || !mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id AND watcher_email = '$from_email_esc2'
                     UNION SELECT 1 FROM users WHERE user_email = '$from_email_esc2' AND user_type = 1 AND user_archived_at IS NULL"));
                 $ticket_reply_type = 'Internal';
                 $ticket_reply_contact = '0';

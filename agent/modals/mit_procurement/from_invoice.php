@@ -10,6 +10,7 @@ require_once '../../../includes/modal_header.php';
 mitModuleRequire('procurement', true);
 
 enforceUserPermission('module_procurement', 2);
+enforceUserPermission('module_sales'); // invoices are Sales'
 
 $invoice_id = intval($_GET['invoice_id'] ?? 0);
 $invoice = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT invoice_id, invoice_prefix, invoice_number, invoice_client_id FROM invoices WHERE invoice_id = $invoice_id"));

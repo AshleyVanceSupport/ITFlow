@@ -25,7 +25,8 @@ if (isset($_POST['mit_reimb_save'])) {
             flashAlert('That reimbursement no longer exists.', 'error');
             redirect();
         }
-        enforceUserPermission('module_support', 1);
+        // Changing one follows the timesheet's rules (mitReimbWhyLocked in mitReimbSave), as removing it does - the person, or
+        // whoever corrects their timesheet; no Support access needed (the ticket is not shown)
         $ticket = ticketRow($row['ticket_id']);
         if (!$ticket) {
             flashAlert('Its ticket was deleted - it can only be removed.', 'error');

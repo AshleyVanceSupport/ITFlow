@@ -103,6 +103,8 @@ foreach ($by_po as $lines) {
                 <?php if ($can_receive) { ?>
                     <div class="d-flex flex-wrap align-items-center gap-3 mt-3 p-3 rounded bg-body-tertiary border">
                         <strong data-mit-total>Nothing ticked</strong>
+                        <?php $mit_may = mitProcReceiveOptions(['assets' => 1, 'stock' => 1]); ?>
+                        <?php if (isset($mit_may['assets'])) { ?>
                         <div class="form-check mb-0" title="One asset per unit for the client, with its serial number - linked to the ticket when it was a ticket's part">
                             <input class="form-check-input" type="checkbox" name="options[assets]" value="1" id="mitOptAssets">
                             <label class="form-check-label" for="mitOptAssets">Make client items assets</label>
@@ -111,14 +113,19 @@ foreach ($by_po as $lines) {
                             <input class="form-check-input" type="checkbox" name="options[review]" value="1" id="mitOptReview" checked>
                             <label class="form-check-label" for="mitOptReview">Fill in each asset's details</label>
                         </div>
+                        <?php } ?>
+                        <?php if (isset($mit_may['stock'])) { ?>
                         <div class="form-check mb-0" title="Items ordered for our own stock are added to the product's stock">
                             <input class="form-check-input" type="checkbox" name="options[stock]" value="1" id="mitOptStock">
                             <label class="form-check-label" for="mitOptStock">Add stock items to stock</label>
                         </div>
+                        <?php } ?>
+                        <?php if (isset($mit_may['assets'])) { ?>
                         <div class="form-check mb-0" title="An internal note on the ticket a part was for">
                             <input class="form-check-input" type="checkbox" name="options[notes]" value="1" id="mitOptNotes" checked>
                             <label class="form-check-label" for="mitOptNotes">Note it on the ticket</label>
                         </div>
+                        <?php } ?>
                         <button type="submit" name="mit_po_receive" class="btn btn-success ms-auto"><i class="fas fa-check me-2"></i>Mark received</button>
                     </div>
                 <?php } ?>

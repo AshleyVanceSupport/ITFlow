@@ -13,6 +13,7 @@ if (isset($_POST['mit_proc_from_invoice'])) {
 
     validateCSRFToken();
     enforceUserPermission('module_procurement', 2);
+    enforceUserPermission('module_sales'); // invoices are Sales'
 
     $invoice_id = intval($_POST['invoice_id'] ?? 0);
     $invoice = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT invoice_id, invoice_client_id FROM invoices WHERE invoice_id = $invoice_id"));

@@ -752,6 +752,21 @@ model: see DEPLOYMENT.md.
   (`mitPoScopeSql`); the list-view Reset link has its own token (`mitListViewResetToken`); Outlook busy copy keeps the old
   copy when there are more than 20 pages; certificate renewal removes the old key from both apps (`m365_cert_key_id` /
   `m365_cal_cert_key_id`, best effort). Smoke: the Remind step needs `ITFLOW_SMOKE_REMIND=1`.
+- Roles audit (Oct 21, 26.10.103): every feature checked against ITFlow roles (module levels, client limits, menus, API) by
+  review and a sign-in crawl as admin / Technician / Accountant / no-access / view-only / full non-admin / client-limited users.
+  Other agents are picked, handed or told about tickets only when their role can: `mitAgentSupportLevel` / `mitAgentCanWorkTicket`
+  (functions/mit_ticket_techs.php - Support edit to work, view to be told) in round-robin and board notices, the Notify list,
+  helpers, Dispatch's agents, and the parser (an agent who can't work the client's tickets mails in as a stranger). Boards by role
+  also on the calendar's To schedule / Left behind lists, client tiles, client overview counts (two lines in
+  `functions/client_overview.php`, one in `agent/ajax.php` calendar_unscheduled) and Dispatch's contact list; New Ticket refuses a
+  hidden board; Dispatch's dialog keeps a ticket's hidden board as its choice (it moved them before). Receiving's assets / notes
+  need Support edit and its stock Sales edit (`mitProcReceiveOptions`); a ticket moved to another client takes its waiting parts
+  and unreceived PO lines (`mitProcTicketClientMoved`, from `mitTicketClientMoved`); PO approval notices / names only to approvers
+  who can see every client on the PO (`mitPoApproversFor`); Send to procurement needs Sales; invoice links need Sales;
+  QuickBooks batch totals count visible clients only; portal pay checks QuickBooks after the invoice's owner. Timesheets: the
+  person picker lists only people who may be opened; a per-person approver can be any active agent; changing a reimbursement no
+  longer needs Support (same rule as removing); hours changed by someone else notify the person (once an hour). Reports and the
+  API are not filtered by board (documented in mit_board_roles.php). Smoke: picker test in `04-permissions.spec.js`.
 - Review fixes (Oct 2026): `functions/mit_common.php` (ours, required first in `functions.php`) - shared
   helpers: `mitMailBody` / `mitSqlHtml` (HTML for SQL without escapeSql's strip_tags), `mitProductIsTangible`,
   module switches (`mitModuleOn`, `mitModuleRequire` for pages/modals, `mitModuleGuard` for handler files,

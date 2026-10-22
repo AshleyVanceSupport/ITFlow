@@ -26,7 +26,7 @@ if (!mitTsMaySee($user_id)) {
 }
 $period = mitTsPeriodFromRequest($_GET['start'] ?? '', $user_id);
 // The person picker: who this agent may look at (with anyone who has hours in this period), and themselves
-$people = mitTsVisibleUsers($period) + mitTsUsers([$session_user_id, $user_id]);
+$people = mitTsVisibleUsers($period) + array_intersect_key(mitTsUsers([$session_user_id, $user_id]), array_flip([intval($session_user_id), $user_id]));
 uasort($people, function ($a, $b) {
     return strcasecmp($a['user_name'], $b['user_name']);
 });

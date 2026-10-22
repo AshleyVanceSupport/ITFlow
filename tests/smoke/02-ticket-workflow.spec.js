@@ -101,7 +101,12 @@ test('internal note notifies the tech picked', async ({ page }) => {
         await line.locator('.itflow-select').click();
         await expect(page.locator('.itflow-select-panel')).toHaveCount(1);
         const editor = await page.locator('#replyComposer iframe').first().boundingBox();
-        await page.mouse.click(editor.x + editor.width - 20, editor.y + editor.height - 10); // clear of the open list
+        const panel = await page.locator('.itflow-select-panel').boundingBox();
+        if (panel.y + panel.height + 10 < editor.y + editor.height) {
+            await page.mouse.click(editor.x + editor.width - 20, editor.y + editor.height - 10); // clear of the open list
+        } else {
+            await page.frameLocator('#replyComposer iframe').first().locator('body').focus(); // a long list covers the editor
+        }
         await expect(page.locator('.itflow-select-panel'), 'Notify list closed by a click in the editor').toHaveCount(0);
     }
     test.skip(!agent, 'no other agent who can see this client');

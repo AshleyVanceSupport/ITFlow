@@ -384,7 +384,7 @@ if (isset($_POST['mit_po_receive'])) {
 
     // One receive at a time, so a double-click cannot receive (and make assets or stock for) the same items twice
     mitProcLock('receive');
-    [$lines, $pos, $extras] = mitPoReceive((array) ($_POST['received'] ?? []), (array) ($_POST['options'] ?? []));
+    [$lines, $pos, $extras] = mitPoReceive((array) ($_POST['received'] ?? []), mitProcReceiveOptions((array) ($_POST['options'] ?? [])));
     mitProcUnlock('receive');
     if (!$lines) {
         flashAlert('Nothing was ticked as received.', 'error');

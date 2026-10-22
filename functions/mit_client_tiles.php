@@ -74,7 +74,7 @@ function mitClientTiles($kind, $client_id) {
         $tiles[] = mitTile('Expired', number_format($expired), 'calendar-times', $expired ? '#e0484d' : $grey, '', "software.php?$base&expire_days=expired");
         $tiles[] = mitTile('Renewing in 90 days', number_format($renewing), 'sync-alt', $renewing ? '#d9930c' : $grey, '', "software.php?$base&expire_days=90");
     } elseif ($kind === 'tickets') {
-        $where = "tickets.ticket_client_id = $client_id" . (function_exists('mitServiceTicketsAnd') ? mitServiceTicketsAnd('tickets.ticket_project_id') : '');
+        $where = "tickets.ticket_client_id = $client_id" . (function_exists('mitServiceTicketsAnd') ? mitServiceTicketsAnd('tickets.ticket_project_id') : '') . mitBoardVisibleSql('tickets');
         $open = mitTileCount("SELECT COUNT(*) FROM tickets WHERE $where AND " . TICKET_OPEN_SQL);
         $overdue = mitTileCount("SELECT COUNT(*) FROM tickets WHERE $where AND " . ticketOverdueSql());
         $unassigned = mitTileCount("SELECT COUNT(*) FROM tickets WHERE $where AND " . TICKET_OPEN_SQL . " AND tickets.ticket_assigned_to = 0");

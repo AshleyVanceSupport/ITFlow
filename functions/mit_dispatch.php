@@ -44,6 +44,9 @@ function mitDispatchTechs() {
     $techs = [];
     $result = mysqli_query($mysqli, "SELECT user_id, user_name FROM users WHERE user_type = 1 AND user_status = 1 AND user_archived_at IS NULL ORDER BY user_name");
     while ($row = mysqli_fetch_assoc($result)) {
+        if (mitAgentSupportLevel($row['user_id']) < 2) {
+            continue; // their role cannot work tickets (Support edit)
+        }
         $techs[intval($row['user_id'])] = ['id' => intval($row['user_id']), 'name' => $row['user_name'], 'color' => mitAgentColor($row['user_id'])];
     }
     return $techs;
@@ -289,7 +292,7 @@ function mitDispatchContactTickets($contact_id, $except_ticket_id) {
         LEFT JOIN ticket_statuses ON ticket_status_id = ticket_status
         LEFT JOIN users ON user_id = ticket_assigned_to
         WHERE ticket_contact_id = $contact_id AND ticket_client_id = $client_id AND tickets.ticket_id <> " . intval($except_ticket_id) . "
-        AND ticket_resolved_at IS NULL AND ticket_closed_at IS NULL AND ticket_archived_at IS NULL
+        AND ticket_resolved_at IS NULL AND ticket_closed_at IS NULL AND ticket_archived_at IS NULL" . mitBoardVisibleSql('tickets') . "
         ORDER BY ticket_created_at DESC LIMIT 15");
     $tickets = [];
     while ($row = mysqli_fetch_assoc($result)) {
@@ -389,8 +392,11 @@ function mitDispatchDetails($ticket_id) {
         'priorities' => TICKET_PRIORITIES,
         'categories' => $pick("SELECT category_id, category_name FROM categories WHERE category_type = 'Ticket' AND (category_archived_at IS NULL OR category_id = $category_id) ORDER BY category_name"),
         'slas' => $pick("SELECT sla_id, sla_name FROM slas WHERE sla_archived_at IS NULL OR sla_id = $sla_id ORDER BY sla_name"),
-        'board' => function_exists('mitBoardOf') ? mitBoardOf($row['ticket_id']) : 0,
-        'boards' => array_map(function ($b) { return ['id' => $b['id'], 'name' => $b['name']]; }, mitDispatchBoards()),
+        'board' => $board_id = (function_exists('mitBoardOf') ? mitBoardOf($row['ticket_id']) : 0),
+        // The role's boards, plus the one the ticket is on (it may be one they don't see - it is theirs, or left behind)
+        'boards' => array_values(array_map(function ($b) { return ['id' => $b['id'], 'name' => $b['name']]; }, mitDispatchBoards())
+            + ($board_id && !in_array($board_id, array_column(mitDispatchBoards(), 'id'), true) && isset(mitBoards()[$board_id])
+                ? [-1 => ['id' => $board_id, 'name' => mitBoards()[$board_id]['board_name']]] : [])),
     ];
 }
 

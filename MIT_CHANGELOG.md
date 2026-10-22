@@ -4,6 +4,14 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.103 - 2026-10-21
+Roles check - every feature tried against ITFlow's roles (admin, Technician, Accountant, and test roles with no access, view only, full but not admin, and limited to one client):
+- Agents are picked, handed or told about tickets only when their role can work tickets: round-robin skips them ("their role cannot work tickets"), board notices, the internal note Notify list, Additional agents and Dispatch's agent columns leave them out, and their emailed replies are treated like a stranger's.
+- Service boards by role now also apply to the calendar's To schedule and Left behind lists, the client's ticket tiles and overview counts, and Dispatch's "other tickets of this contact". Dispatch's Schedule window no longer moves a ticket off a board the agent can't see.
+- Procurement: receiving makes assets and ticket notes only for someone with Support edit, and adds stock only with Sales edit. A ticket moved to another client takes its parts still to order or receive with it. PO approval requests go only to approvers who can open the PO. Send to procurement from an invoice needs Sales access; invoice numbers link only for Sales.
+- QuickBooks batch totals count only clients you can see. The portal's saved-card payment checks the invoice is yours before anything else.
+- Timesheets: the person picker lists only people you may open (it showed everyone). An approver can be any agent, even one who keeps no timesheet. Whoever may remove a reimbursement may also change it. When someone else changes your hours you get a notification.
+
 ## 26.10.102 - 2026-10-21
 - Service boards by role: Admin > Roles > Edit has a "Service boards" section - leave "All boards" on, or pick the boards that role's agents see (e.g. technicians don't see Sales). Admin roles always see every board.
 - A board a role can't see is left out of its Tickets list and kanban, the board switcher and counts, the dashboard, Dispatch, the calendar, global search and the client overview. Tickets assigned to them, ones they help on and ones they escalated still show; a direct link still opens the ticket.

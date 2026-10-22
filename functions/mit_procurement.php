@@ -191,7 +191,7 @@ function mitProcForHtml(array $row) {
     if (intval($row['project_id'] ?? 0) && !empty($row['project_name'])) {
         $parts[] = '<a href="project.php?project_id=' . intval($row['project_id']) . '" title="' . escapeHtml($row['project_name']) . '">' . escapeHtml($row['project_prefix'] . $row['project_number']) . '</a>';
     }
-    if (intval($row['invoice_id'] ?? 0) && !empty($row['invoice_number'])) {
+    if (intval($row['invoice_id'] ?? 0) && !empty($row['invoice_number']) && lookupUserPermission('module_sales') >= 1) {
         $parts[] = '<a href="invoice.php?invoice_id=' . intval($row['invoice_id']) . '">' . escapeHtml($row['invoice_prefix'] . $row['invoice_number']) . '</a>';
     }
     if (intval($row['ticket_id'] ?? 0)) {
@@ -455,14 +455,14 @@ function mitPoMayApprove(array $po) {
     if (!empty($session_is_admin) || !mitPoIsOwn($po)) {
         return true;
     }
-    return !array_diff(array_keys(mitPoApprovers()), [intval($session_user_id)]);
+    return !array_diff(array_keys(mitPoApproversFor($po)), [intval($session_user_id)]);
 }
 
 /** Who else can approve this PO, as "Ann, Bob" - for the "waiting for approval" note. */
 function mitPoApproverNames(array $po) {
     $names = [];
     $shapers = mitPoShapers($po);
-    foreach (mitPoApprovers() as $user_id => $approver) {
+    foreach (mitPoApproversFor($po) as $user_id => $approver) {
         if (!in_array($user_id, $shapers, true)) {
             $names[] = $approver['user_name'];
         }
@@ -490,13 +490,28 @@ function mitPoApprovers() {
     return $approvers;
 }
 
+/** The approvers who can open this PO: those of mitPoApprovers() with access to every client on its lines. user_id => row */
+function mitPoApproversFor(array $po) {
+    global $mysqli;
+    $clients = array_filter(array_map('intval', array_column(mysqli_fetch_all(mysqli_query($mysqli, "SELECT DISTINCT client_id FROM mit_po_lines
+        WHERE po_id = " . intval($po['po_id'])), MYSQLI_NUM), 0)));
+    return array_filter(mitPoApprovers(), function ($user_id) use ($clients) {
+        foreach ($clients as $client_id) {
+            if (function_exists('mitAgentCanSeeClient') && !mitAgentCanSeeClient($user_id, $client_id)) {
+                return false;
+            }
+        }
+        return true;
+    }, ARRAY_FILTER_USE_KEY);
+}
+
 /** Tell the approvers (app notification and email) that a PO is waiting for them. */
 function mitPoNotifyApprovers(array $po) {
     global $mysqli, $session_user_id, $config_base_url, $config_smtp_provider, $config_ticket_from_email, $config_ticket_from_name;
     $reference = mitPoReference($po);
     $text = "Purchase order $reference (" . ($po['vendor_name'] ?? 'vendor') . ', ' . mitMoney($po['total']) . ') is waiting for your approval - from ' . mitProcWho();
     $mails = [];
-    foreach (mitPoApprovers() as $user_id => $approver) {
+    foreach (mitPoApproversFor($po) as $user_id => $approver) {
         if ($user_id === intval($session_user_id)) {
             continue;
         }
