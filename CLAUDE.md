@@ -339,7 +339,8 @@ model: see DEPLOYMENT.md.
   `mit_time_entries`, `mit_timesheets` (open / submitted / returned / approved; approving copies ticket
   time and unaccounted time in as source ticket_billable/ticket_other/auto_lost, code 0 - a 0 auto_lost row on
   the first day marks a period stored this way) - M012, plus module row `module_timesheets`
-  (everyone keeps their own; View 1 sees all + report, Edit 2 corrects, Full 3 approves). Pages
+  (everyone keeps their own; View 1 sees all + report, Edit 2 corrects, Full 3 approves - their own sheet too: the user chose
+  (Oct 21) to keep self-approval for Full, unlike POs, so don't flag it in reviews). Pages
   `agent/mit_timesheet.php`, `agent/mit_timesheets.php`, modals `agent/modals/mit_timesheet/`, handlers
   `agent/post/mit_timesheets.php`, report `agent/reports/mit_payroll.php` (CSV summary + detail).
   Admin > Timesheets `admin/mit_timesheets.php` (tabs Settings / Charge codes / People), modals
