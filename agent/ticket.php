@@ -1027,7 +1027,9 @@ if (isset($_GET['ticket_id'])) {
                                 <div class="ticket-prop">
                                     <dt>SLA</dt>
                                     <dd>
-                                        <?php if ($can_change_fields) { ?>
+                                        <?php if ($can_change_fields && function_exists('mitTicketPickButton')) { ?>
+                                            <?= mitTicketPickButton('mit_sla', $ticket_id, intval($ticket_sla_id), "<span>$sla_value$sla_plan_line</span>", 'Change SLA plan') // Mountaineer IT: in place ?>
+                                        <?php } elseif ($can_change_fields) { ?>
                                             <a href="#" class="ticket-prop-edit ajax-modal" data-modal-url="modals/ticket/ticket_sla.php?id=<?= $ticket_id ?>" title="Change SLA plan">
                                                 <span><?= $sla_value ?><?= $sla_plan_line ?></span>
                                                 <i class="fas fa-pen ticket-prop-edit-icon"></i>
@@ -1043,7 +1045,9 @@ if (isset($_GET['ticket_id'])) {
                                 <dt>Category</dt>
                                 <dd>
                                     <?php $category_value = $ticket_category ? $ticket_category_display : "<span class='text-muted'>None</span>"; ?>
-                                    <?php if ($can_change_fields) { ?>
+                                    <?php if ($can_change_fields && function_exists('mitTicketPickButton')) { ?>
+                                        <?= mitTicketPickButton('mit_category', $ticket_id, intval($ticket['ticket_category']), $category_value, 'Change category') // Mountaineer IT: in place ?>
+                                    <?php } elseif ($can_change_fields) { ?>
                                         <a href="#" class="ticket-prop-edit ajax-modal" data-modal-url="modals/ticket/ticket_edit.php?id=<?= $ticket_id ?>" data-modal-size="lg" title="Change category">
                                             <span><?= $category_value ?></span>
                                             <i class="fas fa-pen ticket-prop-edit-icon"></i>

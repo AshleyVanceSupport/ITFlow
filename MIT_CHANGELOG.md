@@ -4,6 +4,9 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.106 - 2026-10-21
+- Ticket page: Board, SLA and Category in the Details box are drop-downs now, like Status and Priority - pick and it is saved, no window. Changing the SLA reloads the page so the clock shows the new targets. Escalating to another board (with a reason) is still in the ⋮ menu.
+
 ## 26.10.105 - 2026-10-21
 - New "Dispatch" permission in Admin > Roles (database update M035). View sees the Dispatch board, queue, Workload and This week, marked "View only" - nothing can be dragged, booked or assigned there. Edit books, moves, assigns and merges (with Support edit, as before).
 - On the update every role that had Support edit gets Dispatch Edit, so nobody loses the board. Then set Technician to View, and make a Dispatcher role (Client View, Support Edit, Dispatch Edit).

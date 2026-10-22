@@ -438,7 +438,7 @@
             var statusChanged = Object.keys(result.records).some(function (id) {
                 return String(result.records[id].status_id) !== String(button.dataset.statusId || result.records[id].status_id);
             });
-            if (button.dataset.quickStyle === 'detail' && (field === 'billable' || (field === 'assignee' && statusChanged))) {
+            if (button.dataset.quickStyle === 'detail' && (field === 'billable' || (field === 'assignee' && statusChanged) || result.reload)) { // Mountaineer IT: result.reload (functions/mit_ticket_picks.php)
                 window.location.reload();
                 return;
             }

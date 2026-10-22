@@ -21,6 +21,7 @@
  * Dispatch's board picker (functions/mit_dispatch.php).
  */
 
+require_once __DIR__ . '/mit_ticket_picks.php';
 require_once __DIR__ . '/mit_board_roles.php';
 
 const MIT_BOARD_RULE_KINDS = ['mailbox' => 'Sent to', 'client' => 'Client', 'category' => 'Category'];
@@ -722,8 +723,7 @@ function mitBoardTicketProp(array $ticket, $can_change) {
     $badge = mitBoardBadge(mitBoardOf($ticket_id));
     $html = mitBoardStyle() . '<div class="ticket-prop"><dt>Board</dt><dd>';
     if ($can_change && ticketIsOpen($ticket)) {
-        $html .= '<a href="#" class="ticket-prop-edit ajax-modal" data-modal-url="modals/mit_board/board_move.php?ticket_id=' . $ticket_id . '" title="Move to another board">'
-            . $badge . '<i class="fas fa-pen ticket-prop-edit-icon"></i></a>';
+        $html .= mitTicketPickButton('mit_board', $ticket_id, mitBoardOf($ticket_id), $badge, 'Move to another board'); // in place (functions/mit_ticket_picks.php)
     } else {
         $html .= '<span class="ticket-prop-static">' . $badge . '</span>';
     }

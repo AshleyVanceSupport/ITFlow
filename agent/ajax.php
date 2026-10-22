@@ -232,6 +232,7 @@ if (isset($_GET['quick_pick_options'])) {
     header('Content-Type: application/json');
     // A contact's location is the clients module's; everything else here is support's
     enforceUserPermission(($_GET['field'] ?? '') === 'contact_location' ? 'module_client' : 'module_support', 2);
+    if (function_exists('mitTicketPickOptions') && ($mit_options = mitTicketPickOptions((string) ($_GET['field'] ?? ''))) !== null) { echo json_encode(['options' => $mit_options]); exit(); } // Mountaineer IT: a ticket's board / SLA / category
 
     $field = (string) ($_GET['field'] ?? '');
     $options = [];
@@ -289,6 +290,7 @@ if (isset($_POST['quick_pick_set'])) {
     $field = (string) ($_POST['field'] ?? '');
     $value = (string) ($_POST['value'] ?? '');
     $ticket_ids = array_values(array_unique(array_filter(array_map('intval', (array) ($_POST['ids'] ?? [])))));
+    if (function_exists('mitTicketPickSet') && ($mit_set = mitTicketPickSet($field, $value, $ticket_ids)) !== null) { http_response_code($mit_set[0]); echo json_encode($mit_set[1]); exit(); } // Mountaineer IT: a ticket's board / SLA / category
 
     // An asset's status, location or contact - assets of clients this agent
     // can reach, with the same permission as Edit Asset (functions/asset.php)

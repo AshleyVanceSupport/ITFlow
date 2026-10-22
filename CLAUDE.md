@@ -674,6 +674,14 @@ model: see DEPLOYMENT.md.
   `agent/reports/mit_boards.php` (catalog line `'mit_boards' => mitBoardReportEntry()` in `functions/reports.php` reportCatalog
   before sla_by_client): per board new / moved in / escalated on / resolved / median first reply and resolve / SLA / open now;
   escalation flows; agents for one board; CSV.
+  Details box pickers (26.10.106): `functions/mit_ticket_picks.php` (ours, required from mit_boards.php) - Board, SLA and Category on
+  the ticket page change in place with ITFlow's own quick picker (`js/quick_pick.js`) instead of a window: fields `mit_board`
+  (`mitBoardMove`), `mit_sla` (as edit_ticket_sla: applyTicketSla pinned, history, audit, custom action), `mit_category` (as
+  bulk_edit_ticket_category for one ticket). `mitTicketPickButton` copies quickPick()'s 'detail' markup. Hooks: one line each in
+  `agent/ajax.php` quick_pick_options (`mitTicketPickOptions`, after the Support edit check) and quick_pick_set (`mitTicketPickSet`,
+  after `$ticket_ids`), `agent/ticket.php` SLA and Category (`function_exists` branch before ITFlow's ajax-modal links, kept as the
+  fallback), `mitBoardTicketProp`, and `js/quick_pick.js` reloads the page on `result.reload` (SLA change, board move that
+  auto-assigned). Escalate (with a reason) stays in the ⋮ menu. Smoke `15-ticket-picks.spec.js`.
   Wording: ITFlow's kanban toggle on `agent/tickets.php` says "Kanban" (was "Board") and its first pill there "Active" (was "On the
   board"), so "board" on that page only means a service board - two strings; keep them if an upstream merge brings the old ones back.
   Boards by role (M034, 26.10.102): `functions/mit_board_roles.php` (ours, required from mit_boards.php) - each ITFlow role sees every
