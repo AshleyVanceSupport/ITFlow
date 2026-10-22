@@ -10,7 +10,10 @@
  *   - QuickBooks Online is not called at all (a token refresh from here would break production's connection)
  *   - Stripe refuses every call - no card is charged, no customer made (includes/stripe_init.php hook)
  *   - ITFlow's custom actions do not run (functions/logging.php triggerCustomAction hook)
- * NinjaOne, Bitwarden and Ingram keep reading (they only read; the user chose to keep them). A red DEVELOPMENT badge shows in
+ *   - every other integration is read-only: mitHttp (Microsoft 365 / Outlook / QuickBooks / Bitwarden / Ingram) and
+ *     mitNinjaHttp (NinjaOne) refuse anything but GET / HEAD and sign-in token requests (mitDevAllows) - so nothing is created,
+ *     changed or deleted in another system, also from a button pressed by hand (Microsoft 365 card, Outlook disconnect ...)
+ * NinjaOne, Bitwarden and Ingram keep reading (the user chose to keep them). A red DEVELOPMENT badge shows in
  * the top bar (includes/mit_timers_nav.php). Set in Admin > Backup (admin/post/mit_backup_restore.php), or by hand in config.php.
  */
 
@@ -46,7 +49,34 @@ function mitDevMailRedirect($mail) {
     }
     $mail->addAddress($to);
     $mail->Subject = '[DEV to ' . implode(', ', $real) . '] ' . $mail->Subject;
+    $GLOBALS['mit_dev_redirected_mail'][spl_object_id($mail)] = true;
     return true;
+}
+
+/** Sign-in token addresses: Microsoft, NinjaOne, Bitwarden, Ingram (a token request changes nothing there). */
+const MIT_DEV_TOKEN_URL = '#/(oauth2/v2\.0/token|connect/token|ws/oauth/token|token)/?(\?.*)?$#i';
+
+/**
+ * In development mode only reads go out: GET / HEAD, and POSTs for a sign-in token - or the Graph calls that send a message
+ * mitDevMailRedirect has already sent to the test inbox (mitDevSendingRedirected). Everything else is refused.
+ */
+function mitDevAllows($method, $url) {
+    if (!mitDevMode()) {
+        return true;
+    }
+    $method = strtoupper((string) $method);
+    if (in_array($method, ['GET', 'HEAD'], true) || !empty($GLOBALS['mit_dev_sending_redirected'])) {
+        return true;
+    }
+    return $method === 'POST' && preg_match(MIT_DEV_TOKEN_URL, (string) parse_url((string) $url, PHP_URL_PATH) . '?');
+}
+
+/** The message given when mitDevAllows refuses. */
+const MIT_DEV_READ_ONLY = 'Development mode - integrations are read-only on this server (nothing is changed in other systems).';
+
+/** functions/mit_m365.php mitM365GraphSendMail: is this message one that development mode sent to the test inbox? */
+function mitDevSendingRedirected($mail) {
+    return mitDevMode() && !empty($GLOBALS['mit_dev_redirected_mail'][spl_object_id($mail)]);
 }
 
 /** includes/stripe_init.php (one line): in development mode every Stripe call is refused - nothing is charged or created. */
@@ -91,6 +121,6 @@ function mitDevBadge() {
     }
     $to = mitDevMailTo();
     return '<li class="nav-item d-flex align-items-center me-2"><span class="badge text-bg-danger" data-mit-dev-mode title="'
-        . escapeHtml('Development mode: ' . ($to !== '' ? "every email goes to $to" : 'no email is sent') . '; the ticket mailbox, Outlook, QuickBooks, Stripe and custom actions are switched off')
+        . escapeHtml('Development mode: ' . ($to !== '' ? "every email goes to $to" : 'no email is sent') . '; the ticket mailbox, Outlook, QuickBooks, Stripe and custom actions are switched off; other integrations only read')
         . '"><i class="fas fa-flask me-1"></i>DEVELOPMENT</span></li>';
 }

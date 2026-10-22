@@ -182,7 +182,9 @@ and give a test inbox **before** restoring production's backup there. It is kept
 - every email (ticket replies, invoices, reminders, alerts) goes to the test inbox instead, its subject saying who it was for;
 - the mailbox is not read (the copy would take production's new mail), Outlook calendars are not synced, the Microsoft 365
   certificate is not renewed, QuickBooks Online and Stripe are switched off, custom actions do nothing;
-- NinjaOne, Bitwarden and Ingram Micro are still read (read-only - they change nothing there);
+- every integration is **read-only**: NinjaOne, Bitwarden and Ingram Micro are still read, Microsoft 365 can still sign in
+  and read, but nothing is created, changed or deleted in another system - also when a button is pressed by hand (Microsoft
+  365 card, Outlook disconnect, QuickBooks disconnect); the only exception is sending the redirected mail to the test inbox;
 - a red DEVELOPMENT badge shows in the top bar.
 Never switch it on on production. Webhooks and anything set up outside ITFlow (n8n, uptime monitors) are not covered.
 

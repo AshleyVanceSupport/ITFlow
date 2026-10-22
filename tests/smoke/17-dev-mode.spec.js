@@ -1,5 +1,7 @@
 // Development mode (functions/mit_dev_mode.php): switched on in Admin > Backup (a test inbox required) it is kept in
-// config.php and shows the DEVELOPMENT badge in the top bar with the inbox; switched off the badge goes away.
+// config.php and shows the DEVELOPMENT badge in the top bar with the inbox; switched off the badge goes away. While on,
+// integrations only read: NinjaOne's organizations can still be read (sign-in token + GET pass mitDevAllows); writes are refused
+// before they leave (checked by hand - there is no button here that writes to another system on the test install).
 // Always switched off again at the end, even when a step fails - the other tests need the normal behaviour.
 
 const { test, expect } = require('@playwright/test');
@@ -25,6 +27,14 @@ test('development mode: on shows the badge and keeps the test inbox, off takes i
     await visit(page, 'agent/dashboard.php', errors);
     await expect(page.locator('[data-mit-dev-mode]'), 'the badge in the top bar').toBeVisible();
     await expect(page.locator('[data-mit-dev-mode]')).toHaveAttribute('title', /dev-inbox@mountaineerit\.test/);
+
+    // Reads still work - only when NinjaOne is set up (the test install's stand-in)
+    await visit(page, 'admin/mit_ninjaone.php?tab=mapping', errors);
+    const read = page.locator('form:has(button[name=mit_ninja_refresh_orgs])');
+    if (await read.count()) {
+        await submit(read, 'mit_ninja_refresh_orgs');
+        expect(await flash(page), 'NinjaOne still reads in development mode').toMatch(/organizations? read from NinjaOne/);
+    }
 
     expect(await setDevMode(page, false), 'switched off').toContain('Development mode is off');
     await visit(page, 'agent/dashboard.php', errors);

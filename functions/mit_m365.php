@@ -296,6 +296,9 @@ function mitM365KeyPem() {
 
 /** A request to Microsoft. $body: array = form fields, string = JSON (or as its Content-Type header says). Returns [status, json, body, error]. */
 function mitHttp($method, $url, array $headers = [], $body = null, $timeout = 30) {
+    if (!mitDevAllows($method, $url)) {
+        return ['status' => 0, 'json' => [], 'body' => '', 'error' => MIT_DEV_READ_ONLY];
+    }
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
@@ -1098,6 +1101,7 @@ function mitM365GraphSendReady() {
  * its attachments uploaded. Throws PHPMailer's exception on failure.
  */
 function mitM365GraphSendMail($mail) {
+    $GLOBALS['mit_dev_sending_redirected'] = mitDevSendingRedirected($mail); // development mode: only to the test inbox
     try {
         $token = mitM365MailGraphToken('Mail.Send');
         if (!$token) {
@@ -1119,6 +1123,8 @@ function mitM365GraphSendMail($mail) {
         throw $e;
     } catch (Throwable $e) {
         throw new PHPMailer\PHPMailer\Exception($e->getMessage());
+    } finally {
+        $GLOBALS['mit_dev_sending_redirected'] = false;
     }
 }
 

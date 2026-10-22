@@ -156,6 +156,9 @@ function mitNinjaToken($fresh = false) {
  * $GLOBALS['mit_ninja_timeout'] (seconds) shortens the wait for page requests (default 60).
  */
 function mitNinjaHttp($method, $url, ?array $form, $token) {
+    if (!mitDevAllows($method, $url)) {
+        return [0, null, MIT_DEV_READ_ONLY];
+    }
     $ch = curl_init($url);
     $headers = ['Accept: application/json'];
     if ($token !== null) {

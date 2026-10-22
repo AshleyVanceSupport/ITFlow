@@ -810,7 +810,12 @@ model: see DEPLOYMENT.md.
   QuickBooks calls throw (`mitQboApi` / `mitQboTokenCall`, `cron/mit_qbo_sync.php` stops); Outlook sync stops
   (`cron/mit_outlook_sync.php`); the Microsoft 365 certificate is not renewed (`mitM365RenewCertificate` throws,
   `mitM365MaybeRenewCertificate` returns - a renewal would add a key to production's app). NinjaOne / Bitwarden / Ingram keep
-  reading (user's choice). A red DEVELOPMENT badge in the top bar (`mitDevBadge` from `includes/mit_timers_nav.php`). Smoke
+  reading (user's choice). 26.10.109: every integration is read-only - `mitDevAllows($method, $url)` at the top of `mitHttp`
+  (Microsoft 365 / Outlook / QuickBooks / Bitwarden / Ingram) and `mitNinjaHttp` refuses all but GET / HEAD and POSTs to a sign-in
+  token address (`MIT_DEV_TOKEN_URL`), answering `MIT_DEV_READ_ONLY` (so hand-pressed buttons - M365 card, Outlook disconnect,
+  QuickBooks disconnect's revoke - change nothing there); the one write let through is Graph sending a message already redirected
+  to the test inbox (`mitDevSendingRedirected`, set around `mitM365GraphSendMail`). A new integration must use one of those two
+  helpers. ITFlow's own AI providers and domain checks are not ours and not gated. A red DEVELOPMENT badge in the top bar (`mitDevBadge` from `includes/mit_timers_nav.php`). Smoke
   `17-dev-mode.spec.js`.
 - Review fixes (Oct 2026): `functions/mit_common.php` (ours, required first in `functions.php`) - shared
   helpers: `mitMailBody` / `mitSqlHtml` (HTML for SQL without escapeSql's strip_tags), `mitProductIsTangible`,
