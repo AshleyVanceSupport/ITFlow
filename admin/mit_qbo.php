@@ -35,6 +35,16 @@ if ($connected) {
 
 ?>
 
+<?php if (mitDevMode()) { ?>
+    <div class="alert alert-danger" data-mit-qbo-dev>
+        <i class="fas fa-flask me-2"></i><strong>Development mode:</strong> QuickBooks Online works here only with an Intuit <strong>sandbox</strong>
+        company connected on this server - the connection that came with production's backup is not used (Disconnect only forgets it
+        here). Connecting the sandbox company clears the batches and mappings copied from production on this server. Invoice emails
+        from QuickBooks go to the test inbox.
+        <?php if (mitQboDevProblem() !== '' && $connected) { ?><div class="mt-1"><?= escapeHtml(mitQboDevProblem()) ?></div><?php } ?>
+    </div>
+<?php } ?>
+
 <div class="card">
     <div class="card-header bg-dark py-2 d-flex flex-wrap align-items-center gap-2">
         <h3 class="card-title mt-2 me-auto"><i class="fas fa-fw fa-file-invoice-dollar me-2"></i>QuickBooks Online</h3>

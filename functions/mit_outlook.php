@@ -328,6 +328,22 @@ function mitOutlookSyncLocked($user_id, $check) {
     $signature = sha1(json_encode(array_map(function ($w) { return $w['hash']; }, $want)));
     $busy_due = $check || empty($link['busy_refreshed_at']) || strtotime($link['busy_refreshed_at']) <= time() - MIT_OUTLOOK_BUSY_MINUTES * 60;
     $check = $check || empty($link['last_check_at']) || strtotime($link['last_check_at']) <= time() - MIT_OUTLOOK_CHECK_MINUTES * 60;
+    if (mitDevMode()) {
+        // Development mode: busy times are read in, nothing is written to the tech's real calendar
+        if (!$busy_due) {
+            return 'Up to date';
+        }
+        try {
+            mitOutlookRefreshBusy(mitOutlookToken($link), $user_id);
+        } catch (Throwable $e) {
+            mitOutlookSetError($user_id, $e->getMessage());
+            mitSetSetting("outlook_failed_at_$user_id", date('Y-m-d H:i:s'));
+            throw $e;
+        }
+        mitDeleteSetting("outlook_failed_at_$user_id");
+        mysqli_query($mysqli, "UPDATE mit_outlook_links SET last_error = NULL WHERE user_id = " . intval($user_id));
+        return 'Busy times read (development mode)';
+    }
     if (!$check && !$busy_due && $signature === $link['sync_signature'] && empty($link['last_error'])) {
         return 'Up to date';
     }

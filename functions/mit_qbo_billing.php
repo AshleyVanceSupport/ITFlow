@@ -393,7 +393,11 @@ function mitQboSendEntry(array $entry, array $items, $email) {
             $warnings[] = 'Not emailed - the client has no billing or primary contact with an email address.';
         } else {
             try {
-                mitQboApi('POST', '/invoice/' . rawurlencode((string) $entry['qbo_invoice_id']) . '/send');
+                // Development mode: to the test inbox only (no inbox - not emailed)
+                if (mitDevMode() && mitDevMailTo() === '') {
+                    throw new RuntimeException('development mode has no test inbox.');
+                }
+                mitQboApi('POST', '/invoice/' . rawurlencode((string) $entry['qbo_invoice_id']) . '/send', null, mitDevMode() ? ['sendTo' => mitDevMailTo()] : []);
                 mysqli_query($mysqli, "UPDATE mit_qbo_batch_invoices SET emailed_at = NOW() WHERE entry_id = $entry_id");
             } catch (Throwable $e) {
                 $warnings[] = 'In QuickBooks, but not emailed: ' . $e->getMessage();

@@ -6,8 +6,10 @@
  * restoring production's backup over it can't switch it off. While on, nothing reaches the outside world:
  *   - every email goes to the test inbox instead, the real recipients in its subject (cron/mail_queue.php hook)
  *   - the ticket mailbox is not read (cron/ticket_email_parser.php hook) - it would take production's mail
- *   - Outlook calendars are not synced, the Microsoft 365 certificate is not renewed (it would change production's app)
- *   - QuickBooks Online is not called at all (a token refresh from here would break production's connection)
+ *   - Outlook: busy times are still read, nothing is written to the techs' calendars (mitOutlookSyncLocked); the Microsoft
+ *     365 certificate is not renewed (it would change production's app)
+ *   - QuickBooks Online works only with an Intuit sandbox company connected on this server (mitQboDevProblem) - production's
+ *     connection from the backup is never used or revoked; its emails go to the test inbox
  *   - Stripe refuses every call - no card is charged, no customer made (includes/stripe_init.php hook)
  *   - ITFlow's custom actions do not run (functions/logging.php triggerCustomAction hook)
  *   - every other integration is read-only: mitHttp (Microsoft 365 / Outlook / QuickBooks / Bitwarden / Ingram) and
@@ -65,7 +67,7 @@ function mitDevAllows($method, $url) {
         return true;
     }
     $method = strtoupper((string) $method);
-    if (in_array($method, ['GET', 'HEAD'], true) || !empty($GLOBALS['mit_dev_sending_redirected'])) {
+    if (in_array($method, ['GET', 'HEAD'], true) || !empty($GLOBALS['mit_dev_sending_redirected']) || !empty($GLOBALS['mit_dev_qbo_ok'])) {
         return true;
     }
     return $method === 'POST' && preg_match(MIT_DEV_TOKEN_URL, (string) parse_url((string) $url, PHP_URL_PATH) . '?');
@@ -121,6 +123,6 @@ function mitDevBadge() {
     }
     $to = mitDevMailTo();
     return '<li class="nav-item d-flex align-items-center me-2"><span class="badge text-bg-danger" data-mit-dev-mode title="'
-        . escapeHtml('Development mode: ' . ($to !== '' ? "every email goes to $to" : 'no email is sent') . '; the ticket mailbox, Outlook, QuickBooks, Stripe and custom actions are switched off; other integrations only read')
+        . escapeHtml('Development mode: ' . ($to !== '' ? "every email goes to $to" : 'no email is sent') . '; the ticket mailbox, Stripe and custom actions are switched off; QuickBooks only with a sandbox company; other integrations only read')
         . '"><i class="fas fa-flask me-1"></i>DEVELOPMENT</span></li>';
 }

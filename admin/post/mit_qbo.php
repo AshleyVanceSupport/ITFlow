@@ -42,6 +42,10 @@ if (isset($_POST['mit_qbo_connect'])) {
 
     validateCSRFToken();
 
+    if (mitQboDevProblem(true) !== '') {
+        flashAlert(mitQboDevProblem(true), 'error');
+        redirect('mit_qbo.php');
+    }
     $state = bin2hex(random_bytes(24));
     $_SESSION['mit_qbo_state'] = $state;
     $_SESSION['mit_qbo_state_expires'] = time() + 600;

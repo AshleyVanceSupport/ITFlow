@@ -92,17 +92,47 @@ function mitQboAuthorizeUrl($state) {
     ], '', '&', PHP_QUERY_RFC3986);
 }
 
+/**
+ * Development mode (functions/mit_dev_mode.php): QuickBooks Online works only with an Intuit sandbox company connected on this
+ * server (`qbo_dev_realm`, set by mitQboConnect in development mode) - never the real books whose connection came with
+ * production's backup. Returns '' when the call may go, else why not. $connecting: signing in to a company.
+ */
+function mitQboDevProblem($connecting = false) {
+    if (!mitDevMode()) {
+        return '';
+    }
+    $s = mitQboSettings();
+    if ($s['env'] !== 'sandbox') {
+        return 'Development mode - QuickBooks Online works only with an Intuit sandbox company on this server: disconnect, set Environment to Sandbox and connect your sandbox company.';
+    }
+    if (!$connecting && ($s['realm_id'] === '' || (string) mitSetting('qbo_dev_realm', '') !== $s['realm_id'])) {
+        return 'Development mode - connect your QuickBooks sandbox company on this server first (the connection that came with production\'s backup is not used here).';
+    }
+    return '';
+}
+
+/** A request to Intuit that mitQboDevProblem allowed - let through development mode's read-only gate (mitDevAllows). */
+function mitQboHttp(...$args) {
+    $GLOBALS['mit_dev_qbo_ok'] = true;
+    try {
+        return mitHttp(...$args);
+    } finally {
+        $GLOBALS['mit_dev_qbo_ok'] = false;
+    }
+}
+
 /** A call to Intuit's token endpoint (client id + secret as Basic auth). Returns the decoded answer; throws on failure. */
 function mitQboTokenCall(array $fields) {
-    if (mitDevMode()) {
-        throw new RuntimeException('Development mode - QuickBooks Online is switched off on this server.');
+    $problem = mitQboDevProblem(($fields['grant_type'] ?? '') === 'authorization_code');
+    if ($problem !== '') {
+        throw new RuntimeException($problem);
     }
     $s = mitQboSettings();
     $secret = mitDecryptSecret((string) mitSetting('qbo_client_secret', ''));
     if ($s['client_id'] === '' || $secret === '') {
         throw new RuntimeException('QuickBooks Online is not set up - add the Intuit app\'s client ID and secret first.');
     }
-    $response = mitHttp('POST', $s['token_url'], [
+    $response = mitQboHttp('POST', $s['token_url'], [
         'Accept: application/json',
         'Authorization: Basic ' . base64_encode($s['client_id'] . ':' . $secret),
     ], $fields);
@@ -136,7 +166,10 @@ function mitQboConnect($code, $realm_id) {
     $cleared = false;
     if ($mapped_realm !== '' && $mapped_realm !== $realm_id) {
         global $mysqli;
-        if (mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM mit_qbo_batch_invoices WHERE entry_status != 'removed' LIMIT 1"))) {
+        if (mitDevMode()) {
+            // Development mode: the batches came with production's backup and belong to the real company - this copy forgets them
+            $GLOBALS['mit_qbo_dev_forget_batches'] = true;
+        } elseif (mysqli_num_rows(mysqli_query($mysqli, "SELECT 1 FROM mit_qbo_batch_invoices WHERE entry_status != 'removed' LIMIT 1"))) {
             throw new RuntimeException('That is a different QuickBooks company from the one your batches went to - take every invoice out of its batch first, '
                 . 'or connect the same company again.');
         }
@@ -147,12 +180,17 @@ function mitQboConnect($code, $realm_id) {
         foreach (MIT_QBO_MAP_TABLES as [$table]) {
             mysqli_query($mysqli, "DELETE FROM $table");
         }
+        if (!empty($GLOBALS['mit_qbo_dev_forget_batches'])) {
+            mysqli_query($mysqli, "DELETE FROM mit_qbo_batch_invoices");
+            mysqli_query($mysqli, "DELETE FROM mit_qbo_batches");
+        }
         foreach (['qbo_no_tax_code', 'qbo_fallback_item'] as $setting) {
             mitSetSetting($setting, '');
         }
     }
     mitSetSetting('qbo_realm_id', $realm_id);
     mitSetSetting('qbo_mapped_realm', $realm_id);
+    mitSetSetting('qbo_dev_realm', mitDevMode() ? $realm_id : '');
     $GLOBALS['mit_qbo_mappings_cleared'] = $cleared;
     mitQboStoreTokens($tokens);
     mitSetSetting('qbo_connected_by', intval($session_user_id));
@@ -167,17 +205,18 @@ function mitQboConnect($code, $realm_id) {
 /** Disconnect: tell Intuit to drop the tokens (best effort) and forget them. The mappings, batches and approvals stay. */
 function mitQboDisconnect() {
     $refresh = mitDecryptSecret((string) mitSetting('qbo_refresh_token', ''));
-    if ($refresh !== '') {
+    // Development mode: production's connection (from its backup) is only forgotten here, never revoked at Intuit
+    if ($refresh !== '' && mitQboDevProblem() === '') {
         try {
             $s = mitQboSettings();
             $secret = mitDecryptSecret((string) mitSetting('qbo_client_secret', ''));
-            mitHttp('POST', $s['revoke_url'], ['Accept: application/json', 'Authorization: Basic ' . base64_encode($s['client_id'] . ':' . $secret)],
+            mitQboHttp('POST', $s['revoke_url'], ['Accept: application/json', 'Authorization: Basic ' . base64_encode($s['client_id'] . ':' . $secret)],
                 json_encode(['token' => $refresh]), 15);
         } catch (Throwable $e) {
             // already gone at Intuit's end
         }
     }
-    foreach (['qbo_realm_id', 'qbo_company_name', 'qbo_access_token', 'qbo_access_expires', 'qbo_refresh_token', 'qbo_refresh_expires'] as $name) {
+    foreach (['qbo_realm_id', 'qbo_company_name', 'qbo_access_token', 'qbo_access_expires', 'qbo_refresh_token', 'qbo_refresh_expires', 'qbo_dev_realm'] as $name) {
         mitSetSetting($name, '');
     }
 }
@@ -234,8 +273,9 @@ function mitQboFault(array $response) {
  * A 401 gets one fresh token and one more try. Returns the decoded answer; throws RuntimeException with QuickBooks' reason.
  */
 function mitQboApi($method, $path, $body = null, array $query = []) {
-    if (mitDevMode()) {
-        throw new RuntimeException('Development mode - QuickBooks Online is switched off on this server.');
+    $problem = mitQboDevProblem();
+    if ($problem !== '') {
+        throw new RuntimeException($problem);
     }
     $s = mitQboSettings();
     if ($s['realm_id'] === '') {
@@ -250,7 +290,7 @@ function mitQboApi($method, $path, $body = null, array $query = []) {
             // A POST with nothing in it (send an invoice by email): Intuit wants this type, not a form
             $headers[] = 'Content-Type: application/octet-stream';
         }
-        return mitHttp($method, $url, $headers, $payload, 60);
+        return mitQboHttp($method, $url, $headers, $payload, 60);
     };
     $response = $send(mitQboAccessToken());
     if ($response['status'] === 401) {
@@ -545,6 +585,9 @@ function mitQboInvoicePayload($invoice_id, array $items, $batch_id = 0) {
         $payload['CustomerMemo'] = ['value' => mb_substr(trim(strip_tags((string) $invoice['invoice_note'])), 0, 1000)];
     }
     $emails = mitQboClientEmails($client_id);
+    if ($emails && mitDevMode()) {
+        $emails = mitDevMailTo() !== '' ? [mitDevMailTo()] : []; // development mode: QuickBooks' invoice emails go to the test inbox
+    }
     if ($emails) {
         $payload['BillEmail'] = ['Address' => implode(',', $emails)];
     }

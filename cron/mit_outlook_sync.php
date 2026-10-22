@@ -28,8 +28,8 @@ if (intval($row['config_enable_cron']) === 0) {
 
 mitSettingsCacheRef(true);  // settings as they are now - an earlier job in this cycle may have read them
 
-if (!mitOutlookAvailable() || mitDevMode()) {
-    cronJobStop(); // development mode writes nothing to the techs' real calendars, renews no certificate
+if (!mitOutlookAvailable()) {
+    cronJobStop();
 }
 
 try {
@@ -43,7 +43,8 @@ mitM365MaybeRenewCertificate();
 mitUpgradeSecrets();
 
 // Someone archived keeps nothing in Outlook - take ITFlow's events out and forget the link
-$mit_outlook_result = mysqli_query($mysqli, "SELECT user_id FROM mit_outlook_links JOIN users USING (user_id) WHERE user_archived_at IS NOT NULL");
+// (not in development mode - that would take the events out of their real calendar; mitOutlookSync only reads busy times there)
+$mit_outlook_result = mitDevMode() ? false : mysqli_query($mysqli, "SELECT user_id FROM mit_outlook_links JOIN users USING (user_id) WHERE user_archived_at IS NOT NULL");
 while ($mit_outlook_result && $mit_outlook_row = mysqli_fetch_assoc($mit_outlook_result)) {
     try {
         mitOutlookDisconnect($mit_outlook_row['user_id']);

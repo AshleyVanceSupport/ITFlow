@@ -807,14 +807,19 @@ model: see DEPLOYMENT.md.
   (`mitDevMailRedirect` - one guarded line in `cron/mail_queue.php` before the send; no inbox = marked sent, not sent); the mail
   parser stops (`cronJobStop` in `cron/ticket_email_parser.php`); Stripe calls throw (`mitDevBlockStripe` sets the library's HTTP
   client - one line in `includes/stripe_init.php`); custom actions do nothing (`functions/logging.php` triggerCustomAction);
-  QuickBooks calls throw (`mitQboApi` / `mitQboTokenCall`, `cron/mit_qbo_sync.php` stops); Outlook sync stops
-  (`cron/mit_outlook_sync.php`); the Microsoft 365 certificate is not renewed (`mitM365RenewCertificate` throws,
+  QuickBooks works only with an Intuit sandbox company connected on this server (`mitQboDevProblem`: `qbo_env` sandbox and
+  `mit_settings` qbo_dev_realm = the realm, set by `mitQboConnect` in development mode - production's restored connection is refused,
+  Disconnect forgets it without revoking; connecting there clears the copied batches / mappings; `mitQboHttp` passes the gate; invoice
+  BillEmail and `/send?sendTo=` = the test inbox; Connect handler and `cron/mit_qbo_sync.php` check it; notice `[data-mit-qbo-dev]` on
+  `admin/mit_qbo.php`); Outlook reads busy times only (dev branch in `mitOutlookSyncLocked`, archived users' events not removed in
+  `cron/mit_outlook_sync.php`); the Microsoft 365 certificate is not renewed (`mitM365RenewCertificate` throws,
   `mitM365MaybeRenewCertificate` returns - a renewal would add a key to production's app). NinjaOne / Bitwarden / Ingram keep
   reading (user's choice). 26.10.109: every integration is read-only - `mitDevAllows($method, $url)` at the top of `mitHttp`
   (Microsoft 365 / Outlook / QuickBooks / Bitwarden / Ingram) and `mitNinjaHttp` refuses all but GET / HEAD and POSTs to a sign-in
   token address (`MIT_DEV_TOKEN_URL`), answering `MIT_DEV_READ_ONLY` (so hand-pressed buttons - M365 card, Outlook disconnect,
   QuickBooks disconnect's revoke - change nothing there); the one write let through is Graph sending a message already redirected
-  to the test inbox (`mitDevSendingRedirected`, set around `mitM365GraphSendMail`). A new integration must use one of those two
+  to the test inbox (`mitDevSendingRedirected`, set around `mitM365GraphSendMail`), plus QuickBooks once `mitQboDevProblem` allows it.
+  NinjaOne / Bitwarden / Ingram still sync into this server (reads); nothing done here goes back. A new integration must use one of those two
   helpers. ITFlow's own AI providers and domain checks are not ours and not gated. A red DEVELOPMENT badge in the top bar (`mitDevBadge` from `includes/mit_timers_nav.php`). Smoke
   `17-dev-mode.spec.js`.
 - Review fixes (Oct 2026): `functions/mit_common.php` (ours, required first in `functions.php`) - shared

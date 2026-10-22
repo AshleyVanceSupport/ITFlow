@@ -180,11 +180,17 @@ database updates run straight after (tested with a stock v26.10 backup, database
 and give a test inbox **before** restoring production's backup there. It is kept in `config.php` (`$config_mit_dev_mode`,
 `$config_mit_dev_mail_to`), so the restore can't switch it off. While it is on:
 - every email (ticket replies, invoices, reminders, alerts) goes to the test inbox instead, its subject saying who it was for;
-- the mailbox is not read (the copy would take production's new mail), Outlook calendars are not synced, the Microsoft 365
-  certificate is not renewed, QuickBooks Online and Stripe are switched off, custom actions do nothing;
-- every integration is **read-only**: NinjaOne, Bitwarden and Ingram Micro are still read, Microsoft 365 can still sign in
-  and read, but nothing is created, changed or deleted in another system - also when a button is pressed by hand (Microsoft
-  365 card, Outlook disconnect, QuickBooks disconnect); the only exception is sending the redirected mail to the test inbox;
+- the mailbox is not read (the copy would take production's new mail), the Microsoft 365 certificate is not renewed, Stripe is
+  switched off, custom actions do nothing;
+- every integration is **read-only**: NinjaOne, Bitwarden and Ingram Micro still sync into this server and Outlook busy times
+  are still read in, but nothing done here is created, changed or deleted in another system - also when a button is pressed by
+  hand (Microsoft 365 card, Outlook disconnect); the only other way out is the redirected mail to the test inbox;
+- **QuickBooks Online works with an Intuit sandbox company only.** Production's connection comes with the backup but is not used
+  (QuickBooks pages say so). To test batching: Admin > Integrations > QuickBooks Online > Disconnect (only forgets it here - your
+  real connection keeps working), set Environment to Sandbox, Connect and pick your sandbox company (add the dev server's
+  `/admin/mit_qbo_callback.php` address to the Intuit app's Development redirect URIs, and use its Development keys). This clears
+  the batches and mappings copied from production on the dev server; map again and batch away. QuickBooks' invoice emails go to
+  the test inbox;
 - a red DEVELOPMENT badge shows in the top bar.
 Never switch it on on production. Webhooks and anything set up outside ITFlow (n8n, uptime monitors) are not covered.
 

@@ -27,8 +27,8 @@ if (intval($row['config_enable_cron']) === 0) {
     cronJobStop("Cron: is not enabled -- Quitting..");
 }
 
-if (mitDevMode()) {
-    cronJobStop("Development mode - QuickBooks Online is switched off on this server");
+if (mitQboConnected() && mitQboDevProblem() !== '') {
+    cronJobStop(mitQboDevProblem()); // development mode without a sandbox company connected here
 }
 if (!mitQboConnected()) {
     cronJobStop("QuickBooks Online is not connected");

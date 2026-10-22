@@ -5,7 +5,8 @@ again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > 
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
 ## 26.10.109 - 2026-10-22
-- Development mode: every integration is now read-only - NinjaOne, Bitwarden, Ingram Micro, Microsoft 365 and Outlook can still sign in and read, but nothing is created, changed or deleted in them, even from a button pressed by hand. Mail sent to the test inbox still goes out.
+- Development mode: integrations sync into the dev server but nothing done there goes back - NinjaOne, Bitwarden and Ingram Micro are still read, Outlook busy times still come in, and nothing is created, changed or deleted in them, even from a button pressed by hand. Mail sent to the test inbox still goes out.
+- Development mode: QuickBooks Online and invoice batching work with an Intuit sandbox company connected on the dev server (production's connection from the backup is never used or revoked); QuickBooks' invoice emails go to the test inbox.
 
 ## 26.10.108 - 2026-10-22
 - Admin > Backup: restore a backup on a running system - the Restore button on a stored backup, or upload a backup .zip (also one from another server, with its key). You see what is in it first, and confirm with your password and by typing RESTORE.
