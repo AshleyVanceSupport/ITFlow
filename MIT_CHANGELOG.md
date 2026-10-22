@@ -4,6 +4,9 @@ Version = ITFlow's release + our iteration (26.10.1, 26.10.2 ...). It goes up wi
 again at .1 when an ITFlow release is merged. Newest first. Shown under Admin > Update. (ITFlow's own release notes are
 CHANGELOG.md.) Versions up to 26.10.62 were numbered afterwards, one per push to develop since 15 October 2026.
 
+## 26.10.104 - 2026-10-21
+- Notes only: approving your own timesheet with Full Timesheets access stays allowed (by choice). No program changes.
+
 ## 26.10.103 - 2026-10-21
 Roles check - every feature tried against ITFlow's roles (admin, Technician, Accountant, and test roles with no access, view only, full but not admin, and limited to one client):
 - Agents are picked, handed or told about tickets only when their role can work tickets: round-robin skips them ("their role cannot work tickets"), board notices, the internal note Notify list, Additional agents and Dispatch's agent columns leave them out, and their emailed replies are treated like a stranger's.
