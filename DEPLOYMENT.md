@@ -11,9 +11,11 @@ Adjust paths if yours differ.
 
 | Branch          | Purpose                                                        | Who pulls from it   |
 |-----------------|----------------------------------------------------------------|---------------------|
-| `MountaineerIT` | Production. Default branch. Changes arrive only by PR from `develop`. | Production servers  |
+| `main`          | Production. Default branch. Changes arrive only by PR from `develop`. | Production servers  |
 | `develop`       | Staging. Our changes and ITFlow's releases land here first.    | Beta / test server  |
-| `master`        | Untouched copy of upstream `master`, for comparison only. **Never deploy it** – see "Moving an existing install over". | Nobody |
+
+There is no copy of upstream in this repository: compare against itflow-org through an `upstream`
+remote (`git remote add upstream https://github.com/itflow-org/itflow.git`) and its `vYY.MM` tags.
 
 Flow:
 
@@ -24,7 +26,7 @@ itflow-org/itflow (official releases)
 develop  ──►  beta server         ← our changes are committed straight to develop
         │  PR once tested on beta ("Claude, promote develop to production")
         ▼
-MountaineerIT  ──►  production servers
+main  ──►  production servers
 ```
 
 ## How a server knows which branch to follow
@@ -35,10 +37,10 @@ in the server's `config.php`:
 
 | Server     | `origin`                                         | `$repo_branch`              |
 |------------|--------------------------------------------------|-----------------------------|
-| Production | `https://github.com/MountaineerIT/ITFLOW.git`    | `'MountaineerIT'` (default) |
-| Beta       | `https://github.com/MountaineerIT/ITFLOW.git`    | `'develop'`                 |
+| Production | `https://github.com/AshleyVanceSupport/ITFlow.git`    | `'main'` (default) |
+| Beta       | `https://github.com/AshleyVanceSupport/ITFlow.git`    | `'develop'`                 |
 
-Admin > Update shows "Not the release branch" on anything other than `MountaineerIT` –
+Admin > Update shows "Not the release branch" on anything other than `main` –
 expected on the beta server.
 
 Clicking **Update** in Admin > Update does not update immediately: it *queues* the update and
@@ -52,7 +54,7 @@ On a fresh Debian server, as root:
 **Beta / testing server** (tracks `develop`, updates itself nightly):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MountaineerIT/ITFLOW/develop/scripts/install.sh | bash -s -- --branch develop
+curl -fsSL https://raw.githubusercontent.com/AshleyVanceSupport/ITFlow/develop/scripts/install.sh | bash -s -- --branch develop
 ```
 
 (Minimal Debian may not have `curl`: use `wget -qO- <same URL> | bash -s -- --branch develop`.)
@@ -97,12 +99,12 @@ the `itflow` database and user and delete `/var/www/itflow` first).
 
    ```bash
    sudo install -d -o www-data -g www-data /var/www/itflow
-   sudo -u www-data git clone -b MountaineerIT https://github.com/MountaineerIT/ITFLOW.git /var/www/itflow
+   sudo -u www-data git clone -b main https://github.com/AshleyVanceSupport/ITFlow.git /var/www/itflow
    # beta server: use -b develop
    ```
 
 3. Run the web setup (`https://<host>/setup`) or `scripts/setup_cli.php` (as `www-data`).
-   Setup writes `$repo_branch = 'MountaineerIT'` into `config.php`; **on the beta server
+   Setup writes `$repo_branch = 'main'` into `config.php`; **on the beta server
    change it to `'develop'`**.
 
 4. Add the single cron entry to `www-data`'s crontab (`sudo crontab -u www-data -e`) and turn
@@ -126,10 +128,9 @@ the `itflow` database and user and delete `/var/www/itflow` first).
 ## Moving an existing install over from itflow-org
 
 > ⚠️ **Change `$repo_branch` before updating.** An install set up from itflow-org has
-> `$repo_branch = 'master'` in `config.php`. In this repository `master` is the untouched
-> upstream copy, so updating without changing it would deploy upstream code and run
-> database updates that cannot be rolled back. (Recommended: rename this repository's
-> `master` branch, e.g. to `upstream-master`, so a forgotten setting fails instead.)
+> `$repo_branch = 'master'` in `config.php`. This repository has no `master` branch, so
+> updating without changing it fails instead of deploying anything - but it will not update
+> until the setting is changed.
 
 1. Check the server is not ahead of the branch it is moving to: it must be on the same ITFlow
    release as that branch or older (Admin > Update shows the version). Never move a server
@@ -139,11 +140,11 @@ the `itflow` database and user and delete `/var/www/itflow` first).
 
    ```bash
    cd /var/www/itflow
-   sudo -u www-data git remote set-url origin https://github.com/MountaineerIT/ITFLOW.git
+   sudo -u www-data git remote set-url origin https://github.com/AshleyVanceSupport/ITFlow.git
    sudo -u www-data git fetch origin
    ```
 
-4. Edit `config.php`: `$repo_branch = 'MountaineerIT';` (or `'develop'` on beta).
+4. Edit `config.php`: `$repo_branch = 'main';` (or `'develop'` on beta).
 5. Check `www-data`'s crontab has only the single `cron.php` line. Older installs may still
    have separate lines for `nightly_tasks.php`, `ticket_email_parser.php` etc. – remove them,
    or those jobs run twice and outside the schedules set in Maintenance > Cron.
@@ -382,8 +383,8 @@ to hard-refresh (Ctrl+F5) if a page looks or behaves oddly.
 
 The repository is public, so servers clone and update over HTTPS with no credentials.
 If it is made private, each server needs its own read-only **deploy key**, and its `origin`
-must be switched to `git@github.com:MountaineerIT/ITFLOW.git`
-(`sudo -u www-data git -C /var/www/itflow remote set-url origin git@github.com:MountaineerIT/ITFLOW.git`).
+must be switched to `git@github.com:AshleyVanceSupport/ITFlow.git`
+(`sudo -u www-data git -C /var/www/itflow remote set-url origin git@github.com:AshleyVanceSupport/ITFlow.git`).
 
 `/var/www` is owned by root, so create the `.ssh` folder as root first, then generate the
 key as `www-data`:
@@ -407,7 +408,7 @@ Ask Claude Code (with this repository attached): *"Check ITFlow for updates and 
 It will fetch the latest **official release** from itflow-org, summarise what changed
 (including any database updates), merge it into `develop` and, once you confirm, push it.
 The beta server picks it up; test there (including the smoke tests below), then ask Claude to open the
-`develop` → `MountaineerIT` PR.
+`develop` → `main` PR.
 
 ## California timesheets
 
@@ -472,7 +473,7 @@ production. Never point them at production: they add and delete a test client.
 ## Rules for our own changes
 
 - Changes are committed straight to `develop` and tested on the beta server – no PRs needed.
-- Nothing is pushed or merged into `MountaineerIT` except a reviewed PR from `develop`.
+- Nothing is pushed or merged into `main` except a reviewed PR from `develop`.
 - Don't modify `libs/` (third-party code).
 - Keep edits to upstream files small – every changed line can conflict when ITFlow releases
   are merged in. Prefer the `*/custom/` directories where they fit.

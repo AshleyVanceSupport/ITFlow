@@ -3,13 +3,13 @@
 # Mountaineer IT - ITFlow one-line installer for Debian 12 / 13
 #
 # Beta / development server (tracks the develop branch):
-#   curl -fsSL https://raw.githubusercontent.com/MountaineerIT/ITFLOW/develop/scripts/install.sh | bash -s -- --branch develop
+#   curl -fsSL https://raw.githubusercontent.com/AshleyVanceSupport/ITFlow/develop/scripts/install.sh | bash -s -- --branch develop
 #
 # Run as root on a fresh Debian server. Anything not given as an option is asked for.
 # Run with --help for all options.
 #
 # What it does: installs Apache, MariaDB, PHP and git; creates the database; clones
-# ITFlow from github.com/MountaineerIT/ITFLOW; sets up the Apache site with HTTPS
+# ITFlow from github.com/AshleyVanceSupport/ITFlow; sets up the Apache site with HTTPS
 # (Let's Encrypt or self-signed); runs ITFlow's setup to create the company and the first
 # admin; installs the cron entry and switches cron on; and, on non-production branches,
 # schedules a nightly self-update.
@@ -19,12 +19,12 @@ set -Eeuo pipefail
 # 'su' without '-' keeps the user's PATH, which lacks the sbin folders (runuser, a2enmod...).
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-REPO_URL="https://github.com/MountaineerIT/ITFLOW.git"
+REPO_URL="https://github.com/AshleyVanceSupport/ITFlow.git"
 INSTALL_DIR="/var/www/itflow"
 WEB_USER="www-data"
 CREDENTIALS_FILE="/root/itflow-install-credentials.txt"
 
-BRANCH="MountaineerIT"
+BRANCH="main"
 DOMAIN=""
 SSL_MODE=""
 LE_EMAIL=""
@@ -44,8 +44,8 @@ usage() {
 ITFlow installer (Mountaineer IT build) for Debian 12 / 13
 
 Options:
-  -b, --branch NAME      Branch to install and track: develop (beta) or MountaineerIT (production).
-                         Default: MountaineerIT
+  -b, --branch NAME      Branch to install and track: develop (beta) or main (production).
+                         Default: main
   -d, --domain FQDN      Server name, e.g. itflow-beta.example.com
   -s, --ssl MODE         letsencrypt | self-signed | none
                          letsencrypt needs the domain's public DNS pointing here and ports 80/443 open.
@@ -189,13 +189,13 @@ ask_secret ADMIN_PASSWORD "Admin password (min 8 chars)"
 
 
 if [[ -z "$AUTO_UPDATE" ]]; then
-    if [[ "$BRANCH" == "MountaineerIT" ]]; then AUTO_UPDATE=0; else AUTO_UPDATE=1; fi
+    if [[ "$BRANCH" == "main" ]]; then AUTO_UPDATE=0; else AUTO_UPDATE=1; fi
 fi
 
 cat <<EOF
 
     Install ITFlow with these settings:
-      Branch       $BRANCH $( [[ "$BRANCH" == "MountaineerIT" ]] && echo "(production)" || echo "(beta / testing)" )
+      Branch       $BRANCH $( [[ "$BRANCH" == "main" ]] && echo "(production)" || echo "(beta / testing)" )
       URL          $SITE_URL
       HTTPS        $SSL_MODE
       Timezone     $TIMEZONE

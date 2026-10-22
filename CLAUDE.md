@@ -4,15 +4,19 @@ PHP/MySQL MSP PSA, forked from https://github.com/itflow-org/itflow. Deployment 
 model: see DEPLOYMENT.md.
 
 ## Branches
-- `MountaineerIT` – production, default branch. **Never push to or merge into it without
+Repository: https://github.com/AshleyVanceSupport/ITFlow (Ashley Vance's fork, Oct 2026, of
+Mountaineer IT's build - the `mit_` names, `mountaineerit/` folder and M-numbered updates are
+theirs and stay as they are: installed databases and config.php files depend on them).
+- `main` – production, default branch. **Never push to or merge into it without
   asking the user first.** Changes reach it only via a PR from `develop`.
 - `develop` – staging; beta server tracks it. All work goes here first, committed directly.
-- `master` – untouched copy of upstream master, comparison only.
-- Other branches are leftover upstream copies; ignore them.
+- Upstream ITFlow is compared through the `upstream` remote and its `vYY.MM` tags - there is
+  no copy of it as a branch here (no `master`, so a stock install's `$repo_branch = 'master'` fails
+  rather than deploying upstream code).
 
 ## Rules
 - Commit directly to `develop` (no feature branches or PRs into `develop`) – after the user
-  confirms the push. PRs are only for `develop` → `MountaineerIT`.
+  confirms the push. PRs are only for `develop` → `main`.
 - **Ask the user to confirm before every `git push`** (any branch) and before merging any PR.
 - **Version (Oct 2026):** our build is ITFlow's release + an iteration - `MIT_VERSION` in `includes/mit_version.php`
   (26.10.1, 26.10.2 ...). Every push to `develop` goes up by one: bump it in the last commit before the push and add a
@@ -47,7 +51,7 @@ model: see DEPLOYMENT.md.
 - Keep diffs against upstream minimal so release merges stay clean.
 
 ## Our deviations from upstream (re-check after every upstream merge)
-- Default/release branch is `MountaineerIT` instead of `master`: `functions/app.php`
+- Default/release branch is `main` instead of `master`: `functions/app.php`
   (`getRepoBranch`), `admin/update.php` (release-branch badge), `setup/index.php` and
   `scripts/setup_cli.php` (default `$repo_branch`).
 - `DEPLOYMENT.md`, `CLAUDE.md`, `scripts/install.sh` (Debian one-line installer), `tests/smoke/` (Playwright smoke
@@ -876,9 +880,9 @@ model: see DEPLOYMENT.md.
 2. Merge only official releases: `upstream/master` / the newest `vYY.MM` tag – not
    upstream `develop`. Exception (Oct 2026): upstream `develop` (unreleased 26.11 work, DB
    2.8.9) was merged into our `develop` at the user's request to get the new ticket page
-   early. Until upstream releases 26.11, `develop` is ahead of any release - **do not promote
-   `develop` to `MountaineerIT` before 26.11 is out** without the user explicitly accepting
-   unreleased upstream code in production. When 26.11 is released, merge its tag as usual.
+   early. Until upstream releases 26.11, `develop` is ahead of any release. Ashley Vance
+   (Oct 22, 2026) accepted unreleased upstream code in production: `develop` may be promoted to
+   `main` before 26.11 is out, once tested on beta. When 26.11 is released, merge its tag as usual.
    Checked Oct 18 (user chose to wait for the release): upstream develop then had 47 more commits, DB 2.9.0 -> 3.2.2.
    **Upstream 2.9.4 adds `products.product_cost` and `product_vendor_id` - the same names as our M007 / M010 columns
    (same meaning).** Its single ALTER would fail with "Duplicate column" on our databases, so the merge needs a step
@@ -895,5 +899,5 @@ model: see DEPLOYMENT.md.
    on the test install after the database update, then ask the user before pushing to `develop`.
 
 ## "Promote to production"
-Open a PR `develop` → `MountaineerIT` listing what's included and any DB updates, plus the
+Open a PR `develop` → `main` listing what's included and any DB updates, plus the
 result of the stock-ITFlow portability test (see Rules) and of the smoke tests. Ask the user before merging.
